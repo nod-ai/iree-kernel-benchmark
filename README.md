@@ -1,6 +1,6 @@
 # Benchmarking Suite for IREE Kernels
 
-# Setup
+## Setup
 
 If you are not using a local iree build, install the iree pip packages:
 ```
@@ -13,24 +13,24 @@ pip install -r requirements.txt
 pip install --no-compile --pre --upgrade -e common_tools
 ```
 
-# Performance
+## Performance
 
 Pick any of the following kernels to test through IREE.
 Refer to the respective problems.py file in the folder to see which shapes are being tested.
 
-## Convolution Benchmarking
+### Convolution Benchmarking
 
 ```
 python convbench/shark_conv.py
 ```
 
-## GEMM Benchmarking
+### GEMM Benchmarking
 
 ```
 python gemmbench/gemm_bench.py
 ```
 
-## Attention Benchmarking
+### Attention Benchmarking
 
 ```
 python attentionbench/attention_bench.py
