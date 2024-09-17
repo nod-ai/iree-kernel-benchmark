@@ -7,8 +7,10 @@ If you are not using a local iree build, install the iree pip packages:
 pip install --find-links https://iree.dev/pip-release-links.html iree-compiler iree-runtime --upgrade
 ```
 
-Install the requirements for the project:
+Create a python environment and install the requirements for the project:
 ```
+python3.11 -m venv bench_venv
+source bench_venv/bin/activate
 pip install -r requirements.txt
 pip install --no-compile --pre --upgrade -e common_tools
 ```
