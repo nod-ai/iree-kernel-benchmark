@@ -74,25 +74,12 @@ def bench_summary_process(ret_value, output):
     
     return benchmark_mean_time
 
-def write_results_to_csv(results : list[tuple] | list[list] | list[dict], output_filename: str):
+def write_results_to_csv(results : list[tuple] | list[list] | list[dict], output_filename: str, fieldnames: []):
     if len(results) == 0:
         print('No valid results')
         return
     
-    fieldnames = [
-        'index', 
-        'tag',
-        'name',
-        'image', 
-        'conv_filter', 
-        'output', 
-        'input_dtype', 
-        'output_dtype',
-        'mean_microseconds',
-        'arithmetic_intensity',
-        'tflops',
-        'ok'
-    ]
+    fieldnames = fieldnames
 
     with open(output_filename, 'w', newline='') as f:
         if isinstance(results[0], list) or isinstance(results[0], tuple):

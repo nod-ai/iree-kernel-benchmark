@@ -187,7 +187,22 @@ if __name__ == "__main__":
         ))
         index += 1
 
-    write_results_to_csv(results, output_csv)
+    fieldnames = [
+        'index', 
+        'tag',
+        'name',
+        'image', 
+        'conv_filter', 
+        'output', 
+        'input_dtype', 
+        'output_dtype',
+        'mean_microseconds',
+        'arithmetic_intensity',
+        'tflops',
+        'ok'
+    ]
+
+    write_results_to_csv(results, output_csv, fieldnames)
     print(f"Results written to {output_csv}")
         
         
