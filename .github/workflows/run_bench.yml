@@ -27,6 +27,7 @@ jobs:
           sudo usermod -a -G render,video $LOGNAME
           source bench_venv/bin/activate
           rocm-smi
+          rocminfo
           python convbench/shark_conv.py
 
       - name: Attention
