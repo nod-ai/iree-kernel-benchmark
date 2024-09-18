@@ -29,6 +29,7 @@ jobs:
 
       - name: Convolutions
         run: |
+          sudo usermod -a -G render,video $LOGNAME
           source bench_venv/bin/activate
           python convbench/shark_conv.py
 
