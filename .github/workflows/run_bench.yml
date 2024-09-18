@@ -13,15 +13,10 @@ jobs:
     steps:
       - name: "Checkout Repo"
         uses: actions/checkout@v4
-      
-      - name: "Setting up Python"
-        uses: actions/setup-python@75f3110429a8c05be0e1bf360334e4cced2b63fa # v2.3.3
-        with:
-          python-version: 3.11
 
       - name: Setup venv
         run: |
-          python -m venv bench_venv
+          python3.11 -m venv bench_venv
           source bench_venv/bin/activate
           pip install --find-links https://iree.dev/pip-release-links.html iree-compiler iree-runtime --upgrade
           pip install -r requirements.txt
