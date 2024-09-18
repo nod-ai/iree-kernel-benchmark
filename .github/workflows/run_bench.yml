@@ -21,7 +21,6 @@ jobs:
           pip install --find-links https://iree.dev/pip-release-links.html iree-compiler iree-runtime --upgrade
           pip install -r requirements.txt
           pip install --no-compile --pre --upgrade -e common_tools
-          mkdir results
 
       - name: Convolutions
         run: |
