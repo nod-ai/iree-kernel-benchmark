@@ -43,5 +43,5 @@ python attentionbench/attention_bench.py
 If you want to generate a roofline plot, you can call any of the suites for now with the --roofline option (provide a commma seperated list if you want to generate for multiple benchmarks combined):
 
 ```
-python convbench/shark_conv.py --roofline results/iree_conv.csv,results/iree_attention.csv
+python convbench/shark_conv.py --roofline results/iree_conv.csv,results/iree_attention.csv --plot results/attn_conv.png
 ```
