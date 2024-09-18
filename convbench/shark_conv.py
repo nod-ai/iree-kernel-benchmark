@@ -74,12 +74,13 @@ if __name__ == "__main__":
         help="Set the logging level",
     )
     parser.add_argument("--roofline", help="Comma seperated csv file list to generate roofline plot with", default=None)
+    parser.add_argument("--plot", help="location to generate plot to", default=None)
     
     args = parser.parse_args()
     logging.basicConfig(level=args.log_level)
 
     if args.roofline:
-        roofline(args.roofline)
+        roofline(args.roofline, args.plot)
         sys.exit()
     
     shapes = []

@@ -95,7 +95,7 @@ def write_results_to_csv(results : list[tuple] | list[list] | list[dict], output
         for result in results:
             writer.writerow(result)
 
-def roofline(results=None, **kwargs):
+def roofline(results=None, out=None, **kwargs):
     """Generate a roofline plot of GEMM performance from multiple result files and save raw data as CSV."""
     if results is None:
         raise ValueError("No result files provided")
@@ -142,7 +142,7 @@ def roofline(results=None, **kwargs):
     plt.text(x_range[-1], peak_compute, f'{peak_compute:.1f} TFLOP/s', 
              verticalalignment='bottom', horizontalalignment='right')
 
-    plt.savefig('roofline_plot.png', dpi=300, bbox_inches='tight')
+    plt.savefig(out, dpi=300, bbox_inches='tight')
     plt.close()
     
-    print("Roofline plot saved as 'roofline_plot.png'")
+    print(f"Roofline plot saved as '{out}'")
