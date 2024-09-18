@@ -24,7 +24,7 @@ jobs:
 
       - name: Convolutions
         run: |
-          sudo usermod -a -G render,video $LOGNAME
+          usermod -aG sudo esaimana
           source bench_venv/bin/activate
           rocm-smi
           rocminfo
