@@ -110,6 +110,9 @@ if __name__ == "__main__":
     results = []
     index = 0
     output_csv = "results/iree_attention.csv"
+    csv_dir = os.path.dirname(output_csv)
+    if not os.path.exists(csv_dir):
+        os.makedirs(csv_dir)
 
     for vmfb_filename, input_list in vmfb_dict.items():
         tag = input_list[0]
