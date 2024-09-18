@@ -7,7 +7,7 @@ on:
     - cron: "0 9 * * *"
 
 jobs:
-  build:
+  benchmark:
     runs-on: mi300
 
     steps:
@@ -23,6 +23,7 @@ jobs:
         run: |
           python -m venv bench_venv
           source bench_venv/bin/activate
+          pip install --find-links https://iree.dev/pip-release-links.html iree-compiler iree-runtime --upgrade
           pip install -r requirements.txt
           pip install --no-compile --pre --upgrade -e common_tools
 
