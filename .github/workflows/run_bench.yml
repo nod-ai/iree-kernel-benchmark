@@ -1,0 +1,56 @@
+name: Build and Test
+
+on:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 9 * * *"
+
+jobs:
+  build:
+    runs-on: mi300
+
+    steps:
+      - name: "Checkout Repo"
+        uses: actions/checkout@v4
+      
+      - name: "Setting up Python"
+        uses: actions/setup-python@75f3110429a8c05be0e1bf360334e4cced2b63fa # v2.3.3
+        with:
+          python-version: 3.11
+
+      - name: Setup venv
+        run: |
+          python -m venv bench_venv
+          source bench_venv/bin/activate
+          pip install -r requirements.txt
+          pip install --no-compile --pre --upgrade -e common_tools
+
+      - name: Convolutions
+        run: |
+          source bench_venv/bin/activate
+          python convbench/shark_conv.py
+
+      - name: Attention
+        run: |
+          source bench_venv/bin/activate
+          python attentionbench/attention_bench.py
+
+      - name: GEMM
+        run: |
+          source bench_venv/bin/activate
+          python gemmbench/gemm_bench.py
+
+      - name: Roofline Plots
+        run: |
+          source bench_venv/bin/activate
+          python convbench/shark_conv.py --roofline results/iree_conv.csv --plot results/iree_conv.png
+          python convbench/shark_conv.py --roofline results/iree_attention.csv --plot results/iree_attention.png
+          python convbench/shark_conv.py --roofline results/iree_gemm.csv --plot results/iree_gemm.png
+          python convbench/shark_conv.py --roofline results/iree_gemm.csv,results/iree_attention.csv,results/iree_conv.csv --plot results/combined.png
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: ./results/
