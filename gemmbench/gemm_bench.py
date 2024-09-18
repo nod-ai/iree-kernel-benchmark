@@ -45,9 +45,9 @@ module {{
     }}
 }} 
 """
-    if tA:
+    if tA == "T":
         return mlir_template_A
-    if tB:
+    if tB == "T":
         return mlir_template_B
     return mlir_template
 
