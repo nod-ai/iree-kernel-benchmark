@@ -24,10 +24,7 @@ jobs:
 
       - name: Convolutions
         run: |
-          sudo usermod -aG sudo esaimana
           source bench_venv/bin/activate
-          rocm-smi
-          rocminfo
           python convbench/shark_conv.py
 
       - name: Attention
