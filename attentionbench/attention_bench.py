@@ -85,7 +85,7 @@ if __name__ == "__main__":
             "iree-benchmark-module",
             f"--device=hip",
             "--device_allocator=caching",
-            f"--module={vmfb_dir}/{vmfb_filename}",
+            f"--module={vmfb_filename}",
             "--function=main",
             f"--input={query_shape}",
             f"--input={key_shape}",
