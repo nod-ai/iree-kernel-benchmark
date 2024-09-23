@@ -44,8 +44,8 @@ class AttentionConfig:
 
     def get_flops(self) -> int:
         # We measure flops of the two matmuls only
-        qk_matmul_flops = 2 * self.M * self.K2 * self.K1
-        pv_matmul_flops = 2 * self.M * self.N * self.K2
+        qk_matmul_flops = 2 * self.B * self.M * self.K2 * self.K1
+        pv_matmul_flops = 2 * self.B * self.M * self.N * self.K2
         total_flops = qk_matmul_flops + pv_matmul_flops
         return total_flops
 
@@ -84,7 +84,7 @@ def get_attention_flags() -> list[str]:
 
 def compile_attention_config(
     config: AttentionConfig, kernel_dir: Path, vmfb_dir: Path
-) -> tuple[AttentionConfig, Path, Optional[Path]]:
+) -> tuple[Path, Optional[Path]]:
     mlir_file = kernel_dir / (config.get_name() + ".mlir")
     vmfb_file = vmfb_dir / (config.get_name() + ".vmfb")
 
@@ -120,6 +120,6 @@ def compile_attention_config(
         print(f"Failed to compile {mlir_file}. Error dumped in {error_file}")
         with open(error_file, "w") as f:
             f.write(stderr.decode("utf-8"))
-        return config, mlir_file, None
+        return mlir_file, None
 
-    return config, mlir_file, vmfb_file
+    return mlir_file, vmfb_file

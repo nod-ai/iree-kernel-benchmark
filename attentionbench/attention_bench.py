@@ -2,6 +2,7 @@ import os
 from tqdm import tqdm
 from multiprocessing import Pool, cpu_count, Manager
 import logging
+import itertools
 from pathlib import Path
 import csv
 import argparse
@@ -9,6 +10,10 @@ import sys
 from utils import *
 from attention_utils import *
 from problems import get_attention_configs
+
+def compile_attention(tag, config, kernel_dir, vmfb_dir):
+     mlir_file, vmfb_file = compile_attention_config(config, kernel_dir, vmfb_dir)
+     return (tag, config, mlir_file, vmfb_file)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Config file updater.")
@@ -48,16 +53,16 @@ if __name__ == "__main__":
     kernel_dir.mkdir(parents=True, exist_ok=True)
     vmfb_dir.mkdir(parents=True, exist_ok=True)
 
-    args = map(lambda config: (config, kernel_dir, vmfb_dir), configs)
+    args = itertools.starmap(lambda tag, config: (tag, config, kernel_dir, vmfb_dir), configs)
     with Pool(num_cpus) as pool:
         compilation_results = list(
-            tqdm(pool.starmap(compile_attention_config, list(args)))
+            tqdm(pool.starmap(compile_attention, list(args)))
         )
 
     error_count = 0
-    for config, mlir_file, vmfb_file in compilation_results:
+    for tag, config, mlir_file, vmfb_file in compilation_results:
         if vmfb_file:
-            vmfb_dict[vmfb_file] = config
+            vmfb_dict[vmfb_file] = (tag, config)
         else:
             error_count += 1
     print(
@@ -73,8 +78,8 @@ if __name__ == "__main__":
     if not os.path.exists(csv_dir):
         os.makedirs(csv_dir)
 
-    for vmfb_filename, config in vmfb_dict.items():
-        tag = "attention_sweep"
+    for vmfb_filename, value in vmfb_dict.items():
+        tag, config = value
         name = config.get_name()
 
         query_shape = config.get_query_shape()
