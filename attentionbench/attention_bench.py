@@ -48,7 +48,7 @@ if __name__ == "__main__":
     kernel_dir.mkdir(parents=True, exist_ok=True)
     vmfb_dir.mkdir(parents=True, exist_ok=True)
 
-    args = map(lambda config : (config, kernel_dir, vmfb_dir), configs)
+    args = map(lambda config: (config, kernel_dir, vmfb_dir), configs)
     with Pool(num_cpus) as pool:
         compilation_results = list(
             tqdm(pool.starmap(compile_attention_config, list(args)))

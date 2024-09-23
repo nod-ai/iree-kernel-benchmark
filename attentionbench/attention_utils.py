@@ -37,6 +37,7 @@ class AttentionConfig:
             (self.B * self.M * self.K1)
             + (self.B * self.K2 * self.K1)
             + (self.B * self.K2 * self.N)
+            + (self.B * self.M * self.N)
         )
         byte_count = element_count * bytes_per_element
         return byte_count
@@ -103,10 +104,10 @@ def compile_attention_config(
         # Output file
         "-o",
         f"{vmfb_file}",
-        # Backend: rocm
-        "--iree-hal-target-backends=llvm-cpu",
+        # Target Device: hip
+        "--iree-hal-target-device=hip",
         # Device: MI300x
-        # "--iree-hip-target=gfx942",
+        "--iree-hip-target=gfx942",
     ] + get_attention_flags()
 
     print(" ".join(exec_args))

@@ -24,7 +24,7 @@ def sdxl_unet_sweep(configs: list[AttentionConfig], dtype: str):
         configs.append(AttentionConfig(B, M, N, K1, K2, dtype))
 
 
-def bert_sweep(configs: list[AttentionConfig], dtype: str):
+def bert_attn_sweep(configs: list[AttentionConfig], dtype: str):
     sdxl_attn_shapes = [
         (20, 4096, 64, 64, 4096),
         (20, 4096, 64, 64, 64),
@@ -39,5 +39,5 @@ def get_attention_configs() -> list:
     configs = []
     llm_sweep(configs, "f16")
     sdxl_unet_sweep(configs, "f16")
-    bert_sweep(configs, "f16")
+    bert_attn_sweep(configs, "f16")
     return configs
