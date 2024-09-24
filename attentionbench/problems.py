@@ -45,8 +45,8 @@ def get_attention_configs() -> list[tuple[str, AttentionConfig]]:
     sdxl_configs = sdxl_unet_sweep("f16")
     bert_configs = bert_attn_sweep("f16")
 
-    # configs += [("llm_sweep", x) for x in llm_configs]
-    # configs += [("sdxl_unet_sweep", x) for x in sdxl_configs]
+    configs += [("llm_sweep", x) for x in llm_configs]
+    configs += [("sdxl_unet_sweep", x) for x in sdxl_configs]
     configs += [("bert_attn_sweep", x) for x in bert_configs]
 
     return configs

@@ -29,10 +29,15 @@ class AttentionConfig:
         return f"{self.B}x{self.M}x{self.N}x{self.dtype}"
 
     def get_byte_count(self) -> int:
-        if "bf" in self.dtype:
-            bytes_per_element = int(self.dtype[2:]) // 8
-        else:
-            bytes_per_element = int(self.dtype[1:]) // 8
+        dtype_bits_map = {
+            "f32": 32,
+            "f16": 16,
+            "bf16": 16,
+            "f8E4M3FNUZ": 8,
+            "i8": 8,
+            "i32": 32,
+        }
+        bytes_per_element = dtype_bits_map[self.dtype] // 8
         element_count = (
             (self.B * self.M * self.K1)
             + (self.B * self.K2 * self.K1)
@@ -62,7 +67,7 @@ class TuningSpec:
     def get_lowering_config(self) -> str:
         return (
             f"#iree_codegen.lowering_config<"
-            + f"tile_sizes = [[{",".join([str(x) for x in self.wg_tiles])}]]"
+            + f"tile_sizes = [[{','.join([str(x) for x in self.wg_tiles])}]]"
             + f">"
         )
 
@@ -87,7 +92,7 @@ class TuningSpec:
             + f" workgroup_size = [{self.N_warp * 64}, {self.M_warp}]"
             + f" subgroup_size = 64"
             + f" ,{{mma_schedule = {self.get_mma_schedule()}"
-            + f" , llvm_func_attrs = {{ {",".join(llvm_func_attrs)} }}"
+            + f" , llvm_func_attrs = {{ {','.join(llvm_func_attrs)} }}"
             + f"}}"
             + f">"
         )
@@ -120,13 +125,14 @@ def generate_mlir(config: AttentionConfig, tuning: Optional[TuningSpec] = None):
 #Q = affine_map<(b, m, n, k1, k2) -> (b, m, k1)>
 #K = affine_map<(b, m, n, k1, k2) -> (b, k2, k1)>
 #V = affine_map<(b, m, n, k1, k2) -> (b, k2, n)>
+#S = affine_map<(b, m, n, k1, k2) -> ()>
 #O = affine_map<(b, m, n, k1, k2) -> (b, m, n)>
 
 func.func @main(%Q : !Q, %K : !K, %V : !V) -> !O {{
   %scale = arith.constant 1.0 : !dtype
   %empty = tensor.empty() : !O
   %O = iree_linalg_ext.attention 
-       {{ indexing_maps = [#Q, #K, #V, #O]
+       {{ indexing_maps = [#Q, #K, #V, #S, #O]
          {",compilation_info = #tuning" if tuning else ""}
        }}
        ins(%Q, %K, %V, %scale : !Q, !K, !V, !dtype)
