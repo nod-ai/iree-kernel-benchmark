@@ -1,4 +1,3 @@
-
 util.func public @main(%arg0: tensor<1x64x230x230xf32>, %arg1: tensor<3x64x7x7xf32>) -> tensor<1x3x112x112xf32> {
     %cst = arith.constant 0.0 : f32
     %9 = tensor.empty() : tensor<1x3x112x112xf32>

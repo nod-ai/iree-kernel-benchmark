@@ -95,10 +95,36 @@ def write_results_to_csv(results : list[tuple] | list[list] | list[dict], output
         for result in results:
             writer.writerow(result)
 
-def roofline(results=None, out=None, **kwargs):
+def filter_batch(data, b):
+    data_new = []
+    for row in data:
+        if ("B" in row and int(row["B"]) == b):
+            data_new.append(row)
+        elif ("N" in row and int(row["N"]) == b):
+            data_new.append(row)
+    return data_new
+
+
+def filter_dtype(data, dtype):
+    data_new = []
+    for row in data:
+        if ("input_dtype" in row and row["input_dtype"] == dtype) or ("dtype" in row and row["dtype"] == dtype):
+            data_new.append(row)
+    return data_new
+
+def filter_model(data, model):
+    data_new = []
+    for row in data:
+        if ("tag" in row and model in row["tag"]):
+            data_new.append(row)
+    return data_new
+
+def roofline(results=None, out=None, batch=None, dtype=None, model=None, **kwargs):
     """Generate a roofline plot of GEMM performance from multiple result files and save raw data as CSV."""
     if results is None:
         raise ValueError("No result files provided")
+    if out is None:
+        raise ValueError("No output file path provided")
 
     files = results.split(',')
     colors = cycle(['b', 'g', 'r', 'c', 'm', 'y', 'k'])
@@ -113,7 +139,14 @@ def roofline(results=None, out=None, **kwargs):
                 row = {k: float(v) if k in ['index', 'mean_microseconds', 'arithmetic_intensity', 'tflops'] else v for k, v in row.items()}
                 row['ok'] = True if 'ok' not in row else row['ok'] == 'True'
                 data.append(row)
-        
+        if batch:
+            data = filter_batch(data, batch)
+        if dtype:
+            data = filter_dtype(data, dtype)
+        if model:
+            data = filter_model(data, model)
+        if len(data) == 0:
+            raise ValueError("No data to plot. If you set filters, there were no kernels with the target config")
         x = [item['arithmetic_intensity'] for item in data]
         y = [item['tflops'] for item in data]
         
@@ -123,7 +156,7 @@ def roofline(results=None, out=None, **kwargs):
     plt.yscale('log')
     plt.xlabel('Arithmetic Intensity (FLOP/byte)')
     plt.ylabel('Performance (TFLOP/s)')
-    plt.title('Roofline Plot of GEMM Performance')
+    plt.title('Roofline Plot of Kernel Performance')
     
     peak_memory_bandwidth = 5.3
     peak_compute = 1300
@@ -132,7 +165,12 @@ def roofline(results=None, out=None, **kwargs):
     y_memory = peak_memory_bandwidth * x_range
     y_compute = np.full_like(x_range, peak_compute)
     
-    plt.plot(x_range, y_memory, 'r-', label='Memory Bound')
+    y_cutoff = 1300
+    mask = (peak_memory_bandwidth * x_range) <= y_cutoff
+    x_filtered = x_range[mask]
+    y_memory_filtered = peak_memory_bandwidth * x_filtered
+
+    plt.plot(x_filtered, y_memory_filtered, 'r-', label='Memory Bound')
     plt.plot(x_range, y_compute, 'g-', label='Compute Bound')
     plt.plot(x_range, np.minimum(y_memory, y_compute), 'k-', linewidth=2, label='Roofline')
     

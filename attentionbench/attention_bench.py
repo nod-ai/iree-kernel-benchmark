@@ -32,12 +32,15 @@ if __name__ == "__main__":
         default=None,
     )
     parser.add_argument("--plot", help="location to save plot", default=None)
+    parser.add_argument("--batch", help="roofline on certain batch", type=int, default=None)
+    parser.add_argument("--dtype", help="roofline on certain dtype", default=None)
+    parser.add_argument("--model", help="roofline on certain model", default=None)
 
     args = parser.parse_args()
     logging.basicConfig(level=args.log_level)
 
     if args.roofline:
-        roofline(args.roofline, args.plot)
+        roofline(args.roofline, args.plot, args.batch, args.dtype, args.model)
         sys.exit()
 
     configs = get_attention_configs()

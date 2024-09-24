@@ -9,7 +9,7 @@ import sys
 from utils import *
 from problems import *
 
-def generate_mlir_content(M, K, N, tA, tB, dtype):
+def generate_mlir_content(M, N, K, tA, tB, dtype):
 
     mlir_template_A = f"""
 module {{
@@ -52,15 +52,15 @@ module {{
     return mlir_template
 
 
-def compile_shape(tag, M, K, N, tA, tB, dtype, vmfb_dict):
+def compile_shape(tag, M, N, K, tA, tB, dtype, vmfb_dict):
     if tA == "T" and tB == "T":
         return f"Can't transpose both inputs"
     
     # Generate MLIR content
-    mlir_content = generate_mlir_content(M, K, N, tA, tB, dtype)
+    mlir_content = generate_mlir_content(M, N, K, tA, tB, dtype)
     
     # Generate filenames
-    filename = f"gemm/mlir/gemm_{M}_{K}_{N}_{dtype}"
+    filename = f"gemm/mlir/gemm_{M}_{N}_{K}_{dtype}"
     if tA == "T":
         filename += "_tA"
     elif tB == "T":
@@ -84,7 +84,7 @@ def compile_shape(tag, M, K, N, tA, tB, dtype, vmfb_dict):
     ]
     ret_value, stdout = run_iree_command(exec_args)
     
-    vmfb_dict[vmfb_filename] = [tag, M, K, N, tA, tB, dtype]
+    vmfb_dict[vmfb_filename] = [tag, M, N, K, tA, tB, dtype]
     if ret_value == 0:
         return f"Successfully compiled {mlir_filename} to {vmfb_filename}"
 
@@ -99,12 +99,15 @@ if __name__ == "__main__":
     )
     parser.add_argument("--roofline", help="Comma seperated csv file list to generate roofline plot with", default=None)
     parser.add_argument("--plot", help="location to save plot", default=None)
+    parser.add_argument("--batch", help="roofline on certain batch", type=int, default=None)
+    parser.add_argument("--dtype", help="roofline on certain dtype", default=None)
+    parser.add_argument("--model", help="roofline on certain model", default=None)
     
     args = parser.parse_args()
     logging.basicConfig(level=args.log_level)
 
     if args.roofline:
-        roofline(args.roofline, args.plot)
+        roofline(args.roofline, args.plot, args.batch, args.dtype, args.model)
         sys.exit()
     
     shapes = []
@@ -150,8 +153,8 @@ if __name__ == "__main__":
         vmfb_filename = vmfb_filename.split("/")[-1]
         name = vmfb_filename.split(".")[0]
         M = input_list[1]
-        K = input_list[2]
-        N = input_list[3]
+        N = input_list[2]
+        K = input_list[3]
         tA = input_list[4]
         tB = input_list[5]
         dtype = input_list[6]
