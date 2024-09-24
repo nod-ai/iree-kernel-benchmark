@@ -50,7 +50,58 @@ class AttentionConfig:
         return total_flops
 
 
-def generate_mlir(config: AttentionConfig):
+@dataclass
+class TuningSpec:
+    wg_tiles: list[int]
+    M_warp: int
+    N_warp: int
+    intrinsic: str
+    waves_per_eu: Optional[int]
+    denorm_flush: bool
+
+    def get_lowering_config(self) -> str:
+        return (
+            f"#iree_codegen.lowering_config<"
+            + f"tile_sizes = [[{",".join([str(x) for x in self.wg_tiles])}]]"
+            + f">"
+        )
+
+    def get_mma_schedule(self) -> str:
+        return (
+            f"#iree_gpu.mma_schedule<"
+            + f"intrinsic = #iree_gpu.mma_layout<{self.intrinsic}>"
+            + f", subgroup_m_count = {self.M_warp}"
+            + f", subgroup_n_count = {self.N_warp}"
+            + f">"
+        )
+
+    def get_translation_info(self) -> str:
+        llvm_func_attrs = []
+        if self.waves_per_eu:
+            llvm_func_attrs += [f'"amdgpu-waves-per-eu" = "{self.waves_per_eu}"']
+        if self.denorm_flush:
+            llvm_func_attrs += [f'"denormal-fp-math-f32" = "preserve-sign"']
+        return (
+            f"#iree_codegen.translation_info<"
+            + f"LLVMGPUVectorDistribute"
+            + f" workgroup_size = [{self.N_warp * 64}, {self.M_warp}]"
+            + f" subgroup_size = 64"
+            + f" ,{{mma_schedule = {self.get_mma_schedule()}"
+            + f" , llvm_func_attrs = {{ {",".join(llvm_func_attrs)} }}"
+            + f"}}"
+            + f">"
+        )
+
+    def get_compilation_info(self) -> str:
+        return (
+            f"#iree_codegen.compilation_info<"
+            + f"lowering_config = {self.get_lowering_config()}"
+            + f", translation_info = {self.get_translation_info()}"
+            + f">"
+        )
+
+
+def generate_mlir(config: AttentionConfig, tuning: Optional[TuningSpec] = None):
     shapes = f"""\
 !dtype = {config.dtype}
 !Q     = tensor<{config.get_query_shape()}>
@@ -59,22 +110,31 @@ def generate_mlir(config: AttentionConfig):
 !O     = tensor<{config.get_output_shape()}>
 """
 
-    attn_kernel = """
+    spec = ""
+    if tuning:
+        spec = f"""\
+#tuning = {tuning.get_compilation_info()}
+"""
+
+    attn_kernel = f"""
 #Q = affine_map<(b, m, n, k1, k2) -> (b, m, k1)>
 #K = affine_map<(b, m, n, k1, k2) -> (b, k2, k1)>
 #V = affine_map<(b, m, n, k1, k2) -> (b, k2, n)>
 #O = affine_map<(b, m, n, k1, k2) -> (b, m, n)>
 
-func.func @main(%Q : !Q, %K : !K, %V : !V) -> !O {
+func.func @main(%Q : !Q, %K : !K, %V : !V) -> !O {{
   %scale = arith.constant 1.0 : !dtype
   %empty = tensor.empty() : !O
-  %O = iree_linalg_ext.attention { indexing_maps = [#Q, #K, #V, #O] }
+  %O = iree_linalg_ext.attention 
+       {{ indexing_maps = [#Q, #K, #V, #O]
+         {",compilation_info = #tuning" if tuning else ""}
+       }}
        ins(%Q, %K, %V, %scale : !Q, !K, !V, !dtype)
        outs(%empty : !O) -> !O
   return %O : !O
-}
+}}
 """
-    mlir_template = shapes + "\n" + attn_kernel
+    mlir_template = shapes + "\n" + spec + "\n" + attn_kernel
     return mlir_template
 
 
@@ -88,8 +148,11 @@ def compile_attention_config(
     mlir_file = kernel_dir / (config.get_name() + ".mlir")
     vmfb_file = vmfb_dir / (config.get_name() + ".vmfb")
 
+    # TODO: Use different tuning specs for different configs. This is just a
+    # general tuning config that worked well for sdxl shapes.
+    spec = TuningSpec([1, 128, 0, 0, 32], 4, 1, "MFMA_F32_32x32x8_F16", 2, True)
     # Generate mlir content
-    mlir_content = generate_mlir(config)
+    mlir_content = generate_mlir(config, spec)
 
     # Write MLIR content to file
     with open(mlir_file, "w") as f:

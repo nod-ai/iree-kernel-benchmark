@@ -40,7 +40,7 @@ def bert_attn_sweep(dtype: str) -> list[AttentionConfig]:
 
 
 def get_attention_configs() -> list[tuple[str, AttentionConfig]]:
-    configs : list[tuple[str, AttentionConfig]] = []
+    configs: list[tuple[str, AttentionConfig]] = []
     llm_configs = llm_sweep("f16")
     sdxl_configs = sdxl_unet_sweep("f16")
     bert_configs = bert_attn_sweep("f16")
