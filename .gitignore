@@ -24,6 +24,6 @@ wheelhouse
 *.whl
 
 # Gemm Bench
-gemm/
+gemm/vmfb/
 results/
 
