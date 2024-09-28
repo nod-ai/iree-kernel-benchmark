@@ -776,7 +776,7 @@ def gpt4compute(configs):
         if is_compute_bound(m, n, k, 2):
             configs.append(hgemm)
 
-            
+
 def gpt4clocktest(configs):
     """GPT4 compute bound GEMMs; FP16."""
     macM, macN = 128, 128
