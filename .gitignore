@@ -22,3 +22,8 @@ dist/
 wheelhouse
 *.egg-info
 *.whl
+
+# Gemm Bench
+gemm/
+results/
+
