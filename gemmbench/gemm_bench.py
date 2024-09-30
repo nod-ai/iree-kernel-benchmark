@@ -58,7 +58,7 @@ module {{
     return mlir_template
 
 
-def compile_shape(tag, M, N, K, tA, tB, dtype, vmfb_dict):
+def compile_shape(tag, M, N, K, tA, tB, dtype, target, extra_compiler_args, vmfb_dict):
     if tA == "T" and tB == "T":
         return f"Can't transpose both inputs"
 
@@ -84,11 +84,11 @@ def compile_shape(tag, M, N, K, tA, tB, dtype, vmfb_dict):
         "iree-compile",
         f"{mlir_filename}",
         "--iree-hal-target-backends=rocm",
-        "--iree-hip-target=gfx90a",
+        f"--iree-hip-target={target}",
         "--iree-llvmgpu-enable-prefetch=true",
         "-o",
         f"{vmfb_filename}",
-    ]
+    ] + extra_compiler_args
     ret_value, stdout = run_iree_command(exec_args)
 
     vmfb_dict[vmfb_filename] = [tag, M, N, K, tA, tB, dtype]
@@ -104,7 +104,15 @@ if __name__ == "__main__":
         type=str.upper,
         help="Set the logging level",
     )
-    parser.add_argument("--roofline", help="Comma seperated csv file list to generate roofline plot with", default=None)
+
+    parser.add_argument("--target", help="The IREE hip target to compile for", type=str, default="gfx942")
+    parser.add_argument(
+        "--Xiree_compile",
+        action='append',
+        default=[],
+        help="Extra command line arguments passed to the IREE compiler. This can be specified multiple times to pass multiple arguments."
+    )
+    parser.add_argument("--roofline", help="Comma separated csv file list to generate roofline plot with", default=None)
     parser.add_argument("--plot", help="location to save plot", default=None)
     parser.add_argument("--batch", help="roofline on certain batch", type=int, default=None)
     parser.add_argument("--dtype", help="roofline on certain dtype", default=None)
@@ -128,7 +136,7 @@ if __name__ == "__main__":
     all(shapes)
     shape_idx = 0
     for shape in shapes:
-        shape += (vmfb_dict,)
+        shape += (args.target, list(args.Xiree_compile), vmfb_dict,)
         shapes[shape_idx] = shape
         shape_idx += 1
 
