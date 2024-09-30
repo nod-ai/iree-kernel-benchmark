@@ -1,3 +1,9 @@
+# Copyright 2024 The IREE Authors
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions.
+# See https://llvm.org/LICENSE.txt for license information.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
 import os
 from tqdm import tqdm
 from multiprocessing import Pool, cpu_count, Manager
@@ -20,7 +26,7 @@ module {{
         %2 = linalg.matmul_transpose_a ins(%arg0, %arg1 : tensor<{K}x{M}x{dtype}>, tensor<{K}x{N}x{dtype}>) outs(%1 : tensor<{M}x{N}x{dtype}>) -> tensor<{M}x{N}x{dtype}>
         return %2 : tensor<{M}x{N}x{dtype}>
     }}
-}} 
+}}
 """
 
     mlir_template_B = f"""
@@ -32,7 +38,7 @@ module {{
         %2 = linalg.matmul_transpose_b ins(%arg0, %arg1 : tensor<{M}x{K}x{dtype}>, tensor<{N}x{K}x{dtype}>) outs(%1 : tensor<{M}x{N}x{dtype}>) -> tensor<{M}x{N}x{dtype}>
         return %2 : tensor<{M}x{N}x{dtype}>
     }}
-}} 
+}}
 """
 
     mlir_template = f"""module {{
@@ -43,7 +49,7 @@ module {{
         %2 = linalg.matmul ins(%arg0, %arg1 : tensor<{M}x{K}x{dtype}>, tensor<{K}x{N}x{dtype}>) outs(%1 : tensor<{M}x{N}x{dtype}>) -> tensor<{M}x{N}x{dtype}>
         return %2 : tensor<{M}x{N}x{dtype}>
     }}
-}} 
+}}
 """
     if tA == "T":
         return mlir_template_A
@@ -55,10 +61,10 @@ module {{
 def compile_shape(tag, M, N, K, tA, tB, dtype, target, extra_compiler_args, vmfb_dict):
     if tA == "T" and tB == "T":
         return f"Can't transpose both inputs"
-    
+
     # Generate MLIR content
     mlir_content = generate_mlir_content(M, N, K, tA, tB, dtype)
-    
+
     # Generate filenames
     filename = f"gemm/mlir/gemm_{M}_{N}_{K}_{dtype}"
     if tA == "T":
@@ -68,22 +74,23 @@ def compile_shape(tag, M, N, K, tA, tB, dtype, target, extra_compiler_args, vmfb
     mlir_filename = filename + ".mlir"
     filename = filename.replace("mlir", "vmfb")
     vmfb_filename = filename + ".vmfb"
-    
+
     # Write MLIR content to file
     with open(mlir_filename, 'w') as f:
         f.write(mlir_content)
-    
+
     # Compile MLIR to VMFB
     exec_args = [
         "iree-compile",
         f"{mlir_filename}",
         "--iree-hal-target-backends=rocm",
         f"--iree-hip-target={target}",
+        "--iree-llvmgpu-enable-prefetch=true",
         "-o",
         f"{vmfb_filename}",
     ] + extra_compiler_args
     ret_value, stdout = run_iree_command(exec_args)
-    
+
     vmfb_dict[vmfb_filename] = [tag, M, N, K, tA, tB, dtype]
     if ret_value == 0:
         return f"Successfully compiled {mlir_filename} to {vmfb_filename}"
@@ -110,17 +117,17 @@ if __name__ == "__main__":
     parser.add_argument("--batch", help="roofline on certain batch", type=int, default=None)
     parser.add_argument("--dtype", help="roofline on certain dtype", default=None)
     parser.add_argument("--model", help="roofline on certain model", default=None)
-    
+
     args = parser.parse_args()
     logging.basicConfig(level=args.log_level)
 
     if args.roofline:
         roofline(args.roofline, args.plot, args.batch, args.dtype, args.model)
         sys.exit()
-    
+
     shapes = []
     print(f"Generated {len(shapes)} gemm shapes.")
-    
+
     num_cpus = max(1, cpu_count() - 20)
     print(f"Using {num_cpus} CPUs for parallel processing.")
 
@@ -135,7 +142,7 @@ if __name__ == "__main__":
 
     with Pool(num_cpus) as pool:
         results = list(tqdm(pool.starmap(compile_shape, shapes)))
-    
+
     error_count = 0
     for result in results:
         if 'error' in result.lower():
@@ -166,7 +173,7 @@ if __name__ == "__main__":
         tA = input_list[4]
         tB = input_list[5]
         dtype = input_list[6]
-        
+
         if tA == "T":
             inp1 = f"{K}x{M}x{dtype}"
             inp2 = f"{K}x{N}x{dtype}"
@@ -212,15 +219,15 @@ if __name__ == "__main__":
             ok
         ))
         index += 1
-    
+
     fieldnames = [
-        'index', 
+        'index',
         'tag',
         'name',
-        'M', 
-        'N', 
-        'K', 
-        'dtype', 
+        'M',
+        'N',
+        'K',
+        'dtype',
         'tA',
         'tB',
         'mean_microseconds',
