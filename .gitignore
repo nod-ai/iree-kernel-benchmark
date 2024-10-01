@@ -23,7 +23,8 @@ wheelhouse
 *.egg-info
 *.whl
 
-# Gemm Bench
+# Bench Artifacts
 gemm/vmfb/
+attention/vmfb/
+conv/vmfb/
 results/
-
