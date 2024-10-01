@@ -33,6 +33,12 @@ python convbench/shark_conv.py
 python gemmbench/gemm_bench.py
 ```
 
+### TK GEMM Benchmarking
+
+```
+python gemmbench/gemm_bench.py --tk
+```
+
 ### Attention Benchmarking
 
 ```
