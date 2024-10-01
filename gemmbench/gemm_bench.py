@@ -15,11 +15,11 @@ import argparse
 import sys
 from utils import *
 from gemm_utils import *
-from problems import get_gemm_configs
+from problems import get_gemm_configs, get_tk_gemm_configs
 
 
-def compile_gemm(tag, config, kernel_dir, vmfb_dir, target, extra_compiler_args):
-    mlir_file, vmfb_file = compile_gemm_config(config, kernel_dir, vmfb_dir, target, extra_compiler_args)
+def compile_gemm(tag, config, kernel_dir, vmfb_dir, target, extra_compiler_args, tk):
+    mlir_file, vmfb_file = compile_gemm_config(config, kernel_dir, vmfb_dir, target, extra_compiler_args, tk)
     return (tag, config, mlir_file, vmfb_file)
 
 
@@ -45,6 +45,12 @@ if __name__ == "__main__":
     parser.add_argument("--batch", help="roofline on certain batch", type=int, default=None)
     parser.add_argument("--dtype", help="roofline on certain dtype", default=None)
     parser.add_argument("--model", help="roofline on certain model", default=None)
+    parser.add_argument(
+        "--tk",
+        action="store_true",
+        default=False,
+        help="Option to run gemm kernels using Turbine Kernels",
+    )
 
     args = parser.parse_args()
     logging.basicConfig(level=args.log_level)
@@ -52,8 +58,12 @@ if __name__ == "__main__":
     if args.roofline:
         roofline(args.roofline, args.plot, args.batch, args.dtype, args.model)
         sys.exit()
-
-    configs = get_gemm_configs()
+    
+    tk = args.tk
+    if tk:
+        configs = get_tk_gemm_configs()
+    else:
+        configs = get_gemm_configs()
     print(f"Generated {len(configs)} gemm configs.")
 
     num_cpus = max(1, cpu_count() - 20)
@@ -71,7 +81,7 @@ if __name__ == "__main__":
     extra_compiler_args = list(args.Xiree_compile)
 
     args = itertools.starmap(
-        lambda tag, config: (tag, config, kernel_dir, vmfb_dir, target, extra_compiler_args), configs
+        lambda tag, config: (tag, config, kernel_dir, vmfb_dir, target, extra_compiler_args, tk), configs
     )
     with Pool(num_cpus) as pool:
         compilation_results = list(tqdm(pool.starmap(compile_gemm, list(args))))
@@ -90,7 +100,7 @@ if __name__ == "__main__":
 
     results = []
     index = 0
-    output_csv = "results/iree_gemm_new.csv"
+    output_csv = "results/iree_gemm_tk.csv"
     csv_dir = os.path.dirname(output_csv)
     if not os.path.exists(csv_dir):
         os.makedirs(csv_dir)
@@ -107,11 +117,15 @@ if __name__ == "__main__":
             f"--device=hip",
             "--device_allocator=caching",
             f"--module={vmfb_filename}",
-            "--function=main",
             f"--input={inp1}",
             f"--input={inp2}",
             "--benchmark_repetitions=3",
         ]
+
+        if tk:
+            exec_args += ["--function=isolated_benchmark"] 
+        else:
+            exec_args += ["--function=main"]
 
         # iree benchmark kernels
         ret_value, cmd_out = run_iree_command(exec_args)

@@ -44,7 +44,7 @@ if __name__ == "__main__":
         sys.exit()
 
     configs = get_conv_configs()
-    print(f"Generated {len(configs)} attention configs.")
+    print(f"Generated {len(configs)} conv configs.")
 
     num_cpus = max(1, cpu_count() - 20)
     print(f"Using {num_cpus} CPUs for parallel processing.")
@@ -100,8 +100,6 @@ if __name__ == "__main__":
             f"--input={filter_shape}",
             "--benchmark_repetitions=3",
         ]
-
-        print(exec_args)
 
         # iree benchmark kernels
         ret_value, cmd_out = run_iree_command(exec_args)

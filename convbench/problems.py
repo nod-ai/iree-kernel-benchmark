@@ -18,7 +18,7 @@ def resnet_sweep(op: str, input_dtype: str, output_dtype: str) -> list[ConvConfi
     return configs
 
 def get_conv_configs() -> list[tuple[str, ConvConfig]]:
-    configs: list[tuple[str, AttentionConfig]] = []
+    configs: list[tuple[str, ConvConfig]] = []
     resnet_configs = resnet_sweep("conv_2d_nchw_fchw", "f32", "f32")
     resnet_configs += resnet_sweep("conv_2d_nhwc_hwcf_q", "i8", "i32")
 

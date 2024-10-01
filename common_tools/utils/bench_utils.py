@@ -157,9 +157,20 @@ def roofline(results=None, out=None, batch=None, dtype=None, model=None, **kwarg
     plt.xlabel('Arithmetic Intensity (FLOP/byte)')
     plt.ylabel('Performance (TFLOP/s)')
     plt.title('Roofline Plot of Kernel Performance')
+
+    tflops_map = {
+        "f32": 653.7,
+        "f16": 1307.4,
+        "bf16": 1307.4,
+        "f8E4M3FNUZ": 2614.9,
+        "i8": 2614.9,
+    }
     
     peak_memory_bandwidth = 5.3
-    peak_compute = 1300
+    if dtype is not None:
+        peak_compute = tflops_map[dtype]
+    else:
+        peak_compute = 1307.4
 
     x_range = np.logspace(np.log10(min(x)), np.log10(max(max(x), 150)), 100)
     y_memory = peak_memory_bandwidth * x_range

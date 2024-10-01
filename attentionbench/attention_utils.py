@@ -116,7 +116,7 @@ def generate_mlir(config: AttentionConfig, tuning: Optional[TuningSpec] = None):
 """
 
     spec = ""
-    if tuning:
+    if tuning and config.dtype == "f16":
         spec = f"""\
 #tuning = {tuning.get_compilation_info()}
 """
@@ -133,7 +133,7 @@ func.func @main(%Q : !Q, %K : !K, %V : !V) -> !O {{
   %empty = tensor.empty() : !O
   %O = iree_linalg_ext.attention 
        {{ indexing_maps = [#Q, #K, #V, #S, #O]
-         {",compilation_info = #tuning" if tuning else ""}
+         {",compilation_info = #tuning" if tuning and config.dtype == "f16" else ""}
        }}
        ins(%Q, %K, %V, %scale : !Q, !K, !V, !dtype)
        outs(%empty : !O) -> !O

@@ -2,7 +2,11 @@ from utils import *
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
-
+import shark_turbine.kernel as tk
+import shark_turbine.kernel.lang as tkl
+import shark_turbine.kernel.wave as tkw
+from shark_turbine.kernel.lang.global_symbols import *
+import torch
 
 @dataclass
 class GemmConfig:
@@ -100,9 +104,92 @@ module {{
         return mlir_template_B
     return mlir_template
 
+def generate_tk_mlir(config: GemmConfig):
+    # Input sizes
+    M = tkl.sym.M
+    N = tkl.sym.N
+    K = tkl.sym.K
+    # Workgroup tile sizes
+    BLOCK_M = tkl.sym.BLOCK_M
+    BLOCK_N = tkl.sym.BLOCK_N
+    BLOCK_K = tkl.sym.BLOCK_K
+    # Address space (for GPU, shared(1) or global(0))
+    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+    # Other hyperparameters
+    LOAD_ELEMS_PER_THREAD = tkl.sym.LOAD_ELEMS_PER_THREAD
+    STORE_ELEMS_PER_THREAD = tkl.sym.STORE_ELEMS_PER_THREAD
+
+    # Expose user-constraints
+    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.TilingConstraint(K, BLOCK_K)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
+
+    constraints += [
+        tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(2, 2, 1))
+    ]
+
+    # Wave-level micro-kernel.
+    # Since warps are not directly addressable, there is no
+    # explicit notion of a warp id (like a workgroup or thread id).
+    # This kernel uses the input sizes M, N, K throughout, as the tiling
+    # and data movement strategy is determined during the compilation process.
+    # These can be influenced by introducing constraints.
+    @tkw.wave(constraints)
+    def gemm(
+        a: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f16],
+        b: tkl.Memory[N, K, ADDRESS_SPACE, tkl.f16],
+        c: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
+    ):
+        c_reg = tkl.Register[M, N, tkl.f32](0.0)
+
+        # This microkernel encodes the fact that if the reduction
+        # dimension were tiled, then we would need to materialize a loop.
+        @tkw.reduction(K, init_args=[c_reg])
+        def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
+            # a_reg: tkw.Register[M, K, tkl.f16]
+            a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            # b_reg: tkw.Register[N, K, tkl.f16]
+            b_reg = tkw.read(b, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            # acc: tkw.Register[M, N, tkl.f32]
+            acc = tkw.mma(a_reg, b_reg, acc)
+            return acc
+
+        # repeat represents the results of the loop
+        tkw.write(repeat, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
+    
+    shape = [config.M, config.N, config.K]
+    dtype_map = {
+        "f16": torch.float16,
+    }
+    dtype = dtype_map[config.dtype]
+
+    hyperparams = {
+        ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
+        LOAD_ELEMS_PER_THREAD: 4,
+        STORE_ELEMS_PER_THREAD: 4,
+        BLOCK_M: 64,
+        BLOCK_N: 64,
+        BLOCK_K: 32,
+        M: shape[0],
+        N: shape[1],
+        K: shape[2],
+    }
+    config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
+    with tk.gen.TestLaunchContext(
+        hyperparams, canonicalize=True, run=True, run_config=config
+    ):
+        a = torch.randn(shape[0], shape[2], dtype=dtype)
+        b = torch.randn(shape[1], shape[2], dtype=dtype)
+        c = torch.zeros(shape[0], shape[1], dtype=torch.float32)
+        mb = gemm(a, b, c)
+
+        return mb.module_op.get_asm()
+
 
 def compile_gemm_config(
-    config: GemmConfig, kernel_dir: Path, vmfb_dir: Path, target, extra_compiler_args
+    config: GemmConfig, kernel_dir: Path, vmfb_dir: Path, target, extra_compiler_args, tk
 ) -> tuple[Path, Optional[Path]]:
     mlir_file = kernel_dir / (config.get_name() + ".mlir")
     vmfb_file = vmfb_dir / (config.get_name() + ".vmfb")
@@ -111,7 +198,10 @@ def compile_gemm_config(
         os.makedirs(vmfb_dir)
 
     # Generate mlir content
-    mlir_content = generate_mlir(config)
+    if tk:
+        mlir_content = generate_tk_mlir(config)
+    else:
+        mlir_content = generate_mlir(config)
 
     # Write MLIR content to file
     with open(mlir_file, "w") as f:
@@ -131,7 +221,7 @@ def compile_gemm_config(
     print(" ".join(exec_args))
 
     ret_value, stderr = run_iree_command(exec_args)
-    if ret_value != 0:
+    if ret_value == 0:
         print(f"Successfully compiled {mlir_file} to {vmfb_file}")
     else:
         error_file = vmfb_dir / (config.get_name() + "_error.txt")
