@@ -18,9 +18,11 @@ jobs:
         run: |
           python3.11 -m venv bench_venv
           source bench_venv/bin/activate
+          pip install --upgrade pip
           pip install --find-links https://iree.dev/pip-release-links.html iree-compiler iree-runtime --upgrade
           pip install -r requirements.txt
           pip install --no-compile --pre --upgrade -e common_tools
+          pip install shark-turbine@git+https://github.com/iree-org/iree-turbine.git@main
 
       - name: Convolutions
         run: |
@@ -31,6 +33,11 @@ jobs:
         run: |
           source bench_venv/bin/activate
           python attentionbench/attention_bench.py
+      
+      - name: TK GEMM
+        run: |
+          source bench_venv/bin/activate
+          python gemmbench/gemm_bench.py --tk
 
       - name: GEMM
         run: |
@@ -40,10 +47,13 @@ jobs:
       - name: Roofline Plots
         run: |
           source bench_venv/bin/activate
-          python convbench/shark_conv.py --roofline results/iree_conv.csv --plot results/iree_conv.png
-          python convbench/shark_conv.py --roofline results/iree_attention.csv --plot results/iree_attention.png
+          python convbench/shark_conv.py --roofline results/iree_conv.csv --plot results/iree_conv_i8.png --dtype i8
+          python convbench/shark_conv.py --roofline results/iree_conv.csv --plot results/iree_conv_f32.png --dtype f32
+          python convbench/shark_conv.py --roofline results/iree_attention.csv --plot results/iree_attention_fp16.png --dtype f16
+          python convbench/shark_conv.py --roofline results/iree_attention.csv --plot results/iree_attention_fp8.png --dtype f8E4M3FNUZ
           python convbench/shark_conv.py --roofline results/iree_gemm.csv --plot results/iree_gemm.png
-          python convbench/shark_conv.py --roofline results/iree_gemm.csv,results/iree_attention.csv,results/iree_conv.csv --plot results/combined.png
+          python convbench/shark_conv.py --roofline results/iree_gemm_tk.csv --plot results/iree_gemm_tk.png
+          python convbench/shark_conv.py --roofline results/iree_gemm.csv,results/iree_gemm_tk.csv,results/iree_attention.csv,results/iree_conv.csv --plot results/combined.png
 
       - name: Upload benchmark results
         uses: actions/upload-artifact@v4
