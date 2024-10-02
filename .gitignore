@@ -25,7 +25,7 @@ wheelhouse
 bench_venv/
 
 # Bench Artifacts
-gemm/vmfb/
-attention/vmfb/
-conv/vmfb/
+attention/
+conv/
+gemm/
 results/
