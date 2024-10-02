@@ -6,6 +6,7 @@
 
 from gemm_utils import GemmConfig
 
+
 def is_compute_bound(M, N, K, bpe):
     """Is this GEMM compute (or memory) bound?"""
     magic_ratio = 64
@@ -639,19 +640,13 @@ UNET = [
     (8192, 5120, 640),
 ]
 
+
 def llama13bmatvec(dtype: str) -> list[GemmConfig]:
     configs = []
     """LLAMA 13b, single batch, FP16."""
     for m, n, k, model, gcount in LLAMA:
         if n == 1 and model == "13b":
-            configs.append(GemmConfig(
-                m,
-                n,
-                k,
-                "T",
-                "N",
-                dtype
-            ))
+            configs.append(GemmConfig(m, n, k, "T", "N", dtype))
     return configs
 
 
@@ -660,14 +655,7 @@ def llama13bmatvecbf16(dtype: str) -> list[GemmConfig]:
     """LLAMA 13b, single batch, BF16."""
     for m, n, k, model, gcount in LLAMA:
         if n == 1 and model == "13b":
-            configs.append(GemmConfig(
-                m,
-                n,
-                k,
-                "T",
-                "N",
-                dtype
-            ))
+            configs.append(GemmConfig(m, n, k, "T", "N", dtype))
     return configs
 
 
@@ -676,14 +664,7 @@ def llama70bmatvec(dtype: str) -> list[GemmConfig]:
     configs = []
     for m, n, k, model, gcount in LLAMA:
         if n == 1 and model == "70b":
-            configs.append(GemmConfig(
-                m,
-                n,
-                k,
-                "T",
-                "N",
-                dtype
-            ))
+            configs.append(GemmConfig(m, n, k, "T", "N", dtype))
     return configs
 
 
@@ -692,14 +673,7 @@ def llama70bmatvecbf16(dtype: str) -> list[GemmConfig]:
     configs = []
     for m, n, k, model, gcount in LLAMA:
         if n == 1 and model == "70b":
-            configs.append(GemmConfig(
-                m,
-                n,
-                k,
-                "T",
-                "N",
-                dtype
-            ))
+            configs.append(GemmConfig(m, n, k, "T", "N", dtype))
     return configs
 
 
@@ -709,14 +683,7 @@ def llama13bskinny(dtype: str) -> list[GemmConfig]:
     for m, n, k, model, gcount in LLAMA:
         if n == 1 and model == "13b":
             for batch in [2, 4, 8, 16, 32]:
-                configs.append(GemmConfig(
-                    m,
-                    batch,
-                    k,
-                    "T",
-                    "N",
-                    dtype
-                ))
+                configs.append(GemmConfig(m, batch, k, "T", "N", dtype))
     return configs
 
 
@@ -726,14 +693,7 @@ def llama13bskinnybf16(dtype: str) -> list[GemmConfig]:
     for m, n, k, model, gcount in LLAMA:
         if n == 1 and model == "13b":
             for batch in [2, 4, 8, 16, 32]:
-                configs.append(GemmConfig(
-                    m,
-                    batch,
-                    k,
-                    "T",
-                    "N",
-                    dtype
-                ))
+                configs.append(GemmConfig(m, batch, k, "T", "N", dtype))
     return configs
 
 
@@ -743,14 +703,7 @@ def llama70bskinny(dtype: str) -> list[GemmConfig]:
     for m, n, k, model, gcount in LLAMA:
         if n == 1 and model == "70b":
             for batch in [2, 4, 8, 16, 32]:
-                configs.append(GemmConfig(
-                    m,
-                    batch,
-                    k,
-                    "T",
-                    "N",
-                    dtype
-                ))
+                configs.append(GemmConfig(m, batch, k, "T", "N", dtype))
     return configs
 
 
@@ -760,14 +713,7 @@ def llama70bskinnybf16(dtype: str) -> list[GemmConfig]:
     for m, n, k, model, gcount in LLAMA:
         if n == 1 and model == "70b":
             for batch in [2, 4, 8, 16, 32]:
-                configs.append(GemmConfig(
-                    m,
-                    batch,
-                    k,
-                    "T",
-                    "N",
-                    dtype
-                ))
+                configs.append(GemmConfig(m, batch, k, "T", "N", dtype))
     return configs
 
 
@@ -796,20 +742,21 @@ def gpt4clocktest(dtype: str) -> list[GemmConfig]:
     configs = []
     macM, macN = 128, 128
     M, N, K = 2048, 2048, 8192
-    for mult in range(1, M//macM + 1):
+    for mult in range(1, M // macM + 1):
         configs.append(GemmConfig(mult * macM, mult * macN, K, "N", "N", dtype))
     return configs
 
 
 def test(dtype: str) -> list[GemmConfig]:
     """GPT4 compute bound GEMMs; FP16."""
-    #M, N, K = 2048, 2048, 8192
+    # M, N, K = 2048, 2048, 8192
     configs = []
     M, N, K = 128, 128, 8192
     configs.append(GemmConfig(M, N, K, "N", "N", dtype))
     M, N, K = 2048, 2048, 8192
     configs.append(GemmConfig(M, N, K, "N", "N", dtype))
     return configs
+
 
 def tk_default(dtype: str) -> list[GemmConfig]:
     """TK Shapes."""
@@ -821,6 +768,7 @@ def tk_default(dtype: str) -> list[GemmConfig]:
     M, N, K = 4096, 20480, 2560
     configs.append(GemmConfig(M, N, K, "N", "T", dtype))
     return configs
+
 
 def tk_unet(dtype: str) -> list[GemmConfig]:
     """UNET Shapes for TK."""
@@ -840,7 +788,7 @@ def llama70bmemory(dtype: str) -> list[GemmConfig]:
 
 def compute(dtype: str) -> list[GemmConfig]:
     """Compute bound GEMMs."""
-    #for dtype in ["fp16", "bf16", "fp8"]:
+    # for dtype in ["fp16", "bf16", "fp8"]:
     configs = []
     for dtype in [dtype]:
         for tA in ["N", "T"]:
@@ -848,6 +796,7 @@ def compute(dtype: str) -> list[GemmConfig]:
                 if tA == "N" or tB == "N":
                     configs.append(GemmConfig(4096, 4096, 8192, tA, tB, dtype))
     return configs
+
 
 def unet(dtype: str) -> list[GemmConfig]:
     configs = []
@@ -858,6 +807,7 @@ def unet(dtype: str) -> list[GemmConfig]:
                     if tA == "N" or tB == "N":
                         configs.append(GemmConfig(m, n, k, tA, tB, dtype))
     return configs
+
 
 def get_gemm_configs() -> list[tuple[str, GemmConfig]]:
     configs: list[tuple[str, GemmConfig]] = []
@@ -886,15 +836,37 @@ def get_gemm_configs() -> list[tuple[str, GemmConfig]]:
     configs += [("compute", x) for x in compute_configs]
     configs += [("unet", x) for x in unet_configs]
     configs += [("tk", x) for x in tk_default_configs]
-    
+
     return configs
 
-def get_tk_gemm_configs() -> list[tuple[str, GemmConfig]]:
-    configs: list[tuple[str, GemmConfig]] = []
-    tk_default_configs = tk_default("f16")
-    tk_unet_configs = tk_unet("f16")
 
-    configs += [("tk", x) for x in tk_default_configs]
-    configs += [("unet", x) for x in tk_unet_configs]
-    
+def get_tk_gemm_configs() -> list[tuple[str, GemmConfig]]:
+    # Currently, only f16 and transposed B is supported.
+    configs: list[tuple[str, GemmConfig]] = []
+    llama13bmatvec_configs = llama13bmatvec("f16")
+    llama70bmatvec_configs = llama70bmatvec("f16")
+    llama13bskinny_configs = llama13bskinny("f16")
+    llama70bskinny_configs = llama70bskinny("f16")
+    gpt4compute_configs = gpt4compute("f16")
+    compute_configs = compute("f16")
+    unet_configs = unet("f16")
+
+    configs += [("llama13bmatvec", x) for x in llama13bmatvec_configs]
+    configs += [("llama70bmatvec", x) for x in llama70bmatvec_configs]
+    configs += [("llama13bskinny", x) for x in llama13bskinny_configs]
+    configs += [("llama70bskinny", x) for x in llama70bskinny_configs]
+    configs += [("gpt4compute", x) for x in gpt4compute_configs]
+    configs += [("compute", x) for x in compute_configs]
+    configs += [("unet", x) for x in unet_configs]
+
+    # Convert all matmuls to transpose_b.
+    modified_configs = []
+    for name, kernel_configs in configs:
+        modified_kernel_configs = []
+        for config in kernel_configs:
+            config.tA = "N"
+            config.tB = "T"
+            modified_kernel_configs.append(config)
+        modified_configs.append((name, modified_kernel_configs))
+
     return configs
