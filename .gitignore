@@ -22,6 +22,7 @@ dist/
 wheelhouse
 *.egg-info
 *.whl
+bench_venv/
 
 # Bench Artifacts
 gemm/vmfb/
