@@ -73,7 +73,7 @@ if __name__ == "__main__":
 
     if args.roofline:
         for dtype in requested_dtypes:
-            roofline(args.roofline, args.plot, args.batch, dtype, args.model)
+            roofline(args.roofline, f"{args.plot}_{dtype}", args.batch, dtype, args.model)
         sys.exit()
 
     tk = args.tk
