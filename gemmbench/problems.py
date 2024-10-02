@@ -6,6 +6,9 @@
 
 from gemm_utils import GemmConfig
 
+import re
+
+
 def is_compute_bound(M, N, K, bpe):
     """Is this GEMM compute (or memory) bound?"""
     magic_ratio = 64
@@ -860,34 +863,46 @@ def unet(dtype: str) -> list[GemmConfig]:
     return configs
 
 def get_gemm_configs() -> list[tuple[str, GemmConfig]]:
-    configs: list[tuple[str, GemmConfig]] = []
-    llama13bmatvec_configs = llama13bmatvec("f16")
+    llama13bmatvec_configs: list[GemmConfig] = []
+    llama13bmatvec_configs += llama13bmatvec("f16")
     llama13bmatvec_configs += llama13bmatvecbf16("bf16")
-    llama70bmatvec_configs = llama70bmatvec("f16")
+
+    llama70bmatvec_configs: list[GemmConfig] = []
+    llama70bmatvec_configs += llama70bmatvec("f16")
     llama70bmatvec_configs += llama70bmatvecbf16("bf16")
-    llama13bskinny_configs = llama13bskinny("f16")
+
+    llama13bskinny_configs: list[GemmConfig] = []
+    llama13bskinny_configs += llama13bskinny("f16")
     llama13bskinny_configs += llama13bskinnybf16("bf16")
-    llama70bskinny_configs = llama70bskinny("f16")
+
+    llama70bskinny_configs: list[GemmConfig] = []
+    llama70bskinny_configs += llama70bskinny("f16")
     llama70bskinny_configs += llama70bskinnybf16("bf16")
+
     gpt4compute_configs = gpt4compute("f16")
     llama70bmemory_configs = llama70bmemory("bf16")
     tk_default_configs = tk_default("f16")
-    compute_configs = compute("f16")
+
+    compute_configs: list[GemmConfig] = []
+    compute_configs += compute("f16")
     compute_configs += compute("bf16")
-    unet_configs = unet("f16")
+
+    unet_configs: list[GemmConfig] = []
+    unet_configs += unet("f16")
     unet_configs += unet("bf16")
 
-    configs += [("llama13bmatvec", x) for x in llama13bmatvec_configs]
-    configs += [("llama70bmatvec", x) for x in llama70bmatvec_configs]
-    configs += [("llama13bskinny", x) for x in llama13bskinny_configs]
-    configs += [("llama70bskinny", x) for x in llama70bskinny_configs]
-    configs += [("gpt4compute", x) for x in gpt4compute_configs]
-    configs += [("llama70bmemory", x) for x in llama70bmemory_configs]
-    configs += [("compute", x) for x in compute_configs]
-    configs += [("unet", x) for x in unet_configs]
-    configs += [("tk", x) for x in tk_default_configs]
-    
-    return configs
+    all_configs: list[tuple[str, GemmConfig]] = []
+    all_configs += [("llama13bmatvec", x) for x in llama13bmatvec_configs]
+    all_configs += [("llama70bmatvec", x) for x in llama70bmatvec_configs]
+    all_configs += [("llama13bskinny", x) for x in llama13bskinny_configs]
+    all_configs += [("llama70bskinny", x) for x in llama70bskinny_configs]
+    all_configs += [("gpt4compute", x) for x in gpt4compute_configs]
+    all_configs += [("llama70bmemory", x) for x in llama70bmemory_configs]
+    all_configs += [("compute", x) for x in compute_configs]
+    all_configs += [("unet", x) for x in unet_configs]
+    all_configs += [("tk", x) for x in tk_default_configs]
+
+    return all_configs
 
 def get_tk_gemm_configs() -> list[tuple[str, GemmConfig]]:
     configs: list[tuple[str, GemmConfig]] = []
@@ -896,5 +911,19 @@ def get_tk_gemm_configs() -> list[tuple[str, GemmConfig]]:
 
     configs += [("tk", x) for x in tk_default_configs]
     configs += [("unet", x) for x in tk_unet_configs]
-    
     return configs
+
+def get_matching_configs(tagged_configs: list[tuple[str, GemmConfig]],
+                         dtypes: list[str], variants: list[str], tag_regex: str) -> list[tuple[str, GemmConfig]]:
+    tag_re = re.compile(tag_regex)
+    matching_configs: list[tuple[str, GemmConfig]] = []
+    for tag, config in tagged_configs:
+        if config.dtype not in dtypes:
+            continue
+        if f"{config.tA}{config.tB}" not in variants:
+            continue
+        if not tag_re.match(tag):
+            continue
+        matching_configs.append((tag, config))
+
+    return matching_configs
