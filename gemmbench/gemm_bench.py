@@ -15,7 +15,7 @@ import argparse
 import sys
 from utils import *
 from gemm_utils import *
-from problems import get_gemm_configs, get_tk_gemm_configs
+from problems import get_gemm_configs, get_tk_gemm_configs, get_matching_configs
 
 
 def compile_gemm(tag, config, kernel_dir, vmfb_dir, target, extra_compiler_args, tk):
@@ -40,33 +40,48 @@ if __name__ == "__main__":
         default=[],
         help="Extra command line arguments passed to the IREE compiler. This can be specified multiple times to pass multiple arguments."
     )
+    parser.add_argument(
+        "--dtypes", action='append', help="List of data types to benchmark. Defaults to all supported types."
+    )
+    parser.add_argument(
+        "--variants",
+        action='append',
+        help="List of matmul variants to benchmark. Default to all variants: NN, NT, TN, and TT."
+    )
+    parser.add_argument(
+        "--tag-regex",
+        help="Regular expression for allowed benchmark tags. Defaults to all tags allowed.",
+        default=".*"
+    )
     parser.add_argument("--roofline", help="Comma separated csv file list to generate roofline plot with", default=None)
     parser.add_argument("--plot", help="location to save plot", default=None)
     parser.add_argument("--batch", help="roofline on certain batch", type=int, default=None)
-    parser.add_argument("--dtype", help="roofline on certain dtype", default=None)
     parser.add_argument("--model", help="roofline on certain model", default=None)
     parser.add_argument(
         "--tk",
         action="store_true",
         default=False,
-        help="Option to run gemm kernels using Turbine Kernels",
+        help="Run gemm kernels using Turbine Kernels",
     )
 
     args = parser.parse_args()
+    # Handle default values here, since 'append' is not compatible with defaulted lists.
+    requested_dtypes = ["f16", "bf16"] if not args.dtypes else list(args.dtypes)
+    requested_variants = ["NN", "NT", "TN", "TT"] if not args.variants else list(args.variants)
+
     logging.basicConfig(level=args.log_level)
 
     if args.roofline:
-        roofline(args.roofline, args.plot, args.batch, args.dtype, args.model)
+        for dtype in requested_dtypes:
+            roofline(args.roofline, f"{args.plot}_{dtype}", args.batch, dtype, args.model)
         sys.exit()
-    
+
     tk = args.tk
-    if tk:
-        configs = get_tk_gemm_configs()
-    else:
-        configs = get_gemm_configs()
+    configs = get_tk_gemm_configs() if tk else get_gemm_configs()
+    configs = get_matching_configs(configs, requested_dtypes, requested_variants, args.tag_regex)
     print(f"Generated {len(configs)} gemm configs.")
 
-    num_cpus = max(1, cpu_count() - 20)
+    num_cpus = max(1, max(cpu_count() // 2, 1))
     print(f"Using {num_cpus} CPUs for parallel processing.")
 
     manager = Manager()
@@ -125,7 +140,7 @@ if __name__ == "__main__":
         ]
 
         if tk:
-            exec_args += ["--function=isolated_benchmark"] 
+            exec_args += ["--function=isolated_benchmark"]
         else:
             exec_args += ["--function=main"]
 
