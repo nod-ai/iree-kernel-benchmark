@@ -9,6 +9,14 @@ import matplotlib.pyplot as plt
 from itertools import cycle
 import numpy as np
 import sys
+import hashlib
+
+def generate_md5_hex(file_path):
+    md5 = hashlib.md5()
+    with open(file_path, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            md5.update(chunk)
+    return md5.hexdigest()
 
 BenchmarkResult = namedtuple(
     "BenchmarkResult", "benchmark_name time cpu_time iterations user_counters"

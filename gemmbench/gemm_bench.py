@@ -124,6 +124,7 @@ if __name__ == "__main__":
 
     for vmfb_filename, value in vmfb_dict.items():
         tag, config = value
+        vmfb_hash = generate_md5_hex(vmfb_filename)
         name = config.get_name()
 
         inp1 = config.get_inp1()
@@ -157,7 +158,7 @@ if __name__ == "__main__":
         tflops_per_second = (flops / 1e12) / (benchmark_gemm_mean_time_us / 1e6)
 
         results.append((
-            index, tag, name, config.M, config.N, config.K, config.dtype, config.tA, config.tB,
+            index, tag, name, vmfb_hash, config.M, config.N, config.K, config.dtype, config.tA, config.tB,
             round(benchmark_gemm_mean_time_us, 4),
             round(arithmetic_intensity, 4),
             round(tflops_per_second, 4),
@@ -169,6 +170,7 @@ if __name__ == "__main__":
         'index',
         'tag',
         'name',
+        'vmfb_hash',
         'M',
         'N',
         'K',
