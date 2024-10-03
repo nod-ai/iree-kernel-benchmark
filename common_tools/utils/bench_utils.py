@@ -10,7 +10,6 @@ from itertools import cycle
 import numpy as np
 import sys
 import hashlib
-import base64
 
 def generate_md5_hex(file_path):
     md5 = hashlib.md5()
