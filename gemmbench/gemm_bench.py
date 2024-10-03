@@ -124,7 +124,7 @@ if __name__ == "__main__":
 
     for vmfb_filename, value in vmfb_dict.items():
         tag, config = value
-        vmfb_hash = generate_md5_base64(vmfb_filename)
+        vmfb_hash = generate_md5_hex(vmfb_filename)
         name = config.get_name()
 
         inp1 = config.get_inp1()

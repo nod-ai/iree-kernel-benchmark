@@ -12,21 +12,12 @@ import sys
 import hashlib
 import base64
 
-def generate_md5_base64(file_path):
-    md5_hash = hashlib.md5()
-
-    with open(file_path, "rb") as file:
-        # Read the file in chunks to avoid using too much memory for large files
-        for chunk in iter(lambda: file.read(4096), b""):
-            md5_hash.update(chunk)
-
-    # Get the digest (raw bytes) of the MD5 hash
-    digest = md5_hash.digest()
-
-    # Encode the digest in Base64 and decode to string
-    base64_hash = base64.b64encode(digest).decode('utf-8')
-
-    return base64_hash
+def generate_md5_hex(file_path):
+    md5 = hashlib.md5()
+    with open(file_path, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            md5.update(chunk)
+    return md5.hexdigest()
 
 BenchmarkResult = namedtuple(
     "BenchmarkResult", "benchmark_name time cpu_time iterations user_counters"
