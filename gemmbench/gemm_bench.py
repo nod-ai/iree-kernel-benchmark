@@ -73,7 +73,7 @@ if __name__ == "__main__":
 
     if args.roofline:
         for dtype in requested_dtypes:
-            roofline(args.roofline, f"{args.plot.split(".")[0]}_{dtype}.png", args.batch, dtype, args.model)
+            roofline(args.roofline, f"{args.plot.split('.')[0]}_{dtype}.png", args.batch, dtype, args.model)
         sys.exit()
 
     tk = args.tk
