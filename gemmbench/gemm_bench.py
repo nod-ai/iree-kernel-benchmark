@@ -106,7 +106,6 @@ if __name__ == "__main__":
     vmfb_dir.mkdir(parents=True, exist_ok=True)
     target = args.target
     extra_compiler_args = ['--' + x for x in list(args.Xiree_compile)]
-
     dump_dir = args.dump_dir
 
     args = itertools.starmap(
