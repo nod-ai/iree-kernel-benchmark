@@ -42,7 +42,7 @@ if __name__ == "__main__":
     parser.add_argument("--target", help="The IREE hip target to compile for", type=str, default="gfx942")
     parser.add_argument(
         "--Xiree_compile",
-        action='append',
+        nargs='+',
         default=[],
         help="Extra command line arguments passed to the IREE compiler. This can be specified multiple times to pass multiple arguments."
     )
@@ -85,7 +85,7 @@ if __name__ == "__main__":
 
     if args.roofline:
         for dtype in requested_dtypes:
-            roofline(args.roofline, f"{args.plot}_{dtype}", args.batch, dtype, args.model)
+            roofline(args.roofline, f"{args.plot.split('.')[0]}_{dtype}.png", args.batch, dtype, args.model)
         sys.exit()
 
     tk = args.tk
@@ -105,9 +105,10 @@ if __name__ == "__main__":
     kernel_dir.mkdir(parents=True, exist_ok=True)
     vmfb_dir.mkdir(parents=True, exist_ok=True)
     target = args.target
-    extra_compiler_args = list(args.Xiree_compile)
+    extra_compiler_args = ['--' + x for x in list(args.Xiree_compile)]
+
     dump_dir = args.dump_dir
-    
+
     args = itertools.starmap(
         lambda tag, config: (tag, config, kernel_dir, vmfb_dir, target, extra_compiler_args, tk, dump_dir), configs
     )

@@ -193,6 +193,7 @@ def compile_gemm_config(
 ) -> tuple[Path, Optional[Path]]:
     mlir_file = kernel_dir / (config.get_name() + ".mlir")
     vmfb_file = vmfb_dir / (config.get_name() + ".vmfb")
+    stderr_file = kernel_dir / (config.get_name() + ".stderr.mlir")
 
     if not os.path.exists(vmfb_dir):
         os.makedirs(vmfb_dir)
@@ -216,7 +217,10 @@ def compile_gemm_config(
         "--iree-llvmgpu-enable-prefetch=true",
         "-o",
         f"{vmfb_file}",
-    ] + extra_compiler_args
+    ] + extra_compiler_args + [
+        "2>",
+        f"{stderr_file}"
+    ]
 
     print(" ".join(exec_args))
 
