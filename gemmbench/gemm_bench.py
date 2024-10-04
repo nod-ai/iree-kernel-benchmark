@@ -160,7 +160,7 @@ if __name__ == "__main__":
             exec_args += ["--function=main"]
 
         # iree benchmark kernels
-        ret_value, cmd_out = run_iree_command(exec_args)
+        ret_value, cmd_out, cmd_err = run_iree_command(exec_args)
         ok = ret_value == 0
         benchmark_gemm_mean_time_ms = bench_summary_process(ret_value, cmd_out)
         benchmark_gemm_mean_time_us = benchmark_gemm_mean_time_ms * 1000
