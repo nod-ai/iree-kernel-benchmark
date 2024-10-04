@@ -153,6 +153,7 @@ def compile_attention_config(
 ) -> tuple[Path, Optional[Path]]:
     mlir_file = kernel_dir / (config.get_name() + ".mlir")
     vmfb_file = vmfb_dir / (config.get_name() + ".vmfb")
+    dump_file = kernel_dir / (config.get_name() + ".stderr.mlir")
 
     # TODO: Use different tuning specs for different configs. This is just a
     # general tuning config that worked well for sdxl shapes.
@@ -184,8 +185,9 @@ def compile_attention_config(
     ret_value, stdout, stderr = run_iree_command(exec_args)
     if ret_value == 0:
         print(f"Successfully compiled {mlir_file} to {vmfb_file}")
-        with open(dump_file, "w") as f:
-            f.write(stderr.decode("utf-8"))
+        if stderr:
+            with open(dump_file, "w") as f:
+                f.write(stderr.decode("utf-8"))
     else:
         error_file = vmfb_dir / (config.get_name() + "_error.txt")
         print(f"Failed to compile {mlir_file}. Error dumped in {error_file}")
