@@ -44,7 +44,7 @@ if __name__ == "__main__":
         "--Xiree_compile",
         nargs='+',
         default=[],
-        help="Extra command line arguments passed to the IREE compiler. This can be specified multiple times to pass multiple arguments."
+        help="Extra command line arguments passed to the IREE compiler. The flags need to be specified without the `--` or `-`"
     )
     parser.add_argument(
         "--dtypes", action='append', help="List of data types to benchmark. Defaults to all supported types."
