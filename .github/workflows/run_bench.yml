@@ -30,7 +30,7 @@ jobs:
           pip install --find-links https://iree.dev/pip-release-links.html iree-compiler iree-runtime --upgrade
           pip install -r requirements.txt
           pip install --no-compile --pre --upgrade -e common_tools
-          pip install shark-turbine@git+https://github.com/iree-org/iree-turbine.git@main
+          pip install iree-turbine@git+https://github.com/iree-org/iree-turbine.git@main
 
       - name: Convolutions
         run: |
