@@ -13,7 +13,7 @@ python3.11 -m venv bench_venv
 source bench_venv/bin/activate
 pip install -r requirements.txt
 pip install --no-compile --pre --upgrade -e common_tools
-pip install shark-turbine@git+https://github.com/iree-org/iree-turbine.git@main
+pip install iree-turbine@git+https://github.com/iree-org/iree-turbine.git@main
 ```
 
 ## Performance
