@@ -3,14 +3,11 @@ import argparse
 import csv
 
 def count_instr_in_file(file_path):
-    instr_count = 0
-    
     with open(file_path, 'r', encoding='utf-8', errors='ignore') as file:
-        for line in file:
+        for idx, line in enumerate(file):
             if "s_endpgm" in line:
-                break
-            instr_count += 1
-    return instr_count
+               return idx
+    return -1
 
 def search_directory(directory):
     """Search for .rocmasm files and count their lines."""
