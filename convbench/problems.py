@@ -1,6 +1,38 @@
 from conv_utils import ConvConfig
 
 
+def unet_sweep(op: str, input_dtype: str, output_dtype: str) -> list[ConvConfig]:
+    configs = []
+    for B in [1, 2, 4]:
+        configs.append(ConvConfig(B, 128, 128, 16, 3, 3, 320, 1, op, input_dtype, output_dtype))
+        configs.append(ConvConfig(B, 128, 128, 320, 3, 3, 320, 1, op, input_dtype, output_dtype))
+        configs.append(ConvConfig(B, 64, 64, 320, 3, 3, 320, 2, op, input_dtype, output_dtype))
+        configs.append(ConvConfig(B, 64, 64, 320, 3, 3, 640, 1, op, input_dtype, output_dtype))
+        configs.append(ConvConfig(B, 64, 64, 640, 3, 3, 640, 1, op, input_dtype, output_dtype))
+        configs.append(ConvConfig(B, 64, 64, 320, 1, 1, 640, 1, op, input_dtype, output_dtype))
+        configs.append(ConvConfig(B, 32, 32, 640, 3, 3, 640, 2, op, input_dtype, output_dtype))
+        configs.append(ConvConfig(B, 32, 32, 640, 3, 3, 1280, 1, op, input_dtype, output_dtype))
+        configs.append(ConvConfig(B, 32, 32, 1280, 3, 3, 1280, 1, op, input_dtype, output_dtype))
+        configs.append(ConvConfig(B, 32, 32, 640, 1, 1, 1280, 1, op, input_dtype, output_dtype))
+        configs.append(ConvConfig(B, 32, 32, 2560, 3, 3, 1280, 1, op, input_dtype, output_dtype))
+        configs.append(ConvConfig(B, 32, 32, 2560, 1, 1, 1280, 1, op, input_dtype, output_dtype))
+        configs.append(ConvConfig(B, 32, 32, 1920, 3, 3, 1280, 1, op, input_dtype, output_dtype))
+        configs.append(ConvConfig(B, 32, 32, 1920, 1, 1, 1280, 1, op, input_dtype, output_dtype))
+        configs.append(ConvConfig(B, 64, 64, 1280, 3, 3, 1280, 1, op, input_dtype, output_dtype))
+        configs.append(ConvConfig(B, 64, 64, 1920, 3, 3, 640, 1, op, input_dtype, output_dtype))
+        configs.append(ConvConfig(B, 64, 64, 1920, 1, 1, 640, 1, op, input_dtype, output_dtype))
+        configs.append(ConvConfig(B, 64, 64, 1280, 3, 3, 640, 1, op, input_dtype, output_dtype))
+        configs.append(ConvConfig(B, 64, 64, 1280, 1, 1, 640, 1, op, input_dtype, output_dtype))
+        configs.append(ConvConfig(B, 64, 64, 960, 3, 3, 640, 1, op, input_dtype, output_dtype))
+        configs.append(ConvConfig(B, 64, 64, 960, 1, 1, 640, 1, op, input_dtype, output_dtype))
+        configs.append(ConvConfig(B, 128, 128, 640, 3, 3, 640, 1, op, input_dtype, output_dtype))
+        configs.append(ConvConfig(B, 128, 128, 960, 3, 3, 320, 1, op, input_dtype, output_dtype))
+        configs.append(ConvConfig(B, 128, 128, 960, 1, 1, 320, 1, op, input_dtype, output_dtype))
+        configs.append(ConvConfig(B, 128, 128, 640, 3, 3, 320, 1, op, input_dtype, output_dtype))
+        configs.append(ConvConfig(B, 128, 128, 640, 1, 1, 320, 1, op, input_dtype, output_dtype))
+        configs.append(ConvConfig(B, 128, 128, 320, 3, 3, 16, 1, op, input_dtype, output_dtype))
+    return configs
+
 def resnet_sweep(op: str, input_dtype: str, output_dtype: str) -> list[ConvConfig]:
     configs = []
     for B in [1, 2, 4, 8, 16, 32, 48]:
@@ -19,9 +51,29 @@ def resnet_sweep(op: str, input_dtype: str, output_dtype: str) -> list[ConvConfi
 
 def get_conv_configs() -> list[tuple[str, ConvConfig]]:
     configs: list[tuple[str, ConvConfig]] = []
-    resnet_configs = resnet_sweep("conv_2d_nchw_fchw", "f32", "f32")
-    resnet_configs += resnet_sweep("conv_2d_nhwc_hwcf_q", "i8", "i32")
 
-    configs += [("resnet_sweep", x) for x in resnet_configs]
+    # Resnet
+    resnet_configs = []
+    resnet_configs += resnet_sweep("conv_2d_nhwc_hwcf", "f16", "f32")
+    resnet_configs += resnet_sweep("conv_2d_nhwc_hwcf_q", "i8", "i32")
+    configs += [("resnet", x) for x in resnet_configs]
+
+    # Unet
+    unet_configs = []
+    unet_configs += unet_sweep("conv_2d_nhwc_hwcf", "f16", "f32")
+    unet_configs += unet_sweep("conv_2d_nhwc_hwcf_q", "i8", "i32")
+    configs += [("unet", x) for x in unet_configs]
+
+    return configs
+
+# Test function to run only a few chosen shapes
+def get_conv_test_configs() -> list[tuple[str, ConvConfig]]:
+    configs: list[tuple[str, ConvConfig]] = []
+
+    unet_configs = []
+    unet_configs.append(ConvConfig(1,128,128,16,3,3,320,1, "conv_2d_nhwc_hwcf_q", "i8", "i32"))
+    unet_configs.append(ConvConfig(1,32,32,640,1,1,1280,1, "conv_2d_nhwc_hwcf_q", "i8", "i32"))
+
+    configs += [("unet", x) for x in unet_configs]
 
     return configs

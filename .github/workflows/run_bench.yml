@@ -35,7 +35,7 @@ jobs:
       - name: Convolutions
         run: |
           source bench_venv/bin/activate
-          python convbench/shark_conv.py
+          python convbench/conv_bench.py
 
       - name: Attention
         run: |
