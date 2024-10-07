@@ -42,6 +42,6 @@ if __name__ == "__main__":
 
     if results:
         write_results_to_csv(results, output_file)
-        print(f"Results written to {output_file} \n")
+        print(f"Results written to {output_file}\n")
     else:
-        print("No .rocmasm files found. \n")
+        print("No .rocmasm files found.\n")
