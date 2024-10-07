@@ -18,7 +18,13 @@ from gemm_utils import *
 from problems import get_gemm_configs, get_tk_gemm_configs, get_matching_configs
 
 
-def compile_gemm(tag, config, kernel_dir, vmfb_dir, target, extra_compiler_args, tk):
+def compile_gemm(tag, config, kernel_dir, vmfb_dir, target, extra_compiler_args, tk, exec_dump_dir=None):
+    if exec_dump_dir:
+        name = config.get_name()
+        dpath = os.path.join(exec_dump_dir, name)
+        extra_compiler_args.extend([
+            f"--iree-hal-dump-executable-files-to={dpath}"
+        ])
     mlir_file, vmfb_file = compile_gemm_config(config, kernel_dir, vmfb_dir, target, extra_compiler_args, tk)
     return (tag, config, mlir_file, vmfb_file)
 
@@ -63,6 +69,12 @@ if __name__ == "__main__":
         default=False,
         help="Run gemm kernels using Turbine Kernels",
     )
+    parser.add_argument(
+        "--exec_dump_dir",
+        type=str,
+        default=None,
+        help="Directory to which executable files will be dumped."
+    )
 
     args = parser.parse_args()
     # Handle default values here, since 'append' is not compatible with defaulted lists.
@@ -94,9 +106,10 @@ if __name__ == "__main__":
     vmfb_dir.mkdir(parents=True, exist_ok=True)
     target = args.target
     extra_compiler_args = list(args.Xiree_compile)
-
+    exec_dump_dir = args.exec_dump_dir
+    
     args = itertools.starmap(
-        lambda tag, config: (tag, config, kernel_dir, vmfb_dir, target, extra_compiler_args, tk), configs
+        lambda tag, config: (tag, config, kernel_dir, vmfb_dir, target, extra_compiler_args, tk, exec_dump_dir), configs
     )
     with Pool(num_cpus) as pool:
         compilation_results = list(tqdm(pool.starmap(compile_gemm, list(args))))
