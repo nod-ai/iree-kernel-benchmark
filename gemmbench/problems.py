@@ -1011,7 +1011,7 @@ def get_matching_configs(
     tag_re = re.compile(tag_regex)
     matching_configs: list[tuple[str, GemmConfig]] = []
     for tag, config in tagged_configs:
-        if config.dtype not in dtypes:
+        if config.operand_element_type not in dtypes:
             continue
         if f"{config.tA}{config.tB}" not in variants:
             continue
