@@ -12,7 +12,7 @@ def count_instr_in_file(file_path):
             if "Kernarg preload header" in line:
                 counting = True
             # End when "---" is read
-            elif "---" in line and counting:
+            elif "s_endpgm" in line and counting:
                 break
             if counting:
                 instr_count += 1
@@ -40,14 +40,14 @@ def write_results_to_csv(results, output_file):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Data collection tool targeting HSA dumps.")
-    parser.add_argument("--search_dir", help="The directory from which to scan for ISA file dumps (.rocmasm).", type=str, default=None)
+    parser.add_argument("dir", help="The directory from which to scan for ISA file dumps (.rocmasm).", type=str, default=None)
     args = parser.parse_args()
     output_file = 'rocmasm_instr_counts.csv'
 
-    results = search_directory(args.search_dir)
+    results = search_directory(args.dir)
 
     if results:
         write_results_to_csv(results, output_file)
-        print(f"Results written to {output_file}")
+        print(f"\nResults written to {output_file}")
     else:
-        print("No .rocmasm files found.")
+        print("\nNo .rocmasm files found.")
