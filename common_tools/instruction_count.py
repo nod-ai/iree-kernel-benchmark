@@ -3,19 +3,13 @@ import argparse
 import csv
 
 def count_instr_in_file(file_path):
-    counting = False
     instr_count = 0
     
     with open(file_path, 'r', encoding='utf-8', errors='ignore') as file:
         for line in file:
-            # Start counting when "Kernarg preload header" is read
-            if "Kernarg preload header" in line:
-                counting = True
-            # End when "---" is read
-            elif "s_endpgm" in line and counting:
+            if "s_endpgm" in line:
                 break
-            if counting:
-                instr_count += 1
+            instr_count += 1
     return instr_count
 
 def search_directory(directory):
@@ -48,6 +42,6 @@ if __name__ == "__main__":
 
     if results:
         write_results_to_csv(results, output_file)
-        print(f"\nResults written to {output_file}")
+        print(f"Results written to {output_file} \n")
     else:
-        print("\nNo .rocmasm files found.")
+        print("No .rocmasm files found. \n")
