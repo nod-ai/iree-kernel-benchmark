@@ -15,10 +15,12 @@ class GemmConfig:
     K: int
     tA: str
     tB: str
-    dtype: str
+    operand_element_type: str
+    accumulator_element_type: str
+    result_element_type: str
 
     def get_name(self) -> str:
-        name = f"gemm_{self.M}_{self.N}_{self.K}_{self.dtype}"
+        name = f"gemm_{self.M}_{self.N}_{self.K}_{self.operand_element_type}_{self.accumulator_element_type}"
         if self.tA == "T":
             name += "_tA"
         elif self.tB == "T":
@@ -27,20 +29,20 @@ class GemmConfig:
 
     def get_inp1(self) -> str:
         if self.tA == "T":
-            inp1 = f"{self.K}x{self.M}x{self.dtype}"
+            inp1 = f"{self.K}x{self.M}x{self.operand_element_type}"
         else:
-            inp1 = f"{self.M}x{self.K}x{self.dtype}"
+            inp1 = f"{self.M}x{self.K}x{self.operand_element_type}"
         return inp1
 
     def get_inp2(self) -> str:
         if self.tB == "T":
-            inp2 = f"{self.N}x{self.K}x{self.dtype}"
+            inp2 = f"{self.N}x{self.K}x{self.operand_element_type}"
         else:
-            inp2 = f"{self.K}x{self.N}x{self.dtype}"
+            inp2 = f"{self.K}x{self.N}x{self.operand_element_type}"
         return inp2
 
     def get_byte_count(self) -> int:
-        dtype_bits_map = {
+        operand_element_type_bits_map = {
             "f32": 32,
             "f16": 16,
             "bf16": 16,
@@ -48,7 +50,7 @@ class GemmConfig:
             "i8": 8,
             "i32": 32,
         }
-        bytes_per_element = dtype_bits_map[self.dtype] // 8
+        bytes_per_element = operand_element_type_bits_map[self.operand_element_type] // 8
         element_count = self.M * self.K + self.N * self.K + self.M * self.N
         byte_count = element_count * bytes_per_element
         return byte_count
@@ -61,40 +63,52 @@ def generate_mlir(config: GemmConfig):
     K = config.K
     M = config.M
     N = config.N
-    dtype = config.dtype
+    operand_element_type = config.operand_element_type
+    acc_element_type = config.accumulator_element_type
+    result_element_type = config.result_element_type
     tA = config.tA
     tB = config.tB
     mlir_template_A = f"""
 module {{
-    func.func @main(%arg0: tensor<{K}x{M}x{dtype}>, %arg1: tensor<{K}x{N}x{dtype}>) -> tensor<{M}x{N}x{dtype}> {{
-        %cst = arith.constant 0.000000e+00 : {dtype}
-        %0 = tensor.empty() : tensor<{M}x{N}x{dtype}>
-        %1 = linalg.fill ins(%cst : {dtype}) outs(%0 : tensor<{M}x{N}x{dtype}>) -> tensor<{M}x{N}x{dtype}>
-        %2 = linalg.matmul_transpose_a ins(%arg0, %arg1 : tensor<{K}x{M}x{dtype}>, tensor<{K}x{N}x{dtype}>) outs(%1 : tensor<{M}x{N}x{dtype}>) -> tensor<{M}x{N}x{dtype}>
-        return %2 : tensor<{M}x{N}x{dtype}>
+    func.func @main(%arg0: tensor<{K}x{M}x{operand_element_type}>, %arg1: tensor<{K}x{N}x{operand_element_type}>) -> tensor<{M}x{N}x{result_element_type}> {{
+        %cst = arith.constant 0.000000e+00 : {acc_element_type}
+        %0 = tensor.empty() : tensor<{M}x{N}x{acc_element_type}>
+        %1 = linalg.fill ins(%cst : {acc_element_type}) outs(%0 : tensor<{M}x{N}x{acc_element_type}>) -> tensor<{M}x{N}x{acc_element_type}>
+        %2 = linalg.matmul_transpose_a ins(%arg0, %arg1 : tensor<{K}x{M}x{operand_element_type}>, tensor<{K}x{N}x{operand_element_type}>)
+                                       outs(%1 : tensor<{M}x{N}x{acc_element_type}>)
+          -> tensor<{M}x{N}x{acc_element_type}>
+        %3 = arith.truncf %2 : tensor<{M}x{N}x{acc_element_type}> -> tensor<{M}x{N}x{result_element_type}>
+        return %3 : tensor<{M}x{N}x{result_element_type}>
     }}
 }}
 """
 
     mlir_template_B = f"""
 module {{
-    func.func @main(%arg0: tensor<{M}x{K}x{dtype}>, %arg1: tensor<{N}x{K}x{dtype}>) -> tensor<{M}x{N}x{dtype}> {{
-        %cst = arith.constant 0.000000e+00 : {dtype}
-        %0 = tensor.empty() : tensor<{M}x{N}x{dtype}>
-        %1 = linalg.fill ins(%cst : {dtype}) outs(%0 : tensor<{M}x{N}x{dtype}>) -> tensor<{M}x{N}x{dtype}>
-        %2 = linalg.matmul_transpose_b ins(%arg0, %arg1 : tensor<{M}x{K}x{dtype}>, tensor<{N}x{K}x{dtype}>) outs(%1 : tensor<{M}x{N}x{dtype}>) -> tensor<{M}x{N}x{dtype}>
-        return %2 : tensor<{M}x{N}x{dtype}>
+    func.func @main(%arg0: tensor<{M}x{K}x{operand_element_type}>, %arg1: tensor<{N}x{K}x{operand_element_type}>) -> tensor<{M}x{N}x{result_element_type}> {{
+        %cst = arith.constant 0.000000e+00 : {acc_element_type}
+        %0 = tensor.empty() : tensor<{M}x{N}x{acc_element_type}>
+        %1 = linalg.fill ins(%cst : {acc_element_type}) outs(%0 : tensor<{M}x{N}x{acc_element_type}>) -> tensor<{M}x{N}x{acc_element_type}>
+        %2 = linalg.matmul_transpose_b ins(%arg0, %arg1 : tensor<{M}x{K}x{operand_element_type}>, tensor<{N}x{K}x{operand_element_type}>)
+                                       outs(%1 : tensor<{M}x{N}x{acc_element_type}>)
+          -> tensor<{M}x{N}x{acc_element_type}>
+        %3 = arith.truncf %2 : tensor<{M}x{N}x{acc_element_type}> -> tensor<{M}x{N}x{result_element_type}>
+        return %3 : tensor<{M}x{N}x{result_element_type}>
     }}
 }}
 """
 
-    mlir_template = f"""module {{
-    func.func @main(%arg0: tensor<{M}x{K}x{dtype}>, %arg1: tensor<{K}x{N}x{dtype}>) -> tensor<{M}x{N}x{dtype}> {{
-        %cst = arith.constant 0.000000e+00 : {dtype}
-        %0 = tensor.empty() : tensor<{M}x{N}x{dtype}>
-        %1 = linalg.fill ins(%cst : {dtype}) outs(%0 : tensor<{M}x{N}x{dtype}>) -> tensor<{M}x{N}x{dtype}>
-        %2 = linalg.matmul ins(%arg0, %arg1 : tensor<{M}x{K}x{dtype}>, tensor<{K}x{N}x{dtype}>) outs(%1 : tensor<{M}x{N}x{dtype}>) -> tensor<{M}x{N}x{dtype}>
-        return %2 : tensor<{M}x{N}x{dtype}>
+    mlir_template = f"""
+module {{
+    func.func @main(%arg0: tensor<{M}x{K}x{operand_element_type}>, %arg1: tensor<{K}x{N}x{operand_element_type}>) -> tensor<{M}x{N}x{result_element_type}> {{
+        %cst = arith.constant 0.000000e+00 : {acc_element_type}
+        %0 = tensor.empty() : tensor<{M}x{N}x{acc_element_type}>
+        %1 = linalg.fill ins(%cst : {acc_element_type}) outs(%0 : tensor<{M}x{N}x{acc_element_type}>) -> tensor<{M}x{N}x{acc_element_type}>
+        %2 = linalg.matmul ins(%arg0, %arg1 : tensor<{M}x{K}x{operand_element_type}>, tensor<{K}x{N}x{operand_element_type}>)
+                           outs(%1 : tensor<{M}x{N}x{operand_element_type}>)
+          -> tensor<{M}x{N}x{acc_element_type}>
+        %3 = arith.truncf %2 : tensor<{M}x{N}x{acc_element_type}> -> tensor<{M}x{N}x{result_element_type}>
+        return %3 : tensor<{M}x{N}x{result_element_type}>
     }}
 }}
 """
@@ -158,12 +172,12 @@ def generate_tk_mlir(config: GemmConfig):
 
         # repeat represents the results of the loop
         tkw.write(repeat, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
-    
+
     shape = [config.M, config.N, config.K]
-    dtype_map = {
+    operand_element_type_map = {
         "f16": torch.float16,
     }
-    dtype = dtype_map[config.dtype]
+    operand_element_type = operand_element_type_map[config.operand_element_type]
 
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
@@ -180,9 +194,9 @@ def generate_tk_mlir(config: GemmConfig):
     with tk.gen.TestLaunchContext(
         hyperparams, canonicalize=True, run=True, run_config=config
     ):
-        a = torch.randn(shape[0], shape[2], dtype=dtype)
-        b = torch.randn(shape[1], shape[2], dtype=dtype)
-        c = torch.zeros(shape[0], shape[1], dtype=torch.float32)
+        a = torch.randn(shape[0], shape[2], operand_element_type=operand_element_type)
+        b = torch.randn(shape[1], shape[2], operand_element_type=operand_element_type)
+        c = torch.zeros(shape[0], shape[1], operand_element_type=torch.float32)
         mb = gemm(a, b, c)
 
         return mb.module_op.get_asm()
