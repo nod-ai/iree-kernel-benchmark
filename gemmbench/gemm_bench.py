@@ -107,7 +107,7 @@ if __name__ == "__main__":
     target = args.target
     extra_compiler_args = list(args.Xiree_compile)
     dump_dir = args.dump_dir
-    
+
     args = itertools.starmap(
         lambda tag, config: (tag, config, kernel_dir, vmfb_dir, target, extra_compiler_args, tk, dump_dir), configs
     )
