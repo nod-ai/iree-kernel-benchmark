@@ -13,7 +13,7 @@ class IsaStats:
     vgpr_spill_count: int = -1
 
 
-def calculate_isa_stats(kernel: Path):
+def calculate_isa_stats(kernel: Path) -> IsaStats:
     stats = IsaStats()
     with open(kernel.resolve(), 'r', encoding='utf-8', errors='ignore') as file:
         for idx, line in enumerate(file):
@@ -33,19 +33,19 @@ def calculate_isa_stats(kernel: Path):
     return stats
 
 
-def process_directory(directory: Path) -> list[IsaStats]:
+def process_directory(directory: Path) -> list[tuple[Path, IsaStats]]:
     """Search for .rocmasm files and count their lines."""
-    results: list[IsaStats] = []
+    results: list[tuple[Path, IsaStats]] = []
     for root, _dirs, files in os.walk(directory.resolve()):
         for file in files:
             if file.endswith('.rocmasm'):
                 file_path = Path(root) / file
-                line_count: IsaStats = calculate_isa_stats(file_path)
-                results.append((file_path, line_count))
+                stats: IsaStats = calculate_isa_stats(file_path)
+                results.append((file_path, stats))
     return results
 
 
-def write_results_to_csv(results: list[IsaStats], output_file: Path):
+def write_results_to_csv(results: list[IsaStats], output_file: Path) -> None:
     """Write the results to a CSV file."""
     # Sort results by line count (second item in tuple)
     results.sort(key=lambda x: x[0])
