@@ -864,11 +864,15 @@ def tk_default(dtype: str) -> list[GemmConfig]:
     acc_type = get_default_accumulator_element_type(dtype)
     res_type = get_default_result_element_type(dtype)
     configs = []
-    M, N, K = 1024, 5120, 640
-    configs.append(GemmConfig(M, N, K, "N", "T", dtype, acc_type, res_type))
     M, N, K = 2048, 10240, 1280
     configs.append(GemmConfig(M, N, K, "N", "T", dtype, acc_type, res_type))
-    M, N, K = 4096, 20480, 2560
+    M, N, K = 2048, 1280, 1280
+    configs.append(GemmConfig(M, N, K, "N", "T", dtype, acc_type, res_type))
+    M, N, K = 2048, 1280, 5120
+    configs.append(GemmConfig(M, N, K, "N", "T", dtype, acc_type, res_type))
+    M, N, K = 128, 1280, 2048
+    configs.append(GemmConfig(M, N, K, "N", "T", dtype, acc_type, res_type))
+    M, N, K = 8192, 5120, 640
     configs.append(GemmConfig(M, N, K, "N", "T", dtype, acc_type, res_type))
     return configs
 
