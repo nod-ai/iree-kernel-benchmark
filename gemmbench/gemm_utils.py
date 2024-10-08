@@ -195,9 +195,9 @@ def generate_tk_mlir(config: GemmConfig):
     with tk.gen.TestLaunchContext(
         hyperparams, canonicalize=True, run=True, run_config=config
     ):
-        a = torch.randn(shape[0], shape[2], operand_element_type=operand_element_type)
-        b = torch.randn(shape[1], shape[2], operand_element_type=operand_element_type)
-        c = torch.zeros(shape[0], shape[1], operand_element_type=torch.float32)
+        a = torch.randn(shape[0], shape[2], dtype=operand_element_type)
+        b = torch.randn(shape[1], shape[2], dtype=operand_element_type)
+        c = torch.zeros(shape[0], shape[1], dtype=torch.float32)
         mb = gemm(a, b, c)
 
         return mb.module_op.get_asm()
