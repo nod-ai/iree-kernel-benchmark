@@ -131,17 +131,19 @@ class TkTunedConfig:
     DELAY_SHARED: int
     DELAY_GLOBAL: int
 
-def get_tk_tuned_config(config: GemmConfig) -> TunedConfig:
+def get_tk_tuned_config(config: GemmConfig) -> TkTunedConfig:
     if config.M == 2048 and config.N == 10240 and config.K == 1280:
-        return TunedConfig(128, 320, 32, 2, 2, 2, 2, 2, 2, 1, 1, 2)
+        return TkTunedConfig(128, 320, 32, 2, 2, 2, 2, 2, 2, 1, 1, 2)
     if config.M == 2048 and config.N == 1280 and config.K == 1280:
-        return TunedConfig(64, 64, 64, 2, 2, 1, 2, 1, 1, 1, 1, 2)
+        return TkTunedConfig(64, 64, 64, 2, 2, 1, 2, 1, 1, 1, 1, 2)
     if config.M == 2048 and config.N == 1280 and config.K == 5120:
-        return TunedConfig(128, 80, 128, 4, 1, 1, 4, 2, 2, 1, 1, 2)
+        return TkTunedConfig(128, 80, 128, 4, 1, 1, 4, 2, 2, 1, 1, 2)
     if config.M == 128 and config.N == 1280 and config.K == 2048:
-        return TunedConfig(64, 64, 128, 2, 2, 1, 8, 2, 2, 1, 1, 2)
+        return TkTunedConfig(64, 64, 128, 2, 2, 1, 8, 2, 2, 1, 1, 2)
     if config.M == 8192 and config.N == 5120 and config.K == 640:
-        return TunedConfig(128, 128, 32, 2, 2, 1, 4, 2, 2, 1, 1, 2)
+        return TkTunedConfig(128, 128, 32, 2, 2, 1, 4, 2, 2, 1, 1, 2)
+    # Default config
+    return TkTunedConfig(64, 64, 32, 2, 2, 1, 2, 2, 2, 1, 1, 2)
 
 def generate_tk_mlir(config: GemmConfig):
     # TODO: Enable waves_per_eu
