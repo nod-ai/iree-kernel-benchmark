@@ -58,6 +58,7 @@ class AttentionConfig:
 @dataclass
 class TuningSpec:
     wg_tiles: list[int]
+    red_tiles: list[int]
     M_warp: int
     N_warp: int
     intrinsic: str
@@ -66,8 +67,11 @@ class TuningSpec:
 
     def get_lowering_config(self) -> str:
         return (
-            f"#iree_codegen.lowering_config<"
-            + f"tile_sizes = [[{','.join([str(x) for x in self.wg_tiles])}]]"
+            f"#iree_gpu.lowering_config<"
+            + "{ "
+            + f"workgroup = [{",".join([str(x) for x in self.wg_tiles])}], "
+            + f"reduction = [{",".join(str(x) for x in self.red_tiles)}]"
+            + " }"
             + f">"
         )
 
@@ -145,7 +149,7 @@ func.func @main(%Q : !Q, %K : !K, %V : !V) -> !O {{
 
 
 def get_attention_flags() -> list[str]:
-    return []
+    return ["--iree-codegen-gpu-native-math-precision"]
 
 
 def compile_attention_config(
@@ -157,7 +161,7 @@ def compile_attention_config(
 
     # TODO: Use different tuning specs for different configs. This is just a
     # general tuning config that worked well for sdxl shapes.
-    spec = TuningSpec([1, 128, 0, 0, 32], 4, 1, "MFMA_F32_32x32x8_F16", 2, True)
+    spec = TuningSpec([1, 128, 0, 0, 0], [0, 0, 0, 0, 32], 4, 1, "MFMA_F32_32x32x8_F16", 2, True)
     # Generate mlir content
     mlir_content = generate_mlir(config, spec)
 
@@ -196,3 +200,9 @@ def compile_attention_config(
         return mlir_file, None
 
     return mlir_file, vmfb_file
+
+# Dummy test generation
+if __name__ == "__main__":
+    config = AttentionConfig(20, 4096, 64, 64, 4096, "f16")
+    spec = TuningSpec([1, 128, 0, 0, 0], [0, 0, 0, 0, 32], 4, 1, "MFMA_F32_32x32x8_F16", 2, True)
+    print(generate_mlir(config, spec))
