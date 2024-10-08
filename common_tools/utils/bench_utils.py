@@ -37,13 +37,13 @@ def run_iree_command(args: Sequence[str] = ()):
     )
     return_code = proc.returncode
     if return_code == 0:
-        return 0, proc.stdout
+        return 0, proc.stdout, proc.stderr
     logging.getLogger().error(
         f"Command failed!\n"
         f"Stderr diagnostics:\n{proc.stderr}\n"
         f"Stdout diagnostics:\n{proc.stdout}\n"
     )
-    return 1, proc.stderr
+    return 1, proc.stdout, proc.stderr
 
 def decode_output(bench_lines):
     benchmark_results = []

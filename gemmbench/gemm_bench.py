@@ -42,9 +42,9 @@ if __name__ == "__main__":
     parser.add_argument("--target", help="The IREE hip target to compile for", type=str, default="gfx942")
     parser.add_argument(
         "--Xiree_compile",
-        action='append',
+        nargs='+',
         default=[],
-        help="Extra command line arguments passed to the IREE compiler. This can be specified multiple times to pass multiple arguments."
+        help="Extra command line arguments passed to the IREE compiler. The flags need to be specified without the `--` or `-`"
     )
     parser.add_argument(
         "--dtypes", action='append', help="List of data types to benchmark. Defaults to all supported types."
@@ -85,7 +85,7 @@ if __name__ == "__main__":
 
     if args.roofline:
         for dtype in requested_dtypes:
-            roofline(args.roofline, f"{args.plot}_{dtype}", args.batch, dtype, args.model)
+            roofline(args.roofline, f"{args.plot.split('.')[0]}_{dtype}.png", args.batch, dtype, args.model)
         sys.exit()
 
     tk = args.tk
@@ -105,7 +105,7 @@ if __name__ == "__main__":
     kernel_dir.mkdir(parents=True, exist_ok=True)
     vmfb_dir.mkdir(parents=True, exist_ok=True)
     target = args.target
-    extra_compiler_args = list(args.Xiree_compile)
+    extra_compiler_args = ['--' + x for x in list(args.Xiree_compile)]
     dump_dir = args.dump_dir
 
     args = itertools.starmap(
@@ -159,7 +159,7 @@ if __name__ == "__main__":
             exec_args += ["--function=main"]
 
         # iree benchmark kernels
-        ret_value, cmd_out = run_iree_command(exec_args)
+        ret_value, cmd_out, cmd_err = run_iree_command(exec_args)
         ok = ret_value == 0
         benchmark_gemm_mean_time_ms = bench_summary_process(ret_value, cmd_out)
         benchmark_gemm_mean_time_us = benchmark_gemm_mean_time_ms * 1000
