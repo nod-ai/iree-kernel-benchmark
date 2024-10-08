@@ -107,7 +107,7 @@ if __name__ == "__main__":
     target = args.target
     extra_compiler_args = list(args.Xiree_compile)
     dump_dir = args.dump_dir
-    
+
     args = itertools.starmap(
         lambda tag, config: (tag, config, kernel_dir, vmfb_dir, target, extra_compiler_args, tk, dump_dir), configs
     )
@@ -171,7 +171,7 @@ if __name__ == "__main__":
         tflops_per_second = (flops / 1e12) / (benchmark_gemm_mean_time_us / 1e6)
 
         results.append((
-            index, tag, name, vmfb_hash, config.M, config.N, config.K, config.dtype, config.tA, config.tB,
+            index, tag, name, vmfb_hash, config.M, config.N, config.K, config.operand_element_type, config.tA, config.tB,
             round(benchmark_gemm_mean_time_us, 4),
             round(arithmetic_intensity, 4),
             round(tflops_per_second, 4),
