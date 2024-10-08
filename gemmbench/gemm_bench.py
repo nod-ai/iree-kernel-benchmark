@@ -10,7 +10,6 @@ from multiprocessing import Pool, cpu_count, Manager
 import logging
 import itertools
 from pathlib import Path
-import csv
 import argparse
 import sys
 from utils import *
@@ -47,15 +46,16 @@ if __name__ == "__main__":
         help="Extra command line arguments passed to the IREE compiler. The flags need to be specified without the `--` or `-`"
     )
     parser.add_argument(
-        "--dtypes", action='append', help="List of data types to benchmark. Defaults to all supported types."
+        "--dtypes", nargs='+', default=[], help="List of data types to benchmark. Defaults to all supported types."
     )
     parser.add_argument(
         "--variants",
-        action='append',
+        nargs='+',
+        default=[],
         help="List of matmul variants to benchmark. Default to all variants: NN, NT, TN, and TT."
     )
     parser.add_argument(
-        "--tag-regex",
+        "--tag_regex",
         help="Regular expression for allowed benchmark tags. Defaults to all tags allowed.",
         default=".*"
     )
