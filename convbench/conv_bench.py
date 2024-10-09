@@ -125,6 +125,7 @@ if __name__ == "__main__":
         tflops_per_second = (flops / 1e12) / (benchmark_conv_mean_time_us / 1e6)
 
         # Compute percentage of the roofline.
+        # TODO: Make this target specific and move to common utils.
         tflops_map = {
             "f32": 653.7,
             "f16": 1307.4,
