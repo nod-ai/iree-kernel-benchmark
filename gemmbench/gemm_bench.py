@@ -76,6 +76,12 @@ if __name__ == "__main__":
         default=None,
         help="Directory to which executable files will be dumped."
     )
+    parser.add_argument(
+        "--raw_accumulators",
+        type=bool,
+        default=False,
+        help="If true, benchmark matmuls returning the raw accumulator type with no truncation. If false (default), the results are truncated and cast to the input element type."
+    )
 
     args = parser.parse_args()
     # Handle default values here, since list args are not compatible with defaulted lists.
@@ -91,7 +97,7 @@ if __name__ == "__main__":
 
     tk = args.tk
     configs = get_tk_gemm_configs() if tk else get_gemm_configs()
-    configs = get_matching_configs(configs, requested_dtypes, requested_variants, args.tag_regex)
+    configs = get_matching_configs(configs, requested_dtypes, requested_variants, args.tag_regex, args.raw_accumulators)
     print(f"Generated {len(configs)} gemm configs.")
 
     num_cpus = max(1, max(cpu_count() // 2, 1))
@@ -130,9 +136,12 @@ if __name__ == "__main__":
 
     results = []
     index = 0
-    output_csv = "results/iree_gemm.csv"
+    output_csv_base = "iree_gemm"
+    if args.raw_accumulators:
+        output_csv_base += "_raw_accumulators"
     if tk:
-        output_csv = "results/iree_gemm_tk.csv"
+        output_csv_base += "_tk"
+    output_csv = f"results/{output_csv_base}.csv"
     csv_dir = os.path.dirname(output_csv)
     if not os.path.exists(csv_dir):
         os.makedirs(csv_dir)

@@ -8,6 +8,7 @@ import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.lang.global_symbols import *
 import torch
 
+
 @dataclass
 class GemmConfig:
     M: int
@@ -48,12 +49,15 @@ class GemmConfig:
         }
         operand_bytes_per_element = dtype_to_bytes[self.operand_element_type]
         result_bytes_per_element = dtype_to_bytes[self.result_element_type]
-        byte_count = (self.M * self.K + self.N * self.K) * operand_bytes_per_element + (self.M * self.N) * result_bytes_per_element
+        byte_count = (self.M * self.K + self.N * self.K) * \
+            operand_bytes_per_element + \
+            (self.M * self.N) * result_bytes_per_element
         return byte_count
 
     def get_flops(self) -> int:
         flops = 2 * self.M * self.N * self.K
         return flops
+
 
 def generate_mlir(config: GemmConfig):
     K = config.K
@@ -62,11 +66,12 @@ def generate_mlir(config: GemmConfig):
     operand_element_type = config.operand_element_type
     acc_element_type = config.accumulator_element_type
     result_element_type = config.result_element_type
-    assert not operand_element_type.startswith('i'), "Integer types not supported yet"
+    assert not operand_element_type.startswith(
+        'i'), "Integer types not supported yet"
 
     tA = config.tA
     tB = config.tB
-    mlir_template_A = f"""
+    mlir_template_matmul_transpose_a = f"""
 module {{
     func.func @main(%arg0: tensor<{K}x{M}x{operand_element_type}>, %arg1: tensor<{K}x{N}x{operand_element_type}>) -> tensor<{M}x{N}x{result_element_type}> {{
         %cst = arith.constant 0.000000e+00 : {acc_element_type}
@@ -75,13 +80,9 @@ module {{
         %2 = linalg.matmul_transpose_a ins(%arg0, %arg1 : tensor<{K}x{M}x{operand_element_type}>, tensor<{K}x{N}x{operand_element_type}>)
                                        outs(%1 : tensor<{M}x{N}x{acc_element_type}>)
           -> tensor<{M}x{N}x{acc_element_type}>
-        %3 = arith.truncf %2 : tensor<{M}x{N}x{acc_element_type}> to tensor<{M}x{N}x{result_element_type}>
-        return %3 : tensor<{M}x{N}x{result_element_type}>
-    }}
-}}
 """
 
-    mlir_template_B = f"""
+    mlir_template_matmul_transpose_b = f"""
 module {{
     func.func @main(%arg0: tensor<{M}x{K}x{operand_element_type}>, %arg1: tensor<{N}x{K}x{operand_element_type}>) -> tensor<{M}x{N}x{result_element_type}> {{
         %cst = arith.constant 0.000000e+00 : {acc_element_type}
@@ -90,13 +91,9 @@ module {{
         %2 = linalg.matmul_transpose_b ins(%arg0, %arg1 : tensor<{M}x{K}x{operand_element_type}>, tensor<{N}x{K}x{operand_element_type}>)
                                        outs(%1 : tensor<{M}x{N}x{acc_element_type}>)
           -> tensor<{M}x{N}x{acc_element_type}>
-        %3 = arith.truncf %2 : tensor<{M}x{N}x{acc_element_type}> to tensor<{M}x{N}x{result_element_type}>
-        return %3 : tensor<{M}x{N}x{result_element_type}>
-    }}
-}}
 """
 
-    mlir_template = f"""
+    mlir_template_matmul_normal = f"""
 module {{
     func.func @main(%arg0: tensor<{M}x{K}x{operand_element_type}>, %arg1: tensor<{K}x{N}x{operand_element_type}>) -> tensor<{M}x{N}x{result_element_type}> {{
         %cst = arith.constant 0.000000e+00 : {acc_element_type}
@@ -105,16 +102,26 @@ module {{
         %2 = linalg.matmul ins(%arg0, %arg1 : tensor<{M}x{K}x{operand_element_type}>, tensor<{K}x{N}x{operand_element_type}>)
                            outs(%1 : tensor<{M}x{N}x{acc_element_type}>)
           -> tensor<{M}x{N}x{acc_element_type}>
+"""
+    mlir_template_matmul = mlir_template_matmul_transpose_a if tA == "T" else mlir_template_matmul_transpose_b if tB == "T" else mlir_template_matmul_normal
+
+    mlir_template_return_truncf = f"""
         %3 = arith.truncf %2 : tensor<{M}x{N}x{acc_element_type}> to tensor<{M}x{N}x{result_element_type}>
         return %3 : tensor<{M}x{N}x{result_element_type}>
     }}
 }}
 """
-    if tA == "T":
-        return mlir_template_A
-    if tB == "T":
-        return mlir_template_B
-    return mlir_template
+
+    mlir_template_return_untruncated = f"""
+        return %2 : tensor<{M}x{N}x{result_element_type}>
+    }}
+}}
+"""
+
+    mlir_template_return = mlir_template_return_untruncated if (acc_element_type == result_element_type) else mlir_template_return_truncate
+
+    return mlir_template_matmul + mlir_template_return
+
 
 @dataclass
 class TkTunedConfig:
@@ -131,6 +138,7 @@ class TkTunedConfig:
     DELAY_SHARED: int
     DELAY_GLOBAL: int
 
+
 def get_tk_tuned_config(config: GemmConfig) -> TkTunedConfig:
     if config.M == 2048 and config.N == 10240 and config.K == 1280:
         return TkTunedConfig(128, 320, 32, 2, 2, 2, 2, 2, 2, 1, 1, 2)
@@ -144,6 +152,7 @@ def get_tk_tuned_config(config: GemmConfig) -> TkTunedConfig:
         return TkTunedConfig(128, 128, 32, 2, 2, 1, 4, 2, 2, 1, 1, 2)
     # Default config
     return TkTunedConfig(64, 64, 32, 2, 2, 1, 2, 2, 2, 1, 1, 2)
+
 
 def generate_tk_mlir(config: GemmConfig):
     # TODO: Enable waves_per_eu
@@ -166,14 +175,16 @@ def generate_tk_mlir(config: GemmConfig):
     STORE_ELEMS_PER_THREAD = tkl.sym.STORE_ELEMS_PER_THREAD
 
     # Expose user-constraints
-    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints: list[tkw.Constraint] = [
+        tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
     constraints += [tkw.TilingConstraint(K, BLOCK_K)]
     constraints += [tkw.WaveConstraint(M, BLOCK_M / tc.RATIO_M)]
     constraints += [tkw.WaveConstraint(N, BLOCK_N / tc.RATIO_N)]
 
     constraints += [
-        tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(tc.RATIO_M, tc.RATIO_N, 1))
+        tkw.HardwareConstraint(threads_per_wave=64,
+                               waves_per_block=(tc.RATIO_M, tc.RATIO_N, 1))
     ]
 
     # Wave-level micro-kernel.
