@@ -26,6 +26,7 @@ if __name__ == "__main__":
         type=str.upper,
         help="Set the logging level",
     )
+    parser.add_argument("--device", help="The IREE device to execute benchmarks on", type=str, default="hip")
     parser.add_argument(
         "--roofline",
         help="Comma seperated csv file list to generate roofline plot with",
@@ -57,12 +58,13 @@ if __name__ == "__main__":
     vmfb_dir = repo_root / "conv" / "vmfb"
     kernel_dir.mkdir(parents=True, exist_ok=True)
     vmfb_dir.mkdir(parents=True, exist_ok=True)
+    device = args.device
 
-    args = itertools.starmap(
+    compile_args = itertools.starmap(
         lambda tag, config: (tag, config, kernel_dir, vmfb_dir), configs
     )
     with Pool(num_cpus) as pool:
-        compilation_results = list(tqdm(pool.starmap(compile_conv, list(args))))
+        compilation_results = list(tqdm(pool.starmap(compile_conv, list(compile_args))))
 
     error_count = 0
     for tag, config, mlir_file, vmfb_file in compilation_results:
@@ -92,7 +94,7 @@ if __name__ == "__main__":
 
         exec_args = [
             "iree-benchmark-module",
-            f"--device=hip",
+            f"--device={device}",
             "--device_allocator=caching",
             f"--module={vmfb_filename}",
             "--function=main",
