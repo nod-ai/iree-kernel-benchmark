@@ -39,6 +39,7 @@ if __name__ == "__main__":
     )
 
     parser.add_argument("--target", help="The IREE hip target to compile for", type=str, default="gfx942")
+    parser.add_argument("--device", help="The IREE device to execute benchmarks on", type=str, default="hip")
     parser.add_argument(
         "--Xiree_compile",
         nargs='+',
@@ -77,7 +78,7 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    # Handle default values here, since 'append' is not compatible with defaulted lists.
+    # Handle default values here, since list args are not compatible with defaulted lists.
     requested_dtypes = ["f16", "bf16"] if not args.dtypes else list(args.dtypes)
     requested_variants = ["NN", "NT", "TN", "TT"] if not args.variants else list(args.variants)
 
@@ -107,12 +108,13 @@ if __name__ == "__main__":
     target = args.target
     extra_compiler_args = ['--' + x for x in list(args.Xiree_compile)]
     dump_dir = args.dump_dir
+    device = args.device
 
-    args = itertools.starmap(
+    compile_args = itertools.starmap(
         lambda tag, config: (tag, config, kernel_dir, vmfb_dir, target, extra_compiler_args, tk, dump_dir), configs
     )
     with Pool(num_cpus) as pool:
-        compilation_results = list(tqdm(pool.starmap(compile_gemm, list(args))))
+        compilation_results = list(tqdm(pool.starmap(compile_gemm, list(compile_args))))
 
     error_count = 0
     for tag, config, mlir_file, vmfb_file in compilation_results:
@@ -145,7 +147,7 @@ if __name__ == "__main__":
 
         exec_args = [
             "iree-benchmark-module",
-            f"--device=hip",
+            f"--device={device}",
             "--device_allocator=caching",
             f"--module={vmfb_filename}",
             f"--input={inp1}",
