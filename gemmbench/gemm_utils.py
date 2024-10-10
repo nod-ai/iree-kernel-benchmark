@@ -66,15 +66,16 @@ def generate_mlir(config: GemmConfig):
     operand_element_type = config.operand_element_type
     acc_element_type = config.accumulator_element_type
     result_element_type = config.result_element_type
-    assert not operand_element_type.startswith(
-        'i'), "Integer types not supported yet"
+    is_integer = operand_element_type.startswith('i')
+    literal_zero = "0" if is_integer else "0.0"
+    trunc_op = "arith.trunci" if is_integer else "arith.truncf"
 
     tA = config.tA
     tB = config.tB
     mlir_template_matmul_transpose_a = f"""
 module {{
     func.func @main(%arg0: tensor<{K}x{M}x{operand_element_type}>, %arg1: tensor<{K}x{N}x{operand_element_type}>) -> tensor<{M}x{N}x{result_element_type}> {{
-        %cst = arith.constant 0.000000e+00 : {acc_element_type}
+        %cst = arith.constant {literal_zero} : {acc_element_type}
         %0 = tensor.empty() : tensor<{M}x{N}x{acc_element_type}>
         %1 = linalg.fill ins(%cst : {acc_element_type}) outs(%0 : tensor<{M}x{N}x{acc_element_type}>) -> tensor<{M}x{N}x{acc_element_type}>
         %2 = linalg.matmul_transpose_a ins(%arg0, %arg1 : tensor<{K}x{M}x{operand_element_type}>, tensor<{K}x{N}x{operand_element_type}>)
@@ -85,7 +86,7 @@ module {{
     mlir_template_matmul_transpose_b = f"""
 module {{
     func.func @main(%arg0: tensor<{M}x{K}x{operand_element_type}>, %arg1: tensor<{N}x{K}x{operand_element_type}>) -> tensor<{M}x{N}x{result_element_type}> {{
-        %cst = arith.constant 0.000000e+00 : {acc_element_type}
+        %cst = arith.constant {literal_zero} : {acc_element_type}
         %0 = tensor.empty() : tensor<{M}x{N}x{acc_element_type}>
         %1 = linalg.fill ins(%cst : {acc_element_type}) outs(%0 : tensor<{M}x{N}x{acc_element_type}>) -> tensor<{M}x{N}x{acc_element_type}>
         %2 = linalg.matmul_transpose_b ins(%arg0, %arg1 : tensor<{M}x{K}x{operand_element_type}>, tensor<{N}x{K}x{operand_element_type}>)
@@ -96,7 +97,7 @@ module {{
     mlir_template_matmul_normal = f"""
 module {{
     func.func @main(%arg0: tensor<{M}x{K}x{operand_element_type}>, %arg1: tensor<{K}x{N}x{operand_element_type}>) -> tensor<{M}x{N}x{result_element_type}> {{
-        %cst = arith.constant 0.000000e+00 : {acc_element_type}
+        %cst = arith.constant {literal_zero} : {acc_element_type}
         %0 = tensor.empty() : tensor<{M}x{N}x{acc_element_type}>
         %1 = linalg.fill ins(%cst : {acc_element_type}) outs(%0 : tensor<{M}x{N}x{acc_element_type}>) -> tensor<{M}x{N}x{acc_element_type}>
         %2 = linalg.matmul ins(%arg0, %arg1 : tensor<{M}x{K}x{operand_element_type}>, tensor<{K}x{N}x{operand_element_type}>)
@@ -105,8 +106,8 @@ module {{
 """
     mlir_template_matmul = mlir_template_matmul_transpose_a if tA == "T" else mlir_template_matmul_transpose_b if tB == "T" else mlir_template_matmul_normal
 
-    mlir_template_return_truncf = f"""
-        %3 = arith.truncf %2 : tensor<{M}x{N}x{acc_element_type}> to tensor<{M}x{N}x{result_element_type}>
+    mlir_template_return_truncated = f"""
+        %3 = {trunc_op} %2 : tensor<{M}x{N}x{acc_element_type}> to tensor<{M}x{N}x{result_element_type}>
         return %3 : tensor<{M}x{N}x{result_element_type}>
     }}
 }}
@@ -118,7 +119,7 @@ module {{
 }}
 """
 
-    mlir_template_return = mlir_template_return_untruncated if (acc_element_type == result_element_type) else mlir_template_return_truncate
+    mlir_template_return = mlir_template_return_untruncated if (acc_element_type == result_element_type) else mlir_template_return_truncated
 
     return mlir_template_matmul + mlir_template_return
 

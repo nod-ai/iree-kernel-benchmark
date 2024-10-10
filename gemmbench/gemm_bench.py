@@ -85,7 +85,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     # Handle default values here, since list args are not compatible with defaulted lists.
-    requested_dtypes = ["f16", "bf16"] if not args.dtypes else list(args.dtypes)
+    requested_dtypes = ["f16", "bf16", "i8"] if not args.dtypes else list(args.dtypes)
     requested_variants = ["NN", "NT", "TN", "TT"] if not args.variants else list(args.variants)
 
     logging.basicConfig(level=args.log_level)

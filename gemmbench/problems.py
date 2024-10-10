@@ -1038,7 +1038,7 @@ def get_gemm_configs() -> list[tuple[str, GemmConfig]]:
     unet_configs += unet("f16")
     unet_configs += unet("bf16")
 
-    square_configs: list[GemmConfig] = square("f16")
+    square_configs: list[GemmConfig] = square("f16") + square("bf16") + square("i8")
 
     all_configs: list[tuple[str, GemmConfig]] = []
     all_configs += [("llama13bmatvec", x) for x in llama13bmatvec_configs]
