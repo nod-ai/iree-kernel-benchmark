@@ -49,10 +49,9 @@ class GemmConfig:
         }
         operand_bytes_per_element = dtype_to_bytes[self.operand_element_type]
         result_bytes_per_element = dtype_to_bytes[self.result_element_type]
-        byte_count = (self.M * self.K + self.N * self.K) * \
-            operand_bytes_per_element + \
-            (self.M * self.N) * result_bytes_per_element
-        return byte_count
+        byte_count_input = (self.M  + self.N) * self.K * operand_bytes_per_element
+        byte_count_output = (self.M * self.N) * result_bytes_per_element
+        return byte_count_input + byte_count_output
 
     def get_flops(self) -> int:
         flops = 2 * self.M * self.N * self.K

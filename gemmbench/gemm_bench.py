@@ -78,8 +78,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--raw_accumulators",
-        type=bool,
-        default=False,
+        action='store_true',
         help="If true, benchmark matmuls returning the raw accumulator type with no truncation. If false (default), the results are truncated and cast to the input element type."
     )
 
