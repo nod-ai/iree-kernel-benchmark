@@ -24,7 +24,7 @@ Refer to the respective problems.py file in the folder to see which shapes are b
 ### Convolution Benchmarking
 
 ```
-python convbench/shark_conv.py
+python convbench/conv_bench.py
 ```
 
 ### GEMM Benchmarking
@@ -50,7 +50,7 @@ python attentionbench/attention_bench.py
 If you want to generate a roofline plot, you can call any of the suites for now with the --roofline option (provide a commma seperated list if you want to generate for multiple benchmarks combined):
 
 ```
-python convbench/shark_conv.py --roofline results/iree_conv.csv,results/iree_attention.csv --plot results/attn_conv.png
+python convbench/conv_bench.py --roofline results/iree_conv.csv,results/iree_attention.csv --plot results/attn_conv.png
 ```
 
 If you want to generate a roofline plot for a certain data type, model, or batch size you can do:

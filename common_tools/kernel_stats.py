@@ -98,7 +98,7 @@ class KernelStats:
     @staticmethod
     def get_csv_header() -> list[str]:
         return (
-            ["Name"] + IsaStats.get_csv_header() + ConfiguredMlirStats.get_csv_header()
+            ["name"] + IsaStats.get_csv_header() + ConfiguredMlirStats.get_csv_header()
         )
 
     def get_values(self):
