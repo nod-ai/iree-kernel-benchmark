@@ -278,12 +278,21 @@ def compile_gemm_config(
     exec_args = [
         "iree-compile",
         f"{mlir_file}",
-        "--iree-hal-target-backends=rocm",
-        f"--iree-hip-target={target}",
-        "--iree-llvmgpu-enable-prefetch=true",
         "-o",
         f"{vmfb_file}",
     ] + extra_compiler_args
+
+    if target == "host_cpu":
+        exec_args += [
+            "--iree-hal-target-backends=llvm-cpu",
+            "--iree-llvmcpu-target-cpu=host"
+        ]
+    else:
+        exec_args += [
+            "--iree-hal-target-backends=rocm",
+            f"--iree-hip-target={target}",
+            "--iree-llvmgpu-enable-prefetch=true",
+        ]
 
     print(" ".join(exec_args))
 

@@ -38,7 +38,7 @@ if __name__ == "__main__":
         help="Set the logging level",
     )
 
-    parser.add_argument("--target", help="The IREE hip target to compile for", type=str, default="gfx942")
+    parser.add_argument("--target", help="The IREE hip target to compile for. The special value host_cpu results in a llvm-cpu benchmark instead of HIP, compiled for the host CPU.", type=str, default="gfx942")
     parser.add_argument("--device", help="The IREE device to execute benchmarks on", type=str, default="hip")
     parser.add_argument(
         "--Xiree_compile",
@@ -114,7 +114,7 @@ if __name__ == "__main__":
     target = args.target
     extra_compiler_args = ['--' + x for x in list(args.Xiree_compile)]
     dump_dir = args.dump_dir
-    device = args.device
+    device = "local-task" if args.target == "host_cpu" else args.device
 
     compile_args = itertools.starmap(
         lambda tag, config: (tag, config, kernel_dir, vmfb_dir, target, extra_compiler_args, tk, dump_dir), configs
