@@ -1,12 +1,13 @@
 from utils import *
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 import iree.turbine.kernel as tk
 import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.lang.global_symbols import *
 import torch
+
 
 @dataclass
 class GemmConfig:
@@ -57,6 +58,86 @@ class GemmConfig:
         flops = 2 * self.M * self.N * self.K
         return flops
 
+
+@dataclass
+class GenericConfig:
+    shapeA: List[int]
+    shapeB: List[int]
+    tA: str
+    tB: str
+    dtype: str
+
+    def get_ret_shape(self) -> List[int]:
+        return self.shapeA[:-1] + [self.shapeB[-1]]
+
+    def get_lhs_type(self) -> str:
+        return f"tensor<{'x'.join([str(e) for e in self.shapeA])}x{self.dtype}>"
+
+    def get_rhs_type(self) -> str:
+        return f"tensor<{'x'.join([str(e) for e in self.shapeB])}x{self.dtype}>"
+
+    def get_ret_type(self) -> str:
+        return (
+            f"tensor<{'x'.join([str(e) for e in self.get_ret_shape()])}x{self.dtype}>"
+        )
+
+
+def generate_mlir_generic(config: GenericConfig):
+    tA = config.tA
+    tB = config.tB
+    shapeA = config.shapeA[:]
+    dtype = config.dtype
+
+    assert tA != "T" and tB != "T"
+    # if tA == "T":
+    #     shapeA[-1], shapeA[-2] = shapeA[-2], shapeA[-1]
+    # if tB == "T":
+    #     shapeB[-1], shapeB[-2] = shapeB[-2], shapeB[-1]
+
+    num_loops = len(shapeA) + 1
+
+    def get_affine_map(second_last: int, last: int):
+        dims = ", ".join(["d" + str(i) for i in range(num_loops)])
+        affine_map = f"affine_map<({dims}) -> ("
+        if num_loops > 3:
+            affine_map += ", ".join(["d" + str(i) for i in range(num_loops - 3)])
+            affine_map += ", "
+        affine_map += f"d{second_last}, d{last}"
+        return affine_map + ")>"
+
+    typeA: str = config.get_lhs_type()
+    typeB: str = config.get_rhs_type()
+    typeRet: str = config.get_ret_type()
+    map1: str = get_affine_map(num_loops - 2, num_loops - 1)
+    map2: str = get_affine_map(num_loops - 1, num_loops - 3)
+    map3: str = get_affine_map(num_loops - 2, num_loops - 3)
+    iteratorTypes = ('"parallel",' * (num_loops))[:-1]
+    mlir = f"""
+module {{
+    func.func @main(%arg0: {typeA}, %arg1: {typeB}) -> {typeRet} {{
+        %cst = arith.constant 0.000000e+00 : {dtype}
+        %0 = tensor.empty() : {typeRet}
+        %1 = linalg.fill ins(%cst : {dtype}) outs(%0 : {typeRet}) -> {typeRet} 
+        %2 = linalg.generic {{
+            iterator_types = [{iteratorTypes}],
+            indexing_maps=[{map1}, {map2}, {map3}]}}
+            ins(%arg0, %arg1 : {typeA}, {typeB})
+            outs(%0 : {typeRet}){{
+        ^bb0(%in : {dtype}, %in0 : {dtype}, %out : {dtype}):
+            %00 = arith.addf %in, %in0 : {dtype}
+            %01 = arith.mulf %00, %out : {dtype}
+            linalg.yield %01 : {dtype}
+        }} -> {typeRet}
+        return %2 : {typeRet}
+    }}
+}}
+"""
+    return mlir
+
+
+print(generate_mlir_generic(GenericConfig([100, 10, 20], [100, 20, 10], "", "", "f32")))
+
+
 def generate_mlir(config: GemmConfig):
     K = config.K
     M = config.M
@@ -103,6 +184,7 @@ module {{
     if tB == "T":
         return mlir_template_B
     return mlir_template
+
 
 def generate_tk_mlir(config: GemmConfig):
     # Input sizes
@@ -158,7 +240,7 @@ def generate_tk_mlir(config: GemmConfig):
 
         # repeat represents the results of the loop
         tkw.write(repeat, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
-    
+
     shape = [config.M, config.N, config.K]
     dtype_map = {
         "f16": torch.float16,
@@ -189,7 +271,12 @@ def generate_tk_mlir(config: GemmConfig):
 
 
 def compile_gemm_config(
-    config: GemmConfig, kernel_dir: Path, vmfb_dir: Path, target, extra_compiler_args, tk
+    config: GemmConfig,
+    kernel_dir: Path,
+    vmfb_dir: Path,
+    target,
+    extra_compiler_args,
+    tk,
 ) -> tuple[Path, Optional[Path]]:
     mlir_file = kernel_dir / (config.get_name() + ".mlir")
     vmfb_file = vmfb_dir / (config.get_name() + ".vmfb")

@@ -135,7 +135,7 @@ if __name__ == "__main__":
     if not os.path.exists(csv_dir):
         os.makedirs(csv_dir)
 
-    for vmfb_filename, value in vmfb_dict.items():
+    for vmfb_filename, value in tqdm(vmfb_dict.items(), desc="Running Benchmarks"):
         tag, config = value
         vmfb_hash = generate_md5_hex(vmfb_filename)
         name = config.get_name()
