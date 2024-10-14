@@ -69,8 +69,8 @@ class TuningSpec:
         return (
             f"#iree_gpu.lowering_config<"
             + "{ "
-            + f"workgroup = [{",".join([str(x) for x in self.wg_tiles])}], "
-            + f"reduction = [{",".join([str(x) for x in self.red_tiles])}]"
+            + f"workgroup = [{','.join([str(x) for x in self.wg_tiles])}], "
+            + f"reduction = [{','.join([str(x) for x in self.red_tiles])}]"
             + " }"
             + f">"
         )
