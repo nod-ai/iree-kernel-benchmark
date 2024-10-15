@@ -58,7 +58,7 @@ class AttentionConfig:
 @dataclass
 class TuningSpec:
     wg_tiles: list[int]
-    red_tiles: list[int]
+    reduction_tiles: list[int]
     M_warp: int
     N_warp: int
     intrinsic: str
@@ -69,8 +69,8 @@ class TuningSpec:
         return (
             f"#iree_gpu.lowering_config<"
             + "{ "
-            + f"workgroup = [{",".join([str(x) for x in self.wg_tiles])}], "
-            + f"reduction = [{",".join([str(x) for x in self.red_tiles])}]"
+            + f"workgroup = [{', '.join(map(str, self.wg_tiles))}], "
+            + f"reduction = [{', '.join(map(str, self.reduction_tiles))}]"
             + " }"
             + f">"
         )
