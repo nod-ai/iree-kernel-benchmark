@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kernel-visualizer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kernel-visualizer
+  template:
+    metadata:
+      labels:
+        app: kernel-visualizer
+    spec:
+      containers:
+      - name: kernel-visualizer
+        image: ghcr.io/saienduri/kernel-visualizer:latest
+        ports:
+        - containerPort: 8050
+        resources:
+          requests:
+            cpu: 7000m
+            memory: 8280Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kernel-visualizer-service
+spec:
+  selector:
+    app: kernel-visualizer
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8050
+  type: LoadBalancer
