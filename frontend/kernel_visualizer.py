@@ -7,6 +7,8 @@ import numpy as np
 import csv
 import os
 
+debug = False if os.environ["DASH_DEBUG_MODE"] == "False" else True
+
 color_map_attn = {"iree_attention.csv": "blue", "torch_attention.csv": "orange", "triton_attention.csv": "green"}
 color_map_conv = {"iree_conv.csv": "blue", "torch_conv.csv": "orange"}
 color_map_gemm = {"iree_gemm.csv": "blue", "iree_gemm_tk.csv": "green", "hipblaslt-gemm.csv": "orange", "rocblas-gemm.csv": "yellow"}
@@ -447,5 +449,7 @@ def update_gemm_graphs(selected_csv, selected_dtype, selected_model, selected_tA
     
     return roofline_fig
 
+server = app.server
+
 if __name__ == '__main__':
-    app.run_server(debug=True, port=9000)
+    app.run(debug=debug)
