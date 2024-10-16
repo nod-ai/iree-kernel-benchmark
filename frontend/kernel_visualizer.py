@@ -9,18 +9,22 @@ import os
 
 debug = False if os.environ["DASH_DEBUG_MODE"] == "False" else True
 
-color_map_attn = {"iree_attention.csv": "blue", "torch_attention.csv": "orange", "triton_attention.csv": "green"}
+color_map_attn = {"iree_attention.csv": "blue", "torch_attention.csv": "orange", "triton_attention.csv": "green", "ck_attention.csv": "yellow"}
 color_map_conv = {"iree_conv.csv": "blue", "torch_conv.csv": "orange"}
 color_map_gemm = {"iree_gemm.csv": "blue", "iree_gemm_tk.csv": "green", "hipblaslt-gemm.csv": "orange", "rocblas-gemm.csv": "yellow"}
 golden_csv_path = os.path.dirname(os.path.abspath(__file__)) + "/golden_csv"
 
 attn_data = []
-attn_files = [f"{golden_csv_path}/iree_attention.csv", f"{golden_csv_path}/torch_attention.csv", f"{golden_csv_path}/triton_attention.csv"]
+attn_files = [f"{golden_csv_path}/iree_attention.csv", f"{golden_csv_path}/torch_attention.csv", f"{golden_csv_path}/triton_attention.csv", f"{golden_csv_path}/ck_attention.csv"]
 for file in attn_files:
     with open(file, 'r') as f:
         reader = csv.DictReader(f)
         for row in reader:
             row.update({"csv": file.split("/")[-1]})
+            if "fp" in row["dtype"]:
+                row["dtype"] = row["dtype"].replace("fp", "f")
+            if row["dtype"] == "f8":
+                row["dtype"] = "f8E4M3FNUZ"
             row["tflops"] = float(row["tflops"])
             row["arithmetic_intensity"] = float(row["arithmetic_intensity"])
             attn_data.append(row)
@@ -280,7 +284,7 @@ def update_attn_graphs(selected_csv, selected_dtype, selected_model, selected_ba
                     color=color,  # Use the color mapped from the 'csv' property
                     symbol='circle',
                 ),
-                text=[f"Kernel: {name}<br>Performance: {perf:.2f} TFLOP/s<br>Arithmetic Intensity: {intensity:.2f} flops/bytes"
+                text=[f"Kernel (B,M,N,K1,K2): {name}<br>Performance: {perf:.2f} TFLOP/s<br>Arithmetic Intensity: {intensity:.2f} flops/bytes"
                       for name, perf, intensity in zip(csv_filtered_df['name'], csv_filtered_df['tflops'], csv_filtered_df['arithmetic_intensity'])],
                 hoverinfo='text',
                 name=csv_file.split("/")[-1]  # Use the CSV file name for the legend
