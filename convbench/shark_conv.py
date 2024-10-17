@@ -12,8 +12,10 @@ from conv_utils import *
 from problems import get_conv_configs
 
 
-def compile_conv(tag, config, kernel_dir, vmfb_dir):
-    mlir_file, vmfb_file = compile_conv_config(config, kernel_dir, vmfb_dir)
+def compile_conv(tag, config, kernel_dir, vmfb_dir, device, target):
+    mlir_file, vmfb_file = compile_conv_config(
+        config, kernel_dir, vmfb_dir, device, target
+    )
     return (tag, config, mlir_file, vmfb_file)
 
 
@@ -26,14 +28,27 @@ if __name__ == "__main__":
         type=str.upper,
         help="Set the logging level",
     )
-    parser.add_argument("--device", help="The IREE device to execute benchmarks on", type=str, default="hip")
+    parser.add_argument(
+        "--device",
+        help="The IREE device to execute benchmarks on",
+        type=str,
+        default="hip",
+    )
+    parser.add_argument(
+        "--target",
+        help="The device's target to execute benchmarks on",
+        type=str,
+        default="gfx942",
+    )
     parser.add_argument(
         "--roofline",
         help="Comma seperated csv file list to generate roofline plot with",
         default=None,
     )
     parser.add_argument("--plot", help="location to save plot", default=None)
-    parser.add_argument("--batch", help="roofline on certain batch", type=int, default=None)
+    parser.add_argument(
+        "--batch", help="roofline on certain batch", type=int, default=None
+    )
     parser.add_argument("--dtype", help="roofline on certain dtype", default=None)
     parser.add_argument("--model", help="roofline on certain model", default=None)
 
@@ -61,7 +76,8 @@ if __name__ == "__main__":
     device = args.device
 
     compile_args = itertools.starmap(
-        lambda tag, config: (tag, config, kernel_dir, vmfb_dir), configs
+        lambda tag, config: (tag, config, kernel_dir, vmfb_dir, device, args.target),
+        configs,
     )
     with Pool(num_cpus) as pool:
         compilation_results = list(tqdm(pool.starmap(compile_conv, list(compile_args))))
@@ -130,7 +146,8 @@ if __name__ == "__main__":
                 config.S,
                 config.input_dtype,
                 config.output_dtype,
-                round(benchmark_gemm_mean_time_us, 4),
+                round(benchmark_gemm_mean_time_us, 4), 
+
                 round(arithmetic_intensity, 4),
                 round(tflops_per_second, 4),
                 ok,
