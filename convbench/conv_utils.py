@@ -275,7 +275,7 @@ def generate_mlir(config: ConvConfig):
 
 
 def compile_conv_config(
-    config: ConvConfig, kernel_dir: Path, vmfb_dir: Path
+    config: ConvConfig, kernel_dir: Path, vmfb_dir: Path, device: str, target: str
 ) -> tuple[Path, Optional[Path]]:
     mlir_file = kernel_dir / (config.get_name() + ".mlir")
     vmfb_file = vmfb_dir / (config.get_name() + ".vmfb")
@@ -298,9 +298,9 @@ def compile_conv_config(
         "-o",
         f"{vmfb_file}",
         # Target Device: hip
-        "--iree-hal-target-device=hip",
+        f"--iree-hal-target-device={device}",
         # Device: MI300x
-        "--iree-hip-target=gfx942",
+        f"--iree-hip-target={target}",
     ]
 
     print(" ".join(exec_args))
