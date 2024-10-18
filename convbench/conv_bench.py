@@ -50,8 +50,8 @@ if __name__ == "__main__":
         roofline(args.roofline, args.plot, args.batch, args.dtype, args.model)
         sys.exit()
 
-    configs = get_conv_test_configs()
-    # configs = get_conv_configs()
+    # configs = get_conv_test_configs()
+    configs = get_conv_configs()
     print(f"Generated {len(configs)} conv configs.")
 
     num_cpus = max(1, cpu_count() - 20)

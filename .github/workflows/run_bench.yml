@@ -56,7 +56,7 @@ jobs:
         run: |
           source bench_venv/bin/activate
           python convbench/conv_bench.py --roofline results/iree_conv.csv --plot results/iree_conv_i8.png --dtype i8
-          python convbench/conv_bench.py --roofline results/iree_conv.csv --plot results/iree_conv_f32.png --dtype f32
+          python convbench/conv_bench.py --roofline results/iree_conv.csv --plot results/iree_conv_f16.png --dtype f16
           python convbench/conv_bench.py --roofline results/iree_attention.csv --plot results/iree_attention_fp16.png --dtype f16
           python convbench/conv_bench.py --roofline results/iree_attention.csv --plot results/iree_attention_fp8.png --dtype f8E4M3FNUZ
           python convbench/conv_bench.py --roofline results/iree_gemm.csv --plot results/iree_gemm.png

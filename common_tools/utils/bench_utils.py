@@ -144,7 +144,7 @@ def roofline(results=None, out=None, batch=None, dtype=None, model=None, **kwarg
         with open(result_file.strip(), mode='r') as csvfile:
             reader = csv.DictReader(csvfile)
             for row in reader:
-                row = {k: float(v) if k in ['index', 'mean_microseconds', 'arithmetic_intensity', 'tflops'] else v for k, v in row.items()}
+                row = {k: float(v) if k in ['index', 'mean_microseconds', 'arithmetic_intensity', 'tflops', 'roofline_tflops', 'roofline_percent'] else v for k, v in row.items()}
                 row['ok'] = True if 'ok' not in row else row['ok'] == 'True'
                 data.append(row)
         if batch:
