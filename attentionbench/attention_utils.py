@@ -139,8 +139,10 @@ func.func @main(%Q : !Q, %K : !K, %V : !V) -> !O {{
        {{ indexing_maps = [#Q, #K, #V, #S, #O]
          {",compilation_info = #tuning" if tuning and config.dtype == "f16" else ""}
        }}
-       ins(%Q, %K, %V, %scale : !Q, !K, !V, !dtype)
-       outs(%empty : !O) -> !O
+       ins(%Q, %K, %V, %scale : !Q, !K, !V, !dtype) outs(%empty : !O) {{
+          ^bb0(%score: f32):
+            iree_linalg_ext.yield %score : f32
+        }} -> !O
   return %O : !O
 }}
 """
