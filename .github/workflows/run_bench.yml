@@ -26,8 +26,8 @@ jobs:
         run: |
           sudo usermod -a -G render,video,sudo $LOGNAME
           rocm-smi
-          rocminfo
           groups
+          rocminfo
           python3.11 -m venv bench_venv
           source bench_venv/bin/activate
           pip install --upgrade pip
