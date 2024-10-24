@@ -24,7 +24,7 @@ jobs:
 
       - name: Setup venv
         run: |
-          sudo usermod -a -G render,video,sudo $LOGNAME
+          sudo usermod -a -G render,video esaimana
           rocm-smi
           groups
           rocminfo
