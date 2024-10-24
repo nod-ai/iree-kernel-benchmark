@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   benchmark:
-    runs-on: mi300
+    runs-on: mi300-kernel
 
     steps:
       - name: "Checkout Repo"
