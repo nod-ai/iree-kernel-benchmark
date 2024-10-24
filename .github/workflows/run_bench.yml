@@ -24,10 +24,6 @@ jobs:
 
       - name: Setup venv
         run: |
-          sudo usermod -a -G render,video esaimana
-          rocm-smi
-          groups
-          rocminfo
           python3.11 -m venv bench_venv
           source bench_venv/bin/activate
           pip install --upgrade pip
