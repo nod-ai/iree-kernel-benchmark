@@ -162,11 +162,12 @@ def generate_mlir(config: ConvConfig):
 
 
 def compile_conv_config(
-    config: ConvConfig, kernel_dir: Path, vmfb_dir: Path
+    config: ConvConfig, kernel_dir: Path, vmfb_dir: Path, extra_compiler_args: list[str]
 ) -> tuple[Path, Optional[Path]]:
     mlir_file = kernel_dir / (config.get_name() + ".mlir")
     vmfb_file = vmfb_dir / (config.get_name() + ".vmfb")
     dump_file = kernel_dir / (config.get_name() + ".stderr.mlir")
+    files_path = vmfb_dir / config.get_name()
 
     # Generate mlir content
     mlir_content = generate_mlir(config)
@@ -188,7 +189,8 @@ def compile_conv_config(
         "--iree-hal-target-device=hip",
         # Device: MI300x
         "--iree-hip-target=gfx942",
-    ]
+        f"--iree-hal-dump-executable-files-to={files_path}",
+    ] + extra_compiler_args
 
     print(" ".join(exec_args))
 
@@ -203,6 +205,6 @@ def compile_conv_config(
         print(f"Failed to compile {mlir_file}. Error dumped in {error_file}")
         with open(error_file, "w") as f:
             f.write(stderr.decode("utf-8"))
-        return mlir_file, None
+        return mlir_file, None, None
 
-    return mlir_file, vmfb_file
+    return mlir_file, vmfb_file, files_path

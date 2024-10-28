@@ -9,12 +9,12 @@ import argparse
 import sys
 from utils import *
 from conv_utils import *
-from problems import get_conv_configs
+from problems import get_conv_configs, get_conv_test_configs
 
 
-def compile_conv(tag, config, kernel_dir, vmfb_dir):
-    mlir_file, vmfb_file = compile_conv_config(config, kernel_dir, vmfb_dir)
-    return (tag, config, mlir_file, vmfb_file)
+def compile_conv(tag, config, kernel_dir, vmfb_dir, extra_compiler_args):
+    mlir_file, vmfb_file, dump_path = compile_conv_config(config, kernel_dir, vmfb_dir, extra_compiler_args)
+    return (tag, config, mlir_file, vmfb_file, dump_path)
 
 
 if __name__ == "__main__":
@@ -27,6 +27,12 @@ if __name__ == "__main__":
         help="Set the logging level",
     )
     parser.add_argument("--device", help="The IREE device to execute benchmarks on", type=str, default="hip")
+    parser.add_argument(
+        "--Xiree_compile",
+        nargs='+',
+        default=[],
+        help="Extra command line arguments passed to the IREE compiler. The flags need to be specified without the `--` or `-`."
+    )
     parser.add_argument(
         "--roofline",
         help="Comma seperated csv file list to generate roofline plot with",
@@ -44,6 +50,7 @@ if __name__ == "__main__":
         roofline(args.roofline, args.plot, args.batch, args.dtype, args.model)
         sys.exit()
 
+    # configs = get_conv_test_configs()
     configs = get_conv_configs()
     print(f"Generated {len(configs)} conv configs.")
 
@@ -60,16 +67,17 @@ if __name__ == "__main__":
     vmfb_dir.mkdir(parents=True, exist_ok=True)
     device = args.device
 
+    extra_compiler_args = ['--' + x for x in list(args.Xiree_compile)]
     compile_args = itertools.starmap(
-        lambda tag, config: (tag, config, kernel_dir, vmfb_dir), configs
+        lambda tag, config: (tag, config, kernel_dir, vmfb_dir, extra_compiler_args), configs
     )
     with Pool(num_cpus) as pool:
         compilation_results = list(tqdm(pool.starmap(compile_conv, list(compile_args))))
 
     error_count = 0
-    for tag, config, mlir_file, vmfb_file in compilation_results:
+    for tag, config, mlir_file, vmfb_file, dump_path in compilation_results:
         if vmfb_file:
-            vmfb_dict[vmfb_file] = (tag, config)
+            vmfb_dict[vmfb_file] = (tag, config, dump_path)
         else:
             error_count += 1
     print(
@@ -86,7 +94,7 @@ if __name__ == "__main__":
         os.makedirs(csv_dir)
 
     for vmfb_filename, value in vmfb_dict.items():
-        tag, config = value
+        tag, config, dump_path = value
         name = config.get_name()
 
         image_shape = config.get_img_shape()
@@ -103,17 +111,29 @@ if __name__ == "__main__":
             "--benchmark_repetitions=3",
         ]
 
+        print(f"Running {vmfb_filename}...")
         # iree benchmark kernels
         ret_value, cmd_out, cmd_stderr = run_iree_command(exec_args)
         ok = ret_value == 0
-        benchmark_gemm_mean_time_ms = bench_summary_process(ret_value, cmd_out)
-        benchmark_gemm_mean_time_us = benchmark_gemm_mean_time_ms * 1000
+        benchmark_conv_mean_time_ms = bench_summary_process(ret_value, cmd_out)
+        benchmark_conv_mean_time_us = benchmark_conv_mean_time_ms * 1000
 
         flops = config.get_flops()
         byte_count = config.get_byte_count()
 
         arithmetic_intensity = flops / byte_count
-        tflops_per_second = (flops / 1e12) / (benchmark_gemm_mean_time_us / 1e6)
+        tflops_per_second = (flops / 1e12) / (benchmark_conv_mean_time_us / 1e6)
+
+        # Compute percentage of the roofline.
+        # TODO: Make this target specific and move to common utils.
+        tflops_map = {
+            "f32": 653.7,
+            "f16": 1307.4,
+            "bf16": 1307.4,
+            "f8E4M3FNUZ": 2614.9,
+            "i8": 2614.9,
+        }
+        roofline_tflops = tflops_map[config.input_dtype]
 
         results.append(
             (
@@ -130,9 +150,11 @@ if __name__ == "__main__":
                 config.S,
                 config.input_dtype,
                 config.output_dtype,
-                round(benchmark_gemm_mean_time_us, 4),
+                round(benchmark_conv_mean_time_us, 4),
                 round(arithmetic_intensity, 4),
                 round(tflops_per_second, 4),
+                roofline_tflops,
+                round(tflops_per_second / roofline_tflops, 4),
                 ok,
             )
         )
@@ -155,6 +177,8 @@ if __name__ == "__main__":
         "mean_microseconds",
         "arithmetic_intensity",
         "tflops",
+        "roofline_tflops",
+        "roofline_percent",
         "ok",
     ]
 
