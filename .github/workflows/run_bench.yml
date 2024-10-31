@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   benchmark:
-    runs-on: mi300-kernel
+    runs-on: mi300-sdxl-kernel
 
     steps:
       - name: "Checkout Repo"
