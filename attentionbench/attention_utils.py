@@ -70,7 +70,8 @@ class TuningSpec:
             f"#iree_gpu.lowering_config<"
             + "{ "
             + f"workgroup = [{', '.join(map(str, self.wg_tiles))}], "
-            + f"reduction = [{', '.join(map(str, self.reduction_tiles))}]"
+            + f"reduction = [{', '.join(map(str, self.reduction_tiles))}],"
+            + f"promote_operands = [0, 1, 2]"
             + " }"
             + f">"
         )
@@ -93,7 +94,7 @@ class TuningSpec:
         return (
             f"#iree_codegen.translation_info<"
             + f"LLVMGPUVectorDistribute"
-            + f" workgroup_size = [{self.N_warp * 64}, {self.M_warp}]"
+            + f" workgroup_size = [{self.N_warp * self.M_warp * 64}]"
             + f" subgroup_size = 64"
             + f" ,{{mma_schedule = {self.get_mma_schedule()}"
             + f" , llvm_func_attrs = {{ {','.join(llvm_func_attrs)} }}"
@@ -137,6 +138,10 @@ func.func @main(%Q : !Q, %K : !K, %V : !V) -> !O {{
   %empty = tensor.empty() : !O
   %O = iree_linalg_ext.attention 
        {{ indexing_maps = [#Q, #K, #V, #S, #O]
+          ,decomposition_config = {{
+           qk_attrs = {{attention_qk_matmul, lowering_config = #iree_gpu.lowering_config<{{promote_operands = [0, 1]}}>}},
+           pv_attrs = {{attention_pv_matmul, lowering_config = #iree_gpu.lowering_config<{{promote_operands = [1]}}>}}
+         }}
          {",compilation_info = #tuning" if tuning and config.dtype == "f16" else ""}
        }}
        ins(%Q, %K, %V, %scale : !Q, !K, !V, !dtype) outs(%empty : !O) {{
