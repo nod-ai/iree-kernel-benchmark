@@ -4,7 +4,7 @@
 
 If you are not using a local iree build, install the iree pip packages:
 ```
-pip install --find-links https://iree.dev/pip-release-links.html iree-compiler iree-runtime --upgrade
+pip install --find-links https://iree.dev/pip-release-links.html iree-base-compiler iree-base-runtime --upgrade
 ```
 
 Create a python environment and install the requirements for the project:

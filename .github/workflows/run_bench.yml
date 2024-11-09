@@ -27,7 +27,7 @@ jobs:
           python3.11 -m venv bench_venv
           source bench_venv/bin/activate
           pip install --upgrade pip
-          pip install --find-links https://iree.dev/pip-release-links.html iree-compiler iree-runtime --upgrade
+          pip install --find-links https://iree.dev/pip-release-links.html iree-base-compiler iree-base-runtime --upgrade
           pip install -r requirements.txt
           pip install --no-compile --pre --upgrade -e common_tools
           pip install iree-turbine@git+https://github.com/iree-org/iree-turbine.git@main
