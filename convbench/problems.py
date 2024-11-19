@@ -1,5 +1,5 @@
 from conv_utils import ConvConfig
-
+import os
 
 def unet_sweep(op: str, input_dtype: str, output_dtype: str) -> list[ConvConfig]:
     configs = []
@@ -67,6 +67,17 @@ def get_conv_configs() -> list[tuple[str, ConvConfig]]:
     unet_configs += unet_sweep("conv_2d_nchw_fchw", "f16", "f32")
     unet_configs += unet_sweep("conv_2d_nchw_fchw", "i8", "i32")
     configs += [("unet", x) for x in unet_configs]
+
+    # MIOpen bf16 convs
+    cwd = os.getcwd()
+    shapes_file_path = os.path.join(cwd, "convbench/miopen_conv2d_shapes.txt")
+    miopen_configs = []
+    with open(shapes_file_path, 'r') as file:
+        for line in file:
+            line = line.strip()
+            params = line.split(", ")
+            miopen_configs.append(ConvConfig(int(params[0]), int(params[1]), int(params[2]), int(params[3]), int(params[4]), int(params[5]), int(params[6]), int(params[7]), params[8], params[9], params[10]))
+    configs += [("miopen", x) for x in miopen_configs]
 
     return configs
 

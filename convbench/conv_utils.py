@@ -126,7 +126,7 @@ def generate_mlir(config: ConvConfig):
         out = str(n) + "x" + str(f) + "x" + str(h) + "x" + str(w) + "x" + str(elem_types[2])
     one = "1"
     zero = "0"
-    if (elem_types[0][0] == "f"):
+    if (elem_types[0][0] == "f" or elem_types[0][0] == "b"):
         one = "1.0"
         zero = "0.0"
     conv_template = CONV
