@@ -94,7 +94,7 @@ if __name__ == "__main__":
 
     results = []
     index = 0
-    output_csv = "results/iree_conv.csv"
+    output_csv = "results/iree_conv_tk.csv" if args.tk else "results/iree_conv.csv"
     csv_dir = os.path.dirname(output_csv)
     if not os.path.exists(csv_dir):
         os.makedirs(csv_dir)
