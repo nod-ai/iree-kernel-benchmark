@@ -32,7 +32,6 @@ def compile_wave_conv_config(
 
     mlir_file = kernel_dir / (config.get_name() + ".mlir")
     vmfb_file = vmfb_dir / (config.get_name() + ".vmfb")
-    # dump_file = kernel_dir / (config.get_name() + ".stderr.mlir")
     files_path = vmfb_dir / config.get_name()
 
     try:
@@ -90,8 +89,7 @@ def _compile_conv(config: ConvConfig, mlir_file: Path, vmfb_file: Path):
     else:
         raise ValueError(f"Unsupported op_type: {op_type}")
 
-    # config = get_default_run_config()
-    config = get_default_compile_config()
+    config = get_default_run_config()
 
     with tk.gen.TestLaunchContext(
         hyperparams,
