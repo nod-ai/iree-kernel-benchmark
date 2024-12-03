@@ -46,7 +46,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch", help="roofline on certain batch", type=int, default=None)
     parser.add_argument("--dtype", help="roofline on certain dtype", default=None)
     parser.add_argument("--model", help="roofline on certain model", default=None)
-    parser.add_argument('--test-tk-wave', help="test tk wave conv kernels",action=argparse.BooleanOptionalAction)
+    parser.add_argument('--tk', help="Run conv kernels using Turbine Kernels", action=argparse.BooleanOptionalAction)
 
     args = parser.parse_args()
     logging.basicConfig(level=args.log_level)
@@ -76,7 +76,7 @@ if __name__ == "__main__":
     compile_args = itertools.starmap(
         lambda tag, config: (tag, config, kernel_dir, vmfb_dir, extra_compiler_args), configs
     )
-    compile_conv = compile_conv_wave if args.test_tk_wave else compile_conv_iree
+    compile_conv = compile_conv_wave if args.tk else compile_conv_iree
     with Pool(num_cpus) as pool:
         compilation_results = list(tqdm(pool.starmap(compile_conv, list(compile_args))))
 
