@@ -11,11 +11,15 @@ from utils import *
 from conv_utils import *
 from problems import get_conv_configs, get_conv_test_configs
 
+from wave_conv_utils import compile_wave_conv_config
 
-def compile_conv(tag, config, kernel_dir, vmfb_dir, extra_compiler_args):
+def compile_conv_iree(tag, config, kernel_dir, vmfb_dir, extra_compiler_args):
     mlir_file, vmfb_file, dump_path = compile_conv_config(config, kernel_dir, vmfb_dir, extra_compiler_args)
     return (tag, config, mlir_file, vmfb_file, dump_path)
 
+def compile_conv_wave(tag, config, kernel_dir, vmfb_dir, extra_compiler_args):
+    mlir_file, vmfb_file, dump_path = compile_wave_conv_config(config, kernel_dir, vmfb_dir, extra_compiler_args)
+    return (tag, config, mlir_file, vmfb_file, dump_path)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Config file updater.")
@@ -42,6 +46,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch", help="roofline on certain batch", type=int, default=None)
     parser.add_argument("--dtype", help="roofline on certain dtype", default=None)
     parser.add_argument("--model", help="roofline on certain model", default=None)
+    parser.add_argument('--test-tk-wave', help="test tk wave conv kernels",action=argparse.BooleanOptionalAction)
 
     args = parser.parse_args()
     logging.basicConfig(level=args.log_level)
@@ -71,6 +76,7 @@ if __name__ == "__main__":
     compile_args = itertools.starmap(
         lambda tag, config: (tag, config, kernel_dir, vmfb_dir, extra_compiler_args), configs
     )
+    compile_conv = compile_conv_wave if args.test_tk_wave else compile_conv_iree
     with Pool(num_cpus) as pool:
         compilation_results = list(tqdm(pool.starmap(compile_conv, list(compile_args))))
 
