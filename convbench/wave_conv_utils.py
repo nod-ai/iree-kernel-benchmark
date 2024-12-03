@@ -19,9 +19,10 @@ try:
         device_zeros,
     )
 except ImportError:
-    TURBINE_AVAILABLE=False
+    TURBINE_AVAILABLE = False
 else:
-    TURBINE_AVAILABLE=True
+    TURBINE_AVAILABLE = True
+
 
 def compile_wave_conv_config(
     config: ConvConfig, kernel_dir: Path, vmfb_dir: Path, extra_compiler_args: list[str]
@@ -46,13 +47,15 @@ def compile_wave_conv_config(
 
     return mlir_file, vmfb_file, files_path
 
+
 def _decode_op(op: str) -> tuple[str, str]:
     if op.startswith("conv_2d_"):
-        return "conv_2d", op[len("conv_2d_"):]
+        return "conv_2d", op[len("conv_2d_") :]
 
     raise ValueError(f"Unsupported op: {op}")
 
-def _convert_dtype(dtype:str):
+
+def _convert_dtype(dtype: str):
     dtypes = {
         "i8": tkl.i8,
         "i16": tkl.i16,
@@ -64,6 +67,7 @@ def _convert_dtype(dtype:str):
         # "bf16": tkl.bf16, TODO
     }
     return dtypes[dtype]
+
 
 def _compile_conv(config: ConvConfig, mlir_file: Path, vmfb_file: Path):
     print("Compile TKW kernel", config.OP)
@@ -96,9 +100,8 @@ def _compile_conv(config: ConvConfig, mlir_file: Path, vmfb_file: Path):
         run_config=config,
         schedule=False,
     ):
-        mod = conv().module_op # This will generate vmfb file
+        mod = conv().module_op  # This will generate vmfb file
         with open(mlir_file, "w") as f:
             f.write(str(mod))
 
         print(f"Successfully compiled to {vmfb_file}")
-
