@@ -72,12 +72,14 @@ def _compile_conv(config: ConvConfig, mlir_file: Path, vmfb_file: Path):
     print("Compile TKW kernel", config.OP)
     op_type, layout = _decode_op(config.OP)
 
+    in_h = config.H * config.S + config.P - 1
+    in_w = config.W * config.S + config.Q - 1
     if op_type == "conv_2d":
         conv, hyperparams = get_igemm_conv2d(
             layout=layout,
             n=config.N,
-            h=config.H,
-            w=config.W,
+            h=in_h,
+            w=in_w,
             c=config.C,
             hf=config.P,
             wf=config.Q,
