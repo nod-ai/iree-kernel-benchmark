@@ -15,11 +15,11 @@ from wave_conv_utils import compile_wave_conv_config
 
 def compile_conv_iree(tag, config, kernel_dir, vmfb_dir, extra_compiler_args):
     mlir_file, vmfb_file, dump_path = compile_conv_config(config, kernel_dir, vmfb_dir, extra_compiler_args)
-    return (tag, config, mlir_file, vmfb_file, dump_path)
+    return (tag, config, mlir_file, vmfb_file, dump_path, "main")
 
 def compile_conv_wave(tag, config, kernel_dir, vmfb_dir, extra_compiler_args):
     mlir_file, vmfb_file, dump_path = compile_wave_conv_config(config, kernel_dir, vmfb_dir, extra_compiler_args)
-    return (tag, config, mlir_file, vmfb_file, dump_path)
+    return (tag, config, mlir_file, vmfb_file, dump_path, "isolated_benchmark")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Config file updater.")
@@ -81,9 +81,9 @@ if __name__ == "__main__":
         compilation_results = list(tqdm(pool.starmap(compile_conv, list(compile_args))))
 
     error_count = 0
-    for tag, config, mlir_file, vmfb_file, dump_path in compilation_results:
+    for tag, config, mlir_file, vmfb_file, dump_path, entrypoint in compilation_results:
         if vmfb_file:
-            vmfb_dict[vmfb_file] = (tag, config, dump_path)
+            vmfb_dict[vmfb_file] = (tag, config, dump_path, entrypoint)
         else:
             error_count += 1
     print(
@@ -100,7 +100,7 @@ if __name__ == "__main__":
         os.makedirs(csv_dir)
 
     for vmfb_filename, value in vmfb_dict.items():
-        tag, config, dump_path = value
+        tag, config, dump_path, entrypoint = value
         name = config.get_name()
 
         image_shape = config.get_img_shape()
@@ -111,7 +111,7 @@ if __name__ == "__main__":
             f"--device={device}",
             "--device_allocator=caching",
             f"--module={vmfb_filename}",
-            "--function=main",
+            f"--function={entrypoint}",
             f"--input={image_shape}",
             f"--input={filter_shape}",
             "--benchmark_repetitions=3",

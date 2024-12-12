@@ -97,6 +97,7 @@ def _compile_conv(config: ConvConfig, mlir_file: Path, vmfb_file: Path):
         create_vmfb_file=vmfb_file,
         run_config=config,
         schedule=False,
+        inline=False,
     ):
         mod = conv().module_op  # This will generate vmfb file
         with open(mlir_file, "w") as f:
