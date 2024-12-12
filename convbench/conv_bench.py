@@ -118,7 +118,7 @@ if __name__ == "__main__":
             f"--input={filter_shape}",
         ]
 
-        if tk:
+        if args.tk:
             out_shape = config.get_out_shape()
             exec_args.append(f"--input={out_shape}")
 
