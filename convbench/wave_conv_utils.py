@@ -63,7 +63,7 @@ def _convert_dtype(dtype: str):
         "f16": tkl.f16,
         "f32": tkl.f32,
         "f64": tkl.f64,
-        # "bf16": tkl.bf16, TODO
+        "bf16": tkl.bf16,
     }
     return dtypes[dtype]
 

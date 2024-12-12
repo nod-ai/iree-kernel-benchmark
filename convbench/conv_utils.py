@@ -56,7 +56,17 @@ class ConvConfig:
             return str(self.P) + "x" + str(self.Q) + "x" + str(self.C) + "x" + str(self.F) + "x" + self.input_dtype
         if "nchw" in self.OP:
             return str(self.F) + "x" + str(self.C) + "x" + str(self.P) + "x" + str(self.Q) + "x" + self.input_dtype
-        
+
+    def get_out_shape(self) -> str:
+        padding = 0
+        h_out = (self.H + 2 * padding - self.P) // config.S + 1
+        w_out = (self.W + 2 * padding - self.Q) // config.S + 1
+        n = self.N
+        nf = self.F
+        if "nhwc" in self.OP:
+            return str(n) + "x" + str(nf) + "x" + str(h_out) + "x" + str(w_out) + "x" + self.input_dtype
+        if "nchw" in self.OP:
+            return str(n) + "x" + str(h_out) + "x" + str(w_out) + "x" + str(nf) + "x" + self.input_dtype
 
     def get_byte_count(self) -> int:
         dtype_bits_map = {

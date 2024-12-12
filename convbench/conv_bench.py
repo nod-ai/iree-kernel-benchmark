@@ -15,11 +15,11 @@ from wave_conv_utils import compile_wave_conv_config
 
 def compile_conv_iree(tag, config, kernel_dir, vmfb_dir, extra_compiler_args):
     mlir_file, vmfb_file, dump_path = compile_conv_config(config, kernel_dir, vmfb_dir, extra_compiler_args)
-    return (tag, config, mlir_file, vmfb_file, dump_path, "main")
+    return (tag, config, mlir_file, vmfb_file, dump_path)
 
 def compile_conv_wave(tag, config, kernel_dir, vmfb_dir, extra_compiler_args):
     mlir_file, vmfb_file, dump_path = compile_wave_conv_config(config, kernel_dir, vmfb_dir, extra_compiler_args)
-    return (tag, config, mlir_file, vmfb_file, dump_path, "isolated_benchmark")
+    return (tag, config, mlir_file, vmfb_file, dump_path)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Config file updater.")
@@ -81,9 +81,9 @@ if __name__ == "__main__":
         compilation_results = list(tqdm(pool.starmap(compile_conv, list(compile_args))))
 
     error_count = 0
-    for tag, config, mlir_file, vmfb_file, dump_path, entrypoint in compilation_results:
+    for tag, config, mlir_file, vmfb_file, dump_path in compilation_results:
         if vmfb_file:
-            vmfb_dict[vmfb_file] = (tag, config, dump_path, entrypoint)
+            vmfb_dict[vmfb_file] = (tag, config, dump_path)
         else:
             error_count += 1
     print(
@@ -95,12 +95,13 @@ if __name__ == "__main__":
     results = []
     index = 0
     output_csv = "results/iree_conv_tk.csv" if args.tk else "results/iree_conv.csv"
+    entrypoint = "isolated_benchmark" if args.tk else "main"
     csv_dir = os.path.dirname(output_csv)
     if not os.path.exists(csv_dir):
         os.makedirs(csv_dir)
 
     for vmfb_filename, value in vmfb_dict.items():
-        tag, config, dump_path, entrypoint = value
+        tag, config, dump_path = value
         name = config.get_name()
 
         image_shape = config.get_img_shape()
@@ -112,10 +113,14 @@ if __name__ == "__main__":
             "--device_allocator=caching",
             f"--module={vmfb_filename}",
             f"--function={entrypoint}",
+            "--benchmark_repetitions=3",
             f"--input={image_shape}",
             f"--input={filter_shape}",
-            "--benchmark_repetitions=3",
         ]
+
+        if tk:
+            out_shape = config.get_out_shape()
+            exec_args.append(f"--input={out_shape}")
 
         print(f"Running {vmfb_filename}...")
         # iree benchmark kernels
