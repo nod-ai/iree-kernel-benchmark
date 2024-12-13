@@ -246,7 +246,6 @@ def generate_tk_mlir(config: GemmConfig, vmfb_file: Path):
         hyperparams,
         canonicalize=True,
         create_vmfb_file=vmfb_file,
-        run=True,
         run_config=config,
         schedule=True,
     ):
