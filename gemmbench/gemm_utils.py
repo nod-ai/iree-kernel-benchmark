@@ -258,7 +258,9 @@ def generate_tk_mlir(config: GemmConfig, vmfb_file: Path):
         K: shape[2],
     }
     hyperparams.update(get_default_scheduling_params())
-    config = get_default_run_config()
+    # config = get_default_run_config() TODO: detects device as CPU for some reason
+    config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
+
 
     # TODO: Scheduling is taking too long time with large K.
     with tk.gen.TestLaunchContext(
