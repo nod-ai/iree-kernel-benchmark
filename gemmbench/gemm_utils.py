@@ -258,12 +258,15 @@ def generate_tk_mlir(config: GemmConfig, vmfb_file: Path):
     }
     hyperparams.update(get_default_scheduling_params())
     config = get_default_run_config()
+
+    # TODO: Scheduling is taking too long time with large K.
+    schedule = (config.K < 4096)
     with tk.gen.TestLaunchContext(
         hyperparams,
         canonicalize=True,
         create_vmfb_file=vmfb_file,
         run_config=config,
-        schedule=True,
+        schedule=schedule,
     ):
         mb = gemm()
 
