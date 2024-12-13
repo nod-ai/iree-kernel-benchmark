@@ -244,6 +244,7 @@ def generate_tk_mlir(config: GemmConfig, vmfb_file: Path):
         tkw.write(repeat, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
 
     shape = [config.M, config.N, config.K]
+    schedule = (config.K < 4096)
 
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
@@ -260,7 +261,6 @@ def generate_tk_mlir(config: GemmConfig, vmfb_file: Path):
     config = get_default_run_config()
 
     # TODO: Scheduling is taking too long time with large K.
-    schedule = (config.K < 4096)
     with tk.gen.TestLaunchContext(
         hyperparams,
         canonicalize=True,
