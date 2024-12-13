@@ -11,6 +11,7 @@ from iree.turbine.kernel.wave.utils import (
     get_default_scheduling_params,
 )
 import torch
+import traceback
 
 
 @dataclass
