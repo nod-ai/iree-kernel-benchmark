@@ -6,6 +6,10 @@ import iree.turbine.kernel as tk
 import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.lang.global_symbols import *
+from iree.turbine.kernel.wave.utils import (
+    get_default_run_config,
+    get_default_scheduling_params,
+)
 import torch
 
 
@@ -232,16 +236,9 @@ def generate_tk_mlir(config: GemmConfig):
         M: shape[0],
         N: shape[1],
         K: shape[2],
-        READ_SHARED_DELAY: tc.DELAY_SHARED,
-        WRITE_SHARED_DELAY: tc.DELAY_SHARED,
-        READ_GLOBAL_DELAY: tc.DELAY_GLOBAL,
-        WRITE_GLOBAL_DELAY: tc.DELAY_GLOBAL,
-        MMA_DELAY: tc.DELAY_MMA,
-        SHARED_MEMORY_UNITS: tc.SHARED_UNITS,
-        GLOBAL_MEMORY_UNITS: tc.GLOBAL_UNITS,
-        MMA_UNITS: tc.MMA_UNITS,
     }
-    config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
+    hyperparams.update(get_default_scheduling_params())
+    config = get_default_run_config()
     with tk.gen.TestLaunchContext(
         hyperparams, canonicalize=True, run=True, run_config=config, schedule=True,
     ):
