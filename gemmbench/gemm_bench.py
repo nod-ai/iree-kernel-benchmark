@@ -158,12 +158,14 @@ if __name__ == "__main__":
             f"--device={device}",
             "--device_allocator=caching",
             f"--module={vmfb_filename}",
+            "--benchmark_repetitions=3",
             f"--input={inp1}",
             f"--input={inp2}",
-            "--benchmark_repetitions=3",
         ]
 
         if tk:
+            out_shape = config.get_out()
+            exec_args.append(f"--input={out_shape}")
             exec_args += ["--function=isolated_benchmark"]
         else:
             exec_args += ["--function=main"]

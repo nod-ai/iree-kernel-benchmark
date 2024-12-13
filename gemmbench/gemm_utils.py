@@ -42,6 +42,9 @@ class GemmConfig:
             return f"{self.N}x{self.K}x{self.operand_element_type}"
         return f"{self.K}x{self.N}x{self.operand_element_type}"
 
+    def get_out(self) -> str:
+        return f"{self.M}x{self.N}x{self.result_element_type}"
+
     def get_byte_count(self) -> int:
         dtype_to_bytes = {
             "f32": 4,
@@ -158,7 +161,7 @@ def get_tk_tuned_config(config: GemmConfig) -> TkTunedConfig:
     return TkTunedConfig(64, 64, 32, 2, 2, 1, 2, 2, 2, 1, 1, 2)
 
 
-def generate_tk_mlir(config: GemmConfig):
+def generate_tk_mlir(config: GemmConfig, vmfb_file: Path):
     # TODO: Enable waves_per_eu
     # TODO: Use scheduling barriers with LLVM patch
     tc = get_tk_tuned_config(config)
@@ -240,12 +243,14 @@ def generate_tk_mlir(config: GemmConfig):
     hyperparams.update(get_default_scheduling_params())
     config = get_default_run_config()
     with tk.gen.TestLaunchContext(
-        hyperparams, canonicalize=True, run=True, run_config=config, schedule=True,
+        hyperparams,
+        canonicalize=True,
+        create_vmfb_file=vmfb_file,
+        run=True,
+        run_config=config,
+        schedule=True,
     ):
-        a = torch.randn(shape[0], shape[2], dtype=operand_element_type)
-        b = torch.randn(shape[1], shape[2], dtype=operand_element_type)
-        c = torch.zeros(shape[0], shape[1], dtype=torch.float32)
-        mb = gemm(a, b, c)
+        mb = gemm()
 
         return mb.module_op.get_asm()
 
@@ -262,13 +267,16 @@ def compile_gemm_config(
 
     # Generate mlir content
     if tk:
-        mlir_content = generate_tk_mlir(config)
+        mlir_content = generate_tk_mlir(config, vmfb_file)
     else:
         mlir_content = generate_mlir(config)
 
     # Write MLIR content to file
     with open(mlir_file, "w") as f:
         f.write(mlir_content)
+
+    if tk:
+        return mlir_file, vmfb_file
 
     # Compile MLIR to VMFB
     exec_args = [
