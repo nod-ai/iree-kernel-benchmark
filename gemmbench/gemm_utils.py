@@ -221,7 +221,7 @@ def generate_tk_mlir(config: GemmConfig, vmfb_file: Path):
     def gemm(
         a: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f16],
         b: tkl.Memory[N, K, ADDRESS_SPACE, tkl.f16],
-        c: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        c: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, res_dtype],
     ):
         c_reg = tkl.Register[M, N, tkl.f32](0.0)
 
