@@ -161,6 +161,20 @@ def get_tk_tuned_config(config: GemmConfig) -> TkTunedConfig:
     # Default config
     return TkTunedConfig(64, 64, 32, 2, 2, 1, 2, 2, 2, 1, 1, 2)
 
+def _convert_dtype(dtype: str):
+    dtypes = {
+        "i8": tkl.i8,
+        "i16": tkl.i16,
+        "i32": tkl.i32,
+        "i64": tkl.i64,
+        "f16": tkl.f16,
+        "f32": tkl.f32,
+        "f64": tkl.f64,
+        "bf16": tkl.bf16,
+    }
+    return dtypes[dtype]
+
+
 
 def generate_tk_mlir(config: GemmConfig, vmfb_file: Path):
     # TODO: Enable waves_per_eu
@@ -168,6 +182,8 @@ def generate_tk_mlir(config: GemmConfig, vmfb_file: Path):
     tc = get_tk_tuned_config(config)
     assert config.operand_element_type == 'f16', "Unsupported problem"
     assert config.accumulator_element_type == 'f32', "Unsupported problem"
+
+    res_dtype = _convert_dtype(config.result_element_type)
     # Input sizes
     M = tkl.sym.M
     N = tkl.sym.N
@@ -221,14 +237,13 @@ def generate_tk_mlir(config: GemmConfig, vmfb_file: Path):
             acc = tkw.mma(a_reg, b_reg, acc)
             return acc
 
+        if res_dtype != tkl.f32:
+            repeat = tkw.cast(repeat, res_dtype)
+
         # repeat represents the results of the loop
         tkw.write(repeat, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
 
     shape = [config.M, config.N, config.K]
-    operand_element_type_map = {
-        "f16": torch.float16,
-    }
-    operand_element_type = operand_element_type_map[config.operand_element_type]
 
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
