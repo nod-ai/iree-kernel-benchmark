@@ -288,6 +288,7 @@ def compile_gemm_config(
         try:
             mlir_content = generate_tk_mlir(config, vmfb_file)
         except Exception as e:
+            traceback.print_exc()
             error_file = vmfb_dir / (config.get_name() + "_error.txt")
             print(f"Failed to compile {config.get_name()}. Error dumped in {error_file}")
             with open(error_file, "w") as f:
