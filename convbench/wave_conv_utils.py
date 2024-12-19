@@ -91,7 +91,8 @@ def _compile_conv(config: ConvConfig, mlir_file: Path, vmfb_file: Path):
     else:
         raise ValueError(f"Unsupported op_type: {op_type}")
 
-    config = get_default_run_config()
+    # config = get_default_run_config()
+    config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
 
     with tk.gen.TestLaunchContext(
         hyperparams,
