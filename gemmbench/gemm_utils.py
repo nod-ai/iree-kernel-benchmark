@@ -1,4 +1,3 @@
-from utils import *
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -10,7 +9,8 @@ from iree.turbine.kernel.wave.utils import (
     get_default_run_config,
     get_default_scheduling_params,
 )
-import torch
+from utils import *
+import os
 import traceback
 
 
