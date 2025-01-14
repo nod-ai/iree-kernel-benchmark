@@ -686,19 +686,21 @@ SQUARE = [
 ]
 
 
-def llama8b_prefill(dtype: str) -> list[GemmConfig]:
+def llama8b_prefill(dtype: str, pad_contraction_dimension: bool) -> list[GemmConfig]:
     configs = []
     """LLAMA 8b Prefill, FP16."""
     for m, n, k, model in LLAMA:
         if model == "8b_prefill":
             for raw_accumulators in [False, True]:
+                cache_line_size_bytes = 128
+                padded_k = k + cache_line_size_bytes // num_bytes(dtype)
                 configs.append(
                     GemmConfig(
                         m,
                         n,
-                        k,
-                        "T",
+                        padded_k if pad_contraction_dimension else k,
                         "N",
+                        "T",
                         dtype,
                         get_default_accumulator_element_type(dtype),
                         get_default_result_element_type(
@@ -1036,7 +1038,8 @@ def square(dtype: str) -> list[GemmConfig]:
 
 
 def get_gemm_configs() -> list[tuple[str, GemmConfig]]:
-    llama8b_prefill_configs = llama8b_prefill("f16")
+    llama8b_prefill_configs = llama8b_prefill("f16", False)
+    llama8b_prefill_padded_configs = llama8b_prefill("f16", True)
 
     llama13bmatvec_configs: list[GemmConfig] = []
     llama13bmatvec_configs += llama13bmatvec("f16")
@@ -1070,6 +1073,7 @@ def get_gemm_configs() -> list[tuple[str, GemmConfig]]:
 
     all_configs: list[tuple[str, GemmConfig]] = []
     all_configs += [("llama8b_prefill", x) for x in llama8b_prefill_configs]
+    all_configs += [("llama8b_prefill_padded", x) for x in llama8b_prefill_padded_configs]
     all_configs += [("llama13bmatvec", x) for x in llama13bmatvec_configs]
     all_configs += [("llama70bmatvec", x) for x in llama70bmatvec_configs]
     all_configs += [("llama13bskinny", x) for x in llama13bskinny_configs]
