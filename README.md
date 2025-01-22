@@ -27,6 +27,12 @@ Refer to the respective problems.py file in the folder to see which shapes are b
 python convbench/conv_bench.py
 ```
 
+### TK Convolution Benchmarking
+
+```
+python convbench/conv_bench.py --tk
+```
+
 ### GEMM Benchmarking
 
 ```
