@@ -9,7 +9,7 @@ import argparse
 import sys
 from utils import *
 from conv_utils import *
-from problems import get_conv_configs, get_conv_test_configs
+from problems import get_conv_configs, get_tk_conv_configs, get_conv_test_configs
 
 from wave_conv_utils import compile_wave_conv_config
 
@@ -56,7 +56,7 @@ if __name__ == "__main__":
         sys.exit()
 
     # configs = get_conv_test_configs()
-    configs = get_conv_configs()
+    configs = get_tk_conv_configs() if args.tk else get_conv_configs()
     print(f"Generated {len(configs)} conv configs.")
 
     num_cpus = max(1, cpu_count() - 20)

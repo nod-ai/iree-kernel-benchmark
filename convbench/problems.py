@@ -81,6 +81,14 @@ def get_conv_configs() -> list[tuple[str, ConvConfig]]:
 
     return configs
 
+def get_tk_conv_configs() -> list[tuple[str, ConvConfig]]:
+    def check(config_tuple: tuple[str, ConvConfig]) -> bool:
+        config = config_tuple[1]
+        return config.input_dtype == "f16" and config.output_dtype == "f32"
+
+    return list(filter(check, get_conv_configs()))
+
+
 # Test function to run only a few chosen shapes
 def get_conv_test_configs() -> list[tuple[str, ConvConfig]]:
     configs: list[tuple[str, ConvConfig]] = []
