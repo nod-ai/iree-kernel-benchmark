@@ -47,6 +47,11 @@ jobs:
           source bench_venv/bin/activate
           python attentionbench/attention_bench.py
 
+      - name: TK Attention
+        run: |
+          source bench_venv/bin/activate
+          python attentionbench/attention_bench.py --tk
+
       - name: TK GEMM
         run: |
           source bench_venv/bin/activate
@@ -66,6 +71,8 @@ jobs:
           python convbench/conv_bench.py --roofline results/iree_conv_tk.csv --plot results/iree_conv_tk_f16.png --dtype f16
           python convbench/conv_bench.py --roofline results/iree_attention.csv --plot results/iree_attention_fp16.png --dtype f16
           python convbench/conv_bench.py --roofline results/iree_attention.csv --plot results/iree_attention_fp8.png --dtype f8E4M3FNUZ
+          python convbench/conv_bench.py --roofline results/iree_attention_tk.csv --plot results/iree_attention_tk_fp16.png --dtype f16
+          python convbench/conv_bench.py --roofline results/iree_attention_tk.csv --plot results/iree_attention_tk_fp8.png --dtype f8E4M3FNUZ
           python convbench/conv_bench.py --roofline results/iree_gemm.csv --plot results/iree_gemm.png
           python convbench/conv_bench.py --roofline results/iree_gemm_tk.csv --plot results/iree_gemm_tk.png
           python convbench/conv_bench.py --roofline results/iree_gemm.csv,results/iree_gemm_tk.csv,results/iree_attention.csv,results/iree_conv.csv,results/iree_conv_tk.csv --plot results/combined.png
