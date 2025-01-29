@@ -154,7 +154,7 @@ def roofline(results=None, out=None, batch=None, dtype=None, model=None, **kwarg
         if model:
             data = filter_model(data, model)
         if len(data) == 0:
-            raise ValueError("No data to plot. If you set filters, there were no kernels with the target config")
+            raise ValueError(f"No data to plot from file {result_file} with filter: {batch}, {dtype}, {model}. If you set filters, there were no kernels with the target config")
         x = [item['arithmetic_intensity'] for item in data]
         y = [item['tflops'] for item in data]
         

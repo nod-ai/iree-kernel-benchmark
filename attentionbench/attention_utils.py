@@ -63,6 +63,16 @@ def get_pv_intrinsic(intrinsic: IntrinsicType):
         case _:
             return intrinsic
 
+def get_32_bit_type(input_type: str):
+    assert isinstance(input_type, str)
+    match input_type[0]:
+        case "f":
+            return "f32"
+        case "i":
+            return "i32"
+        case _:
+            raise NotImplementedError("Unexpected type to obtain 32 bit type on attention utils.")
+
 @dataclass
 class AttentionConfig:
     B: int
@@ -82,10 +92,10 @@ class AttentionConfig:
         return f"{self.B}x{self.K2}x{self.K1}x{self.dtype}"
 
     def get_value_shape(self) -> str:
-        return f"{self.B}x{self.K2}x{self.N}x{self.dtype}"
+        return f"{self.B}x{self.N}x{self.K2}x{self.dtype}"
 
     def get_output_shape(self) -> str:
-        return f"{self.B}x{self.M}x{self.N}x{self.dtype}"
+        return f"{self.B}x{self.M}x{self.N}x{get_32_bit_type(self.dtype)}"
 
     def get_byte_count(self) -> int:
         dtype_bits_map = {
@@ -198,7 +208,7 @@ def generate_mlir(config: AttentionConfig, tuning: Optional[TuningSpec] = None):
     attn_kernel = f"""
 #Q = affine_map<(b, m, n, k1, k2) -> (b, m, k1)>
 #K = affine_map<(b, m, n, k1, k2) -> (b, k2, k1)>
-#V = affine_map<(b, m, n, k1, k2) -> (b, k2, n)>
+#V = affine_map<(b, m, n, k1, k2) -> (b, n, k2)>
 #S = affine_map<(b, m, n, k1, k2) -> ()>
 #O = affine_map<(b, m, n, k1, k2) -> (b, m, n)>
 

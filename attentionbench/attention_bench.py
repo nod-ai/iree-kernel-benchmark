@@ -10,10 +10,15 @@ import sys
 from utils import *
 from attention_utils import *
 from problems import get_attention_configs
+from wave_attention_utils import compile_wave_attention_config
 
 
-def compile_attention(tag, config, kernel_dir, vmfb_dir):
+def compile_attention_iree(tag, config, kernel_dir, vmfb_dir):
     mlir_file, vmfb_file = compile_attention_config(config, kernel_dir, vmfb_dir)
+    return (tag, config, mlir_file, vmfb_file)
+
+def compile_attention_wave(tag, config, kernel_dir, vmfb_dir):
+    mlir_file, vmfb_file = compile_wave_attention_config(config, kernel_dir, vmfb_dir)
     return (tag, config, mlir_file, vmfb_file)
 
 
@@ -36,6 +41,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch", help="roofline on certain batch", type=int, default=None)
     parser.add_argument("--dtype", help="roofline on certain dtype", default=None)
     parser.add_argument("--model", help="roofline on certain model", default=None)
+    parser.add_argument('--tk', help="Run conv kernels using Wave Kernels", action=argparse.BooleanOptionalAction)
 
     args = parser.parse_args()
     logging.basicConfig(level=args.log_level)
@@ -63,6 +69,7 @@ if __name__ == "__main__":
     compile_args = itertools.starmap(
         lambda tag, config: (tag, config, kernel_dir, vmfb_dir), configs
     )
+    compile_attention = compile_attention_wave if args.tk else compile_attention_iree
     with Pool(num_cpus) as pool:
         compilation_results = list(tqdm(pool.starmap(compile_attention, list(compile_args))))
 
@@ -80,7 +87,8 @@ if __name__ == "__main__":
 
     results = []
     index = 0
-    output_csv = "results/iree_attention.csv"
+    output_csv = "results/iree_attention_tk.csv" if args.tk else "results/iree_attention.csv"
+    entrypoint = "isolated_benchmark" if args.tk else "main"
     csv_dir = os.path.dirname(output_csv)
     if not os.path.exists(csv_dir):
         os.makedirs(csv_dir)
@@ -98,12 +106,16 @@ if __name__ == "__main__":
             f"--device={device}",
             "--device_allocator=caching",
             f"--module={vmfb_filename}",
-            "--function=main",
+            f"--function={entrypoint}",
+            "--benchmark_repetitions=3",
             f"--input={query_shape}",
             f"--input={key_shape}",
             f"--input={value_shape}",
-            "--benchmark_repetitions=3",
         ]
+
+        if args.tk:
+            out_shape = config.get_output_shape()
+            exec_args.append(f"--input={out_shape}")
 
         # iree benchmark kernels
         ret_value, cmd_out, cmd_err = run_iree_command(exec_args)
