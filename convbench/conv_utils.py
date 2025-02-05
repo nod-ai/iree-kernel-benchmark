@@ -8,10 +8,10 @@ CONSTANTS = r"""
     %arg0 = util.unfoldable_constant dense<{ONE}> : tensor<{LHS_TYPE}>
     %arg1 = util.unfoldable_constant dense<{ONE}> : tensor<{RHS_TYPE}>"""
 
-CONV = r"""%11 = linalg.conv_2d_{CONV_TYPE} {{dilations = dense<1> : vector<2xi64>, strides = dense<{STRIDE}> : vector<2xi64>}} ins(%arg0, %arg1 : tensor<{INPUT_TYPE}>, tensor<{FILTER_TYPE}>) outs(%10 : tensor<{OUTPUT_TYPE}>) -> tensor<{OUTPUT_TYPE}>"""
+CONV = r"""%11 = linalg.conv_2d_{CONV_TYPE} {{dilations = dense<1> : vector<2xi64>, strides = dense<[{STRIDEH}, {STRIDEW}]> : vector<2xi64>}} ins(%arg0, %arg1 : tensor<{INPUT_TYPE}>, tensor<{FILTER_TYPE}>) outs(%10 : tensor<{OUTPUT_TYPE}>) -> tensor<{OUTPUT_TYPE}>"""
 
 CONV_Q = r"""%c0_i32 = arith.constant 0 : i32
-    %11 = linalg.conv_2d_{CONV_TYPE}_q {{dilations = dense<1> : vector<2xi64>, strides = dense<{STRIDE}> : vector<2xi64>}} ins(%arg0, %arg1, %c0_i32, %c0_i32 : tensor<{INPUT_TYPE}>, tensor<{FILTER_TYPE}>, i32, i32) outs(%10 : tensor<{OUTPUT_TYPE}>) -> tensor<{OUTPUT_TYPE}>"""
+    %11 = linalg.conv_2d_{CONV_TYPE}_q {{dilations = dense<1> : vector<2xi64>, strides = dense<[{STRIDEH}, {STRIDEW}]> : vector<2xi64>}} ins(%arg0, %arg1, %c0_i32, %c0_i32 : tensor<{INPUT_TYPE}>, tensor<{FILTER_TYPE}>, i32, i32) outs(%10 : tensor<{OUTPUT_TYPE}>) -> tensor<{OUTPUT_TYPE}>"""
 
 TEST = r"""util.func public @{FUNC_NAME}({FUNC_ARGS}) -> tensor<{OUT_TYPE}> {{{CONSTANT_INPUTS}
     %cst = arith.constant {ZERO} : {OUT_ELEM_TYPE}
@@ -32,22 +32,23 @@ class ConvConfig:
     P: int
     Q: int
     F: int
-    S: int
+    SH: int
+    SW: int
     OP: str
     input_dtype: str
     output_dtype: str
 
     def get_name(self) -> str:
-        return self.OP + "_" + f"{self.N}x{self.H}x{self.W}x{self.C}x{self.P}x{self.Q}x{self.F}" + "_" + f"{self.input_dtype}x{self.input_dtype}x{self.output_dtype}" + "_stride" + str(self.S)
+        return self.OP + "_" + f"{self.N}x{self.H}x{self.W}x{self.C}x{self.P}x{self.Q}x{self.F}" + "_" + f"{self.input_dtype}x{self.input_dtype}x{self.output_dtype}" + "_stride_" + str(self.SH) + "_" + str(self.SW)
     
     def get_img_shape(self) -> str:
         if "nhwc" in self.OP:
-            in_h = self.H * self.S + self.P - 1
-            in_w = self.W * self.S + self.Q - 1
+            in_h = self.H * self.SH + self.P - 1
+            in_w = self.W * self.SW + self.Q - 1
             return str(self.N) + "x" + str(in_h) + "x" + str(in_w) + "x" + str(self.C) + "x" + self.input_dtype
         if "nchw" in self.OP:
-            in_h = self.H * self.S + self.P - 1
-            in_w = self.W * self.S + self.Q - 1
+            in_h = self.H * self.SH + self.P - 1
+            in_w = self.W * self.SW + self.Q - 1
             return str(self.N) + "x" + str(self.C) + "x" + str(in_h) + "x" + str(in_w) + "x" + self.input_dtype
         
     
@@ -59,10 +60,10 @@ class ConvConfig:
 
     def get_out_shape(self) -> str:
         padding = 0
-        in_h = self.H * self.S + self.P - 1
-        in_w = self.W * self.S + self.Q - 1
-        h_out = (in_h + 2 * padding - self.P) // self.S + 1
-        w_out = (in_w + 2 * padding - self.Q) // self.S + 1
+        in_h = self.H * self.SH + self.P - 1
+        in_w = self.W * self.SW + self.Q - 1
+        h_out = (in_h + 2 * padding - self.P) // self.SH + 1
+        w_out = (in_w + 2 * padding - self.Q) // self.SW + 1
         n = self.N
         nf = self.F
         if "nhwc" in self.OP:
@@ -82,8 +83,8 @@ class ConvConfig:
         bytes_per_input = dtype_bits_map[self.input_dtype] // 8
         bytes_per_output = dtype_bits_map[self.output_dtype] // 8
         batch = self.N
-        in_h = self.H * self.S + self.P - 1
-        in_w = self.W * self.S + self.Q - 1
+        in_h = self.H * self.SH + self.P - 1
+        in_w = self.W * self.SW + self.Q - 1
         input_channels = self.C
         output_channels = self.F
         output_width = self.W
@@ -99,8 +100,8 @@ class ConvConfig:
 
     def get_flops(self) -> int:
         batch = self.N
-        in_h = self.H * self.S + self.P - 1
-        in_w = self.W * self.S + self.Q - 1
+        in_h = self.H * self.SH + self.P - 1
+        in_w = self.W * self.SW + self.Q - 1
         input_channels = self.C
         output_channels = self.F
         output_width = self.W
@@ -120,12 +121,13 @@ def generate_mlir(config: ConvConfig):
     p = config.P
     q = config.Q
     f = config.F
-    stride = config.S
+    strideH = config.SH
+    strideW = config.SW
     operation = config.OP
     dtypes = f"{config.input_dtype}x{config.input_dtype}x{config.output_dtype}"
     elem_types = dtypes.split("x")
-    in_h = str(int(h) * int(stride) + int(p) - 1)
-    in_w = str(int(w) * int(stride) + int(q) - 1)
+    in_h = str(int(h) * int(strideH) + int(p) - 1)
+    in_w = str(int(w) * int(strideW) + int(q) - 1)
     if "nhwc" in operation:
         conv_type = "nhwc_hwcf"
         lhs = str(n) + "x" + str(in_h) + "x" + str(in_w) + "x" + str(c) + "x" + str(elem_types[0])
@@ -149,7 +151,8 @@ def generate_mlir(config: ConvConfig):
         FILTER_TYPE=rhs,
         OUTPUT_TYPE=out,
         CONV_TYPE=conv_type,
-        STRIDE=stride,
+        STRIDEH=strideH,
+        STRIDEW=strideW,
     )
 
     constants = ""
