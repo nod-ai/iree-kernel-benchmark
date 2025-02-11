@@ -10,6 +10,7 @@ from itertools import cycle
 import numpy as np
 import sys
 import hashlib
+import warnings
 
 def generate_md5_hex(file_path):
     md5 = hashlib.md5()
@@ -154,7 +155,8 @@ def roofline(results=None, out=None, batch=None, dtype=None, model=None, **kwarg
         if model:
             data = filter_model(data, model)
         if len(data) == 0:
-            raise ValueError("No data to plot. If you set filters, there were no kernels with the target config")
+            warnings.warn(f"No data to plot with filters dtype={dtype}, batch={batch}, model={model} there were no kernels with the target config")
+            return
         x = [item['arithmetic_intensity'] for item in data]
         y = [item['tflops'] for item in data]
         
