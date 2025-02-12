@@ -1,14 +1,20 @@
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
-import iree.turbine.kernel as tk
-import iree.turbine.kernel.lang as tkl
-import iree.turbine.kernel.wave as tkw
-from iree.turbine.kernel.lang.global_symbols import *
-from iree.turbine.kernel.wave.utils import (
-    get_default_run_config,
-    get_default_scheduling_params,
-)
+try:
+    import iree.turbine.kernel as tk
+    import iree.turbine.kernel.lang as tkl
+    import iree.turbine.kernel.wave as tkw
+    from iree.turbine.kernel.lang.global_symbols import *
+    from iree.turbine.kernel.wave.utils import (
+        get_default_run_config,
+        get_default_scheduling_params,
+    )
+except ImportError:
+    TURBINE_AVAILABLE=False
+else:
+    TURBINE_AVAILABLE=True
+
 from utils import *
 import os
 import traceback
@@ -286,6 +292,8 @@ def compile_gemm_config(
         os.makedirs(vmfb_dir)
 
     # Generate mlir content
+    if tk and not TURBINE_AVAILABLE:
+        raise ValueError("Requested TK benchmarks but Turbine isn't available")
     if tk:
         try:
             mlir_content = generate_tk_mlir(config, vmfb_file)
