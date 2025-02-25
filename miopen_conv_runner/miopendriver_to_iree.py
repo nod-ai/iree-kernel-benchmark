@@ -12,6 +12,7 @@ import sys
 from utils import *
 from conv_utils import *
 from wave_conv_utils import compile_wave_conv_config
+import re
 
 def compile_conv_iree(tag, config, kernel_dir, vmfb_dir, extra_compiler_args):
     mlir_file, vmfb_file, dump_path = compile_conv_config(config, kernel_dir, vmfb_dir, extra_compiler_args)
@@ -48,7 +49,7 @@ def parse_command(command_line, configs):
     # Positional arguments
     # You can comment these postional arguments if they dont exist in your
     # files
-    parser.add_argument('count', type=int, help="Count parameter")
+    #parser.add_argument('count', type=int, help="Count parameter")
     parser.add_argument('exec', type=str, help="Executable path")
     parser.add_argument('operation', type=str, help="Type of operation")
     
@@ -180,7 +181,7 @@ def process_commands(args):
             "--device_allocator=caching",
             f"--module={vmfb_filename}",
             f"--function={entrypoint}",
-            "--benchmark_repetitions=3",
+            #"--benchmark_repetitions=3",
             f"--input={image_shape}",
             f"--input={filter_shape}",
         ]
@@ -189,9 +190,14 @@ def process_commands(args):
             out_shape = config.get_out_shape()
             exec_args.append(f"--input={out_shape}")
 
-        print(f"Running {vmfb_filename}...")
+        #print(f"Running {vmfb_filename}...")
         # iree benchmark kernels
         ret_value, cmd_out, cmd_stderr = run_iree_command(exec_args)
+        #print(cmd_out)
+        cmd_str = cmd_out.decode()
+        times = [float(x) for x in re.findall(r'Kernel execution time \(ms\): ([\d.]+)', cmd_str)]
+        print(min(times)*1000)
+        """
         ok = ret_value == 0
         benchmark_conv_mean_time_ms = bench_summary_process(ret_value, cmd_out)
         benchmark_conv_mean_time_us = benchmark_conv_mean_time_ms * 1000
@@ -264,6 +270,7 @@ def process_commands(args):
 
     write_results_to_csv(results, output_csv, fieldnames)
     print(f"Results written to {output_csv}")
+    """
 
 
 if __name__ == "__main__":
