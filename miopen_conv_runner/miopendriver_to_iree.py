@@ -15,6 +15,9 @@ from wave_conv_utils import compile_wave_conv_config
 import re
 
 def compile_conv_iree(tag, config, kernel_dir, vmfb_dir, extra_compiler_args):
+    if config == "N.A.":
+        return (None, None, None, None, None)
+
     mlir_file, vmfb_file, dump_path = compile_conv_config(config, kernel_dir, vmfb_dir, extra_compiler_args)
     return (tag, config, mlir_file, vmfb_file, dump_path)
 
@@ -50,7 +53,7 @@ def parse_command(command_line, configs):
     # You can comment these postional arguments if they dont exist in your
     # files
     #parser.add_argument('count', type=int, help="Count parameter")
-    parser.add_argument('exec', type=str, help="Executable path")
+    #parser.add_argument('exec', type=str, help="Executable path")
     parser.add_argument('operation', type=str, help="Type of operation")
     
     parser.add_argument('--in_h', '-H', type=int, default=32, help="Input Height")
@@ -84,21 +87,25 @@ def parse_command(command_line, configs):
     parser.add_argument('--dump_output', '-o', type=int, default=0, help="Dumps the output buffers")
     parser.add_argument('--pad_h', '-p', type=int, default=0, help="Zero Padding for Height")
     parser.add_argument('--pad_w', '-q', type=int, default=0, help="Zero Padding for Width")
+    parser.add_argument('--pad_d', type=int, default=0, help="Zero Padding for Depth")
     parser.add_argument('--pad_val', '-r', type=int, default=0, help="Padding Value")
     parser.add_argument('--search', '-s', type=int, default=0, help="Search Kernel Config")
     parser.add_argument('--time', '-t', type=int, default=0, help="Time Each Layer")
     parser.add_argument('--conv_stride_h', '-u', type=int, default=1, help="Convolution Stride for Height")
     parser.add_argument('--conv_stride_w', '-v', type=int, default=1, help="Convolution Stride for Width")
+    parser.add_argument('--conv_stride_d',  type=int, default=1, help="Convolution Stride for Depth")
     parser.add_argument('--wall', '-w', type=int, choices=[0, 1, 2], default=0, help="Wall-clock Time Each Layer")
     parser.add_argument('--fil_w', '-x', type=int, default=3, help="Filter Width")
     parser.add_argument('--fil_h', '-y', type=int, default=3, help="Filter Height")
+    parser.add_argument('--fil_d', type=int, default=1, help="Filter Depth")
     parser.add_argument('--pad_mode', '-z', type=str, choices=['same', 'valid', 'default'], default='default', help="Padding Mode")
     parser.add_argument('--forw', '-F', type=int, default=0, help="Flag enables fwd, bwd, wrw convolutions 0 fwd+bwd+wrw (default), 1 fwd only, 2 bwd only, 4 wrw only, 3 fwd+bwd, 5 fwd+wrw, 6 bwd+wrw")
     
     args = parser.parse_args(shlex.split(command_line))
+
     if(not isValid(args)):
+        configs.append((command_line, "N.A."))
         return
-    #print(command_line)
 
     # MIOpen provides the input conv shapes but IREE expects the ouput shapes so we need to convert them
     N = args.batchsize
@@ -149,10 +156,14 @@ def process_commands(args):
     with Pool(num_cpus) as pool:
         compilation_results = list(tqdm(pool.starmap(compile_conv, list(compile_args))))
 
+    # Create a list to store results in the order of input configurations  
+    results = ["N.A."] * len(configs)  
+
     error_count = 0
-    for tag, config, mlir_file, vmfb_file, dump_path in compilation_results:
+    for i, (tag, config, mlir_file, vmfb_file, dump_path) in enumerate(compilation_results):
         if vmfb_file:
             vmfb_dict[vmfb_file] = (tag, config, dump_path)
+            results[i] = vmfb_file
         else:
             error_count += 1
     print(
@@ -160,7 +171,6 @@ def process_commands(args):
     )
 
     print("Compilation process completed.")
-    results = []
     index = 0
     output_csv = "results/iree_conv_tk.csv" if args.tk else "results/iree_conv.csv"
     entrypoint = "isolated_benchmark" if args.tk else "main"
@@ -168,7 +178,15 @@ def process_commands(args):
     if not os.path.exists(csv_dir):
         os.makedirs(csv_dir)
 
-    for vmfb_filename, value in vmfb_dict.items():
+    #for vmfb_filename, value in vmfb_dict.items():
+    for result in results:  
+        if result == "N.A.":
+            print("N.A.")
+            continue
+
+        vmfb_filename = result
+        value = vmfb_dict[vmfb_filename]
+
         tag, config, dump_path = value
         name = config.get_name()
 

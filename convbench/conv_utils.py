@@ -22,6 +22,16 @@ TEST = r"""util.func public @{FUNC_NAME}({FUNC_ARGS}) -> tensor<{OUT_TYPE}> {{{C
 }}
 """
 
+TEST_TRUNC = r"""util.func public @{FUNC_NAME}({FUNC_ARGS}) -> tensor<{OUT_TYPE}> {{{CONSTANT_INPUTS}
+    %cst = arith.constant {ZERO} : {INTERM_ELEM_TYPE}
+    %9 = tensor.empty() : tensor<{INTERM_TYPE}>
+    %10 = linalg.fill ins(%cst : {INTERM_ELEM_TYPE}) outs(%9 : tensor<{INTERM_TYPE}>) -> tensor<{INTERM_TYPE}>
+    {OPERATION}
+    %12 = arith.truncf %11 : tensor<{INTERM_TYPE}> to tensor<{OUT_TYPE}>
+    util.return %12 : tensor<{OUT_TYPE}>
+}}
+"""
+
 
 @dataclass
 class ConvConfig:
@@ -128,15 +138,23 @@ def generate_mlir(config: ConvConfig):
     elem_types = dtypes.split("x")
     in_h = str(int(h) * int(strideH) + int(p) - 1)
     in_w = str(int(w) * int(strideW) + int(q) - 1)
+    use_trunc = False
+    interm=0
+    if "_truncf" in operation:
+        use_trunc = True
     if "nhwc" in operation:
         conv_type = "nhwc_hwcf"
         lhs = str(n) + "x" + str(in_h) + "x" + str(in_w) + "x" + str(c) + "x" + str(elem_types[0])
         rhs = str(p) + "x" + str(q) + "x" + str(c) + "x" + str(f) + "x" + str(elem_types[1])
+        if(use_trunc):
+            interm = str(n) + "x" + str(h) + "x" + str(w) + "x" + str(f) + "xf32"
         out = str(n) + "x" + str(h) + "x" + str(w) + "x" + str(f) + "x" + str(elem_types[2])
     if "nchw" in operation:
         conv_type = "nchw_fchw"
         lhs = str(n) + "x" + str(c) + "x" + str(in_h) + "x" + str(in_w) + "x" + str(elem_types[0])
         rhs = str(f) + "x" + str(c) + "x" + str(p) + "x" + str(q) + "x" + str(elem_types[1])
+        if(use_trunc):
+            interm = str(n) + "x" + str(f) + "x" + str(h) + "x" + str(w) + "xf32"
         out = str(n) + "x" + str(f) + "x" + str(h) + "x" + str(w) + "x" + str(elem_types[2])
     one = "1"
     zero = "0"
@@ -149,7 +167,7 @@ def generate_mlir(config: ConvConfig):
     operation = conv_template.format(
         INPUT_TYPE=lhs,
         FILTER_TYPE=rhs,
-        OUTPUT_TYPE=out,
+        OUTPUT_TYPE=interm if use_trunc else out,
         CONV_TYPE=conv_type,
         STRIDEH=strideH,
         STRIDEW=strideW,
@@ -161,18 +179,32 @@ def generate_mlir(config: ConvConfig):
         LHS_TYPE=lhs,
         RHS_TYPE=rhs,
     )
-
-    mlir = TEST.format(
-        FUNC_NAME="main",
-        FUNC_ARGS=func_args,
-        CONSTANT_INPUTS=constants,
-        LHS_TYPE=lhs,
-        RHS_TYPE=rhs,
-        OUT_TYPE=out,
-        OUT_ELEM_TYPE=elem_types[2],
-        ZERO=zero,
-        OPERATION=operation,
-    )
+    if(use_trunc):
+        mlir = TEST_TRUNC.format(
+            FUNC_NAME="main",
+            FUNC_ARGS=func_args,
+            CONSTANT_INPUTS=constants,
+            LHS_TYPE=lhs,
+            RHS_TYPE=rhs,
+            OUT_TYPE=out,
+            INTERM_TYPE=interm,
+            OUT_ELEM_TYPE=elem_types[2],
+            INTERM_ELEM_TYPE="f32",
+            ZERO=zero,
+            OPERATION=operation,
+        )
+    else:
+        mlir = TEST.format(
+            FUNC_NAME="main",
+            FUNC_ARGS=func_args,
+            CONSTANT_INPUTS=constants,
+            LHS_TYPE=lhs,
+            RHS_TYPE=rhs,
+            OUT_TYPE=out,
+            OUT_ELEM_TYPE=elem_types[2],
+            ZERO=zero,
+            OPERATION=operation,
+        )
     return mlir
 
 
@@ -204,6 +236,7 @@ def compile_conv_config(
         "--iree-hal-target-device=hip",
         # Device: MI300x
         "--iree-hip-target=gfx942",
+        "--iree-dispatch-creation-enable-aggressive-fusion=true",
         f"--iree-hal-dump-executable-files-to={files_path}",
     ] + extra_compiler_args
 
