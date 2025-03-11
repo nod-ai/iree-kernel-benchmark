@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   benchmark:
-    runs-on: mi300
+    runs-on: linux-mi300-1gpu-ossci-nod-ai
 
     steps:
       - name: "Checkout Repo"
