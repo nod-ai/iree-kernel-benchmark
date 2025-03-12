@@ -1,4 +1,4 @@
-from attention_utils import AttentionConfig
+from .attention_utils import AttentionConfig
 
 
 def llm_sweep(dtype: str) -> list[AttentionConfig]:

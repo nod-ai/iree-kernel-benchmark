@@ -12,8 +12,9 @@ Create a python environment and install the requirements for the project:
 python3.11 -m venv bench_venv
 source bench_venv/bin/activate
 pip install -r requirements.txt
-pip install --no-compile --pre --upgrade -e common_tools
 ```
+
+If you don't want to have to `cd` into the repo to use the tools, you may optionally run `pip install --no-compile --pre --upgrade -e .` to install the `iree-kernel-benchmark` package.
 
 If you plan to run the TK benchmarks, also install iree-turbine with
 ```
@@ -28,31 +29,31 @@ Refer to the respective problems.py file in the folder to see which shapes are b
 ### Convolution Benchmarking
 
 ```
-python convbench/conv_bench.py
+python -m iree-kernel-benchmark.convbench
 ```
 
 ### TK Convolution Benchmarking
 
 ```
-python convbench/conv_bench.py --tk
+python -m iree-kernel-benchmark.convbench --tk
 ```
 
 ### GEMM Benchmarking
 
 ```
-python gemmbench/gemm_bench.py
+python -m iree-kernel-benchmark.gemmbench
 ```
 
 ### TK GEMM Benchmarking
 
 ```
-python gemmbench/gemm_bench.py --tk
+python -m iree-kernel-benchmark.gemmbench --tk
 ```
 
 ### Attention Benchmarking
 
 ```
-python attentionbench/attention_bench.py
+python -m iree-kernel-benchmark.attentionbench
 ```
 
 ### Roofline

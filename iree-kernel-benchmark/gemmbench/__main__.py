@@ -12,9 +12,9 @@ import itertools
 from pathlib import Path
 import argparse
 import sys
-from utils import *
-from gemm_utils import *
-from problems import get_gemm_configs, get_tk_gemm_configs, get_matching_configs
+from ..utils import *
+from .gemm_utils import *
+from .problems import get_gemm_configs, get_tk_gemm_configs, get_matching_configs
 
 
 def compile_gemm(tag, config, kernel_dir, vmfb_dir, target, extra_compiler_args, tk, dump_dir=None):

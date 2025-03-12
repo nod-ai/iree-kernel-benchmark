@@ -15,7 +15,7 @@ except ImportError:
 else:
     TURBINE_AVAILABLE=True
 
-from utils import *
+from ..utils import *
 import os
 import traceback
 
