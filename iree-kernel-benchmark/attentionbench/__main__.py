@@ -7,9 +7,9 @@ from pathlib import Path
 import csv
 import argparse
 import sys
-from utils import *
-from attention_utils import *
-from problems import get_attention_configs
+from ..utils import *
+from .attention_utils import *
+from .problems import get_attention_configs
 
 
 def compile_attention(tag, config, kernel_dir, vmfb_dir):

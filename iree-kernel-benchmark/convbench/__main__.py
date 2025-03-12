@@ -7,11 +7,11 @@ from pathlib import Path
 import csv
 import argparse
 import sys
-from utils import *
-from conv_utils import *
-from problems import get_conv_configs, get_tk_conv_configs, get_conv_test_configs
+from ..utils import *
+from .conv_utils import *
+from .problems import get_conv_configs, get_tk_conv_configs, get_conv_test_configs
 
-from wave_conv_utils import compile_wave_conv_config
+from .wave_conv_utils import compile_wave_conv_config
 
 def compile_conv_iree(tag, config, kernel_dir, vmfb_dir, extra_compiler_args):
     mlir_file, vmfb_file, dump_path = compile_conv_config(config, kernel_dir, vmfb_dir, extra_compiler_args)

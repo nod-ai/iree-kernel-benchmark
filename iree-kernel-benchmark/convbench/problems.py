@@ -1,4 +1,4 @@
-from conv_utils import ConvConfig
+from .conv_utils import ConvConfig
 import os
 
 def unet_sweep(op: str, input_dtype: str, output_dtype: str) -> list[ConvConfig]:
@@ -70,7 +70,7 @@ def get_conv_configs() -> list[tuple[str, ConvConfig]]:
 
     # MIOpen bf16 convs
     cwd = os.getcwd()
-    shapes_file_path = os.path.join(cwd, "convbench/miopen_conv2d_shapes.txt")
+    shapes_file_path = os.path.join(cwd, "iree-kernel-benchmark/convbench/miopen_conv2d_shapes.txt")
     miopen_configs = []
     with open(shapes_file_path, 'r') as file:
         for line in file:

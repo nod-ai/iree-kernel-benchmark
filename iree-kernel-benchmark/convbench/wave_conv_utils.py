@@ -1,8 +1,8 @@
-from utils import *
+from ..utils import *
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
-from conv_utils import ConvConfig
+from .conv_utils import ConvConfig
 import traceback
 
 try:
