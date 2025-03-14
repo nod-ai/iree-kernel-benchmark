@@ -14,7 +14,7 @@ source bench_venv/bin/activate
 pip install -r requirements.txt
 ```
 
-If you don't want to have to `cd` into the repo to use the tools, you may optionally run `pip install --no-compile --pre --upgrade -e .` to install the `iree-kernel-benchmark` package.
+If you don't want to have to `cd` into the repo to use the tools, you may optionally run `pip install --no-compile --pre --upgrade -e .` to install the `iree_kernel_benchmark` package.
 
 If you plan to run the TK benchmarks, also install iree-turbine with
 ```
@@ -29,31 +29,31 @@ Refer to the respective problems.py file in the folder to see which shapes are b
 ### Convolution Benchmarking
 
 ```
-python -m iree-kernel-benchmark.convbench
+python -m iree_kernel_benchmark.convbench
 ```
 
 ### TK Convolution Benchmarking
 
 ```
-python -m iree-kernel-benchmark.convbench --tk
+python -m iree_kernel_benchmark.convbench --tk
 ```
 
 ### GEMM Benchmarking
 
 ```
-python -m iree-kernel-benchmark.gemmbench
+python -m iree_kernel_benchmark.gemmbench
 ```
 
 ### TK GEMM Benchmarking
 
 ```
-python -m iree-kernel-benchmark.gemmbench --tk
+python -m iree_kernel_benchmark.gemmbench --tk
 ```
 
 ### Attention Benchmarking
 
 ```
-python -m iree-kernel-benchmark.attentionbench
+python -m iree_kernel_benchmark.attentionbench
 ```
 
 ### Roofline
