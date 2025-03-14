@@ -1,6 +1,7 @@
 import argparse
 import shlex
 import os
+from subprocess import Popen
 from tqdm import tqdm
 from multiprocessing import Pool, cpu_count, Manager
 import logging
@@ -185,6 +186,7 @@ def process_commands(args):
     csv_dir = os.path.dirname(output_csv)
     if not os.path.exists(csv_dir):
         os.makedirs(csv_dir)
+    output_data = list[tuple]()
 
     #for vmfb_filename, value in vmfb_dict.items():
     for result in results:  
@@ -215,15 +217,45 @@ def process_commands(args):
         if args.tk:
             out_shape = config.get_out_shape()
             exec_args.append(f"--input={out_shape}")
+        
+        def trace_gpu(cmd: list[str]) -> dict[str, list[int]]:
+            trace_path = "results/benchmark.tracy"
+            tracy_port = "56789"
+            with Popen(["iree-tracy-capture", "-o", trace_path, "-f", "-p", tracy_port], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) as tracy:
+                process = subprocess.run(cmd, capture_output=True, check=True, env=dict(os.environ, TRACY_PORT=tracy_port))
+                assert process.returncode == 0
+                out, err = tracy.communicate()
+            if tracy.returncode:
+                raise ValueError(f"Tracy failed:\n{out}\n{err}")
+
+            csvexport = subprocess.run(["tracy-csvexport", "--gpu", trace_path], capture_output=True, check=True, text=True)
+            import csv
+            reader = csv.reader(csvexport.stdout.splitlines())
+            header = next(reader)
+            column = {name: idx for idx, name in enumerate(header)}
+
+            zones: dict[str, list[int]] = {}
+            for row in reader:
+                name = row[column['name']]
+                time = int(row[column['GPU execution time']])
+                zones.setdefault(name, []).append(time)
+
+            return zones
 
         #print(f"Running {vmfb_filename}...")
         # iree benchmark kernels
-        ret_value, cmd_out, cmd_stderr = run_iree_command(exec_args)
-        #print(cmd_out)
-        cmd_str = cmd_out.decode()
-        times = [float(x) for x in re.findall(r'Kernel execution time \(ms\): ([\d.]+)', cmd_str)]
-        print(min(times)*1000)
-        """
+        print()
+        print(shlex.join(exec_args))
+        zones = trace_gpu(exec_args)
+        [name_for_entrypoint] = [name for name in zones.keys() if entrypoint in name]
+        times_ns = zones[name_for_entrypoint]
+        times_us = [t / 1000 for t in times_ns]  # convert to microseconds
+        import statistics
+        print(f"min={min(times_us)}, max={max(times_us)}, mean={statistics.mean(times_us)}, stdev={statistics.stdev(times_us)} (us)")
+        output_data.append((tag, min(times_us)))
+    write_results_to_csv(output_data, output_csv, ['tag', 'min_time'])
+    print(f"results written to {output_csv}")
+    """
         ok = ret_value == 0
         benchmark_conv_mean_time_ms = bench_summary_process(ret_value, cmd_out)
         benchmark_conv_mean_time_us = benchmark_conv_mean_time_ms * 1000
