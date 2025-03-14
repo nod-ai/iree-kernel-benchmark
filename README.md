@@ -21,6 +21,12 @@ If you plan to run the TK benchmarks, also install iree-turbine with
 pip install iree-turbine@git+https://github.com/iree-org/iree-turbine.git@main
 ```
 
+To run the unit tests for the suite:
+
+```
+pytest
+```
+
 ## Performance
 
 Pick any of the following kernels to test through IREE.
