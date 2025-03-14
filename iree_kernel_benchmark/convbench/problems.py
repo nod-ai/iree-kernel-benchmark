@@ -70,7 +70,7 @@ def get_conv_configs() -> list[tuple[str, ConvConfig]]:
 
     # MIOpen bf16 convs
     cwd = os.getcwd()
-    shapes_file_path = os.path.join(cwd, "iree-kernel-benchmark/convbench/miopen_conv2d_shapes.txt")
+    shapes_file_path = os.path.join(cwd, "iree_kernel_benchmark/convbench/miopen_conv2d_shapes.txt")
     miopen_configs = []
     with open(shapes_file_path, 'r') as file:
         for line in file:
