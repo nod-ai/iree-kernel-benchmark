@@ -215,6 +215,7 @@ def compile_conv_config(
     vmfb_file = vmfb_dir / (config.get_name() + ".vmfb")
     dump_file = kernel_dir / (config.get_name() + ".stderr.mlir")
     files_path = vmfb_dir / config.get_name()
+    benchmarks_path = vmfb_dir.parent / 'benchmarks' / config.get_name()
 
     # Generate mlir content
     mlir_content = generate_mlir(config)
@@ -238,6 +239,8 @@ def compile_conv_config(
         "--iree-hip-target=gfx942",
         "--iree-dispatch-creation-enable-aggressive-fusion=true",
         f"--iree-hal-dump-executable-files-to={files_path}",
+        f"--iree-hal-dump-executable-benchmarks-to={benchmarks_path}",
+        "--iree-config-add-tuner-attributes",
     ] + extra_compiler_args
 
     print(" ".join(exec_args))

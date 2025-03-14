@@ -170,6 +170,14 @@ def process_commands(args):
         f"{len(configs) - error_count} Success, {error_count} Failed out of {len(configs)} configs"
     )
 
+    # Merge benchmark directories.
+    bench_dir = repo_root / "conv" / "benchmarks"
+    for bench_subdir in bench_dir.iterdir():
+        if bench_subdir.is_dir():
+            for file in bench_subdir.iterdir():
+                file.rename(bench_dir / f"{bench_subdir.stem}.{file.name}")
+            bench_subdir.rmdir()
+
     print("Compilation process completed.")
     index = 0
     output_csv = "results/iree_conv_tk.csv" if args.tk else "results/iree_conv.csv"
