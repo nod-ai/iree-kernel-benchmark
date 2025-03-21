@@ -1,8 +1,16 @@
 from iree_kernel_benchmark.gemmbench.gemm_utils import GemmConfig, generate_mlir
 from .utils import match_lines
+from iree.compiler import ir
+import pytest
 
 # These tests should contain a small sampling of the actual problem set, enough
 # to exercise most of the code paths in the MLIR generation.
+
+
+@pytest.fixture(autouse=True)
+def run_with_mlir_ctx():
+    with ir.Context():
+        yield
 
 
 def test_n_t_f16_f32_f16():
@@ -23,7 +31,7 @@ def test_n_t_f16_f32_f16():
         [
             "module {",
             "func.func @main(%arg0: tensor<512x14336xf16>, %arg1: tensor<4096x14336xf16>) -> tensor<512x4096xf16> {",
-            "%cst = arith.constant 0.0 : f32",
+            "%cst = arith.constant 0.000000e+00 : f32",
             "%0 = tensor.empty() : tensor<512x4096xf32>",
             "%1 = linalg.fill ins(%cst : f32) outs(%0 : tensor<512x4096xf32>) -> tensor<512x4096xf32>",
             "%2 = linalg.matmul_transpose_b ins(%arg0, %arg1 : tensor<512x14336xf16>, tensor<4096x14336xf16>)",
@@ -53,7 +61,7 @@ def test_n_t_bf16_f32_bf16():
         [
             "module {",
             "func.func @main(%arg0: tensor<2x8192xbf16>, %arg1: tensor<1280x8192xbf16>) -> tensor<2x1280xbf16> {",
-            "%cst = arith.constant 0.0 : f32",
+            "%cst = arith.constant 0.000000e+00 : f32",
             "%0 = tensor.empty() : tensor<2x1280xf32>",
             "%1 = linalg.fill ins(%cst : f32) outs(%0 : tensor<2x1280xf32>) -> tensor<2x1280xf32>",
             "%2 = linalg.matmul_transpose_b ins(%arg0, %arg1 : tensor<2x8192xbf16>, tensor<1280x8192xbf16>)",
@@ -83,7 +91,7 @@ def test_t_n_f16_f32_f16():
         [
             "module {",
             "func.func @main(%arg0: tensor<5120x32000xf16>, %arg1: tensor<5120x1xf16>) -> tensor<32000x1xf16> {",
-            "%cst = arith.constant 0.0 : f32",
+            "%cst = arith.constant 0.000000e+00 : f32",
             "%0 = tensor.empty() : tensor<32000x1xf32>",
             "%1 = linalg.fill ins(%cst : f32) outs(%0 : tensor<32000x1xf32>) -> tensor<32000x1xf32>",
             "%2 = linalg.matmul_transpose_a ins(%arg0, %arg1 : tensor<5120x32000xf16>, tensor<5120x1xf16>)",
@@ -113,7 +121,7 @@ def test_t_n_bf16_f32_bf16():
         [
             "module {",
             "func.func @main(%arg0: tensor<5120x32000xbf16>, %arg1: tensor<5120x1xbf16>) -> tensor<32000x1xbf16> {",
-            "%cst = arith.constant 0.0 : f32",
+            "%cst = arith.constant 0.000000e+00 : f32",
             "%0 = tensor.empty() : tensor<32000x1xf32>",
             "%1 = linalg.fill ins(%cst : f32) outs(%0 : tensor<32000x1xf32>) -> tensor<32000x1xf32>",
             "%2 = linalg.matmul_transpose_a ins(%arg0, %arg1 : tensor<5120x32000xbf16>, tensor<5120x1xbf16>)",
@@ -143,7 +151,7 @@ def test_n_n_f16_f32_f16():
         [
             "module {",
             "func.func @main(%arg0: tensor<2048x1024xf16>, %arg1: tensor<1024x2048xf16>) -> tensor<2048x2048xf16> {",
-            "%cst = arith.constant 0.0 : f32",
+            "%cst = arith.constant 0.000000e+00 : f32",
             "%0 = tensor.empty() : tensor<2048x2048xf32>",
             "%1 = linalg.fill ins(%cst : f32) outs(%0 : tensor<2048x2048xf32>) -> tensor<2048x2048xf32>",
             "%2 = linalg.matmul ins(%arg0, %arg1 : tensor<2048x1024xf16>, tensor<1024x2048xf16>)",

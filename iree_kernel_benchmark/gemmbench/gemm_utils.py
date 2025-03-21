@@ -18,6 +18,7 @@ else:
 from ..utils import *
 import os
 import traceback
+from iree.compiler import ir
 
 
 @dataclass
@@ -71,63 +72,84 @@ class GemmConfig:
         flops = 2 * self.M * self.N * self.K
         return flops
 
+def _convert_dtype_to_mlir(dtype: str) -> ir.Type:
+    dtypes = {
+        "i8": lambda: ir.IntegerType.get_signless(8),
+        "i16": lambda: ir.IntegerType.get_signless(16),
+        "i32": lambda: ir.IntegerType.get_signless(32),
+        "i64": lambda: ir.IntegerType.get_signless(64),
+        "f16": lambda: ir.F16Type.get(),
+        "f32": lambda: ir.F32Type.get(),
+        "f64": lambda: ir.F64Type.get(),
+        "bf16": lambda: ir.BF16Type.get(),
+    }
+    return dtypes[dtype]()
 
 def generate_mlir(config: GemmConfig):
     K = config.K
     M = config.M
     N = config.N
-    operand_element_type = config.operand_element_type
-    acc_element_type = config.accumulator_element_type
-    result_element_type = config.result_element_type
-    is_integer = operand_element_type.startswith('i')
-    literal_zero = "0" if is_integer else "0.0"
+
+    with ir.Location.name(config.get_name()):
+        operand_element_type = _convert_dtype_to_mlir(config.operand_element_type)
+        acc_element_type = _convert_dtype_to_mlir(config.accumulator_element_type)
+        result_element_type = _convert_dtype_to_mlir(config.result_element_type)
+        is_integer = isinstance(operand_element_type, ir.IntegerType)
+        literal_zero = ir.IntegerAttr.get(acc_element_type, 0) if is_integer else ir.FloatAttr.get(acc_element_type, 0.0)
+        K_M_operand_tensor_type = ir.RankedTensorType.get([K, M], operand_element_type)
+        M_K_operand_tensor_type = ir.RankedTensorType.get([M, K], operand_element_type)
+        K_N_operand_tensor_type = ir.RankedTensorType.get([K, N], operand_element_type)
+        N_K_operand_tensor_type = ir.RankedTensorType.get([N, K], operand_element_type)
+        M_N_acc_tensor_type = ir.RankedTensorType.get([M, N], acc_element_type)
+        M_N_result_tensor_type = ir.RankedTensorType.get([M, N], result_element_type)
+
     trunc_op = "arith.trunci" if is_integer else "arith.truncf"
 
     tA = config.tA
     tB = config.tB
     mlir_template_matmul_transpose_a = f"""
 module {{
-    func.func @main(%arg0: tensor<{K}x{M}x{operand_element_type}>, %arg1: tensor<{K}x{N}x{operand_element_type}>) -> tensor<{M}x{N}x{result_element_type}> {{
-        %cst = arith.constant {literal_zero} : {acc_element_type}
-        %0 = tensor.empty() : tensor<{M}x{N}x{acc_element_type}>
-        %1 = linalg.fill ins(%cst : {acc_element_type}) outs(%0 : tensor<{M}x{N}x{acc_element_type}>) -> tensor<{M}x{N}x{acc_element_type}>
-        %2 = linalg.matmul_transpose_a ins(%arg0, %arg1 : tensor<{K}x{M}x{operand_element_type}>, tensor<{K}x{N}x{operand_element_type}>)
-                                       outs(%1 : tensor<{M}x{N}x{acc_element_type}>)
-          -> tensor<{M}x{N}x{acc_element_type}>
+    func.func @main(%arg0: {K_M_operand_tensor_type}, %arg1: {K_N_operand_tensor_type}) -> {M_N_result_tensor_type} {{
+        %cst = arith.constant {literal_zero}
+        %0 = tensor.empty() : {M_N_acc_tensor_type}
+        %1 = linalg.fill ins(%cst : {acc_element_type}) outs(%0 : {M_N_acc_tensor_type}) -> {M_N_acc_tensor_type}
+        %2 = linalg.matmul_transpose_a ins(%arg0, %arg1 : {K_M_operand_tensor_type}, {K_N_operand_tensor_type})
+                                       outs(%1 : {M_N_acc_tensor_type})
+          -> {M_N_acc_tensor_type}
 """
 
     mlir_template_matmul_transpose_b = f"""
 module {{
-    func.func @main(%arg0: tensor<{M}x{K}x{operand_element_type}>, %arg1: tensor<{N}x{K}x{operand_element_type}>) -> tensor<{M}x{N}x{result_element_type}> {{
-        %cst = arith.constant {literal_zero} : {acc_element_type}
-        %0 = tensor.empty() : tensor<{M}x{N}x{acc_element_type}>
-        %1 = linalg.fill ins(%cst : {acc_element_type}) outs(%0 : tensor<{M}x{N}x{acc_element_type}>) -> tensor<{M}x{N}x{acc_element_type}>
-        %2 = linalg.matmul_transpose_b ins(%arg0, %arg1 : tensor<{M}x{K}x{operand_element_type}>, tensor<{N}x{K}x{operand_element_type}>)
-                                       outs(%1 : tensor<{M}x{N}x{acc_element_type}>)
-          -> tensor<{M}x{N}x{acc_element_type}>
+    func.func @main(%arg0: {M_K_operand_tensor_type}, %arg1: {N_K_operand_tensor_type}) -> {M_N_result_tensor_type} {{
+        %cst = arith.constant {literal_zero}
+        %0 = tensor.empty() : {M_N_acc_tensor_type}
+        %1 = linalg.fill ins(%cst : {acc_element_type}) outs(%0 : {M_N_acc_tensor_type}) -> {M_N_acc_tensor_type}
+        %2 = linalg.matmul_transpose_b ins(%arg0, %arg1 : {M_K_operand_tensor_type}, {N_K_operand_tensor_type})
+                                       outs(%1 : {M_N_acc_tensor_type})
+          -> {M_N_acc_tensor_type}
 """
 
     mlir_template_matmul_normal = f"""
 module {{
-    func.func @main(%arg0: tensor<{M}x{K}x{operand_element_type}>, %arg1: tensor<{K}x{N}x{operand_element_type}>) -> tensor<{M}x{N}x{result_element_type}> {{
-        %cst = arith.constant {literal_zero} : {acc_element_type}
-        %0 = tensor.empty() : tensor<{M}x{N}x{acc_element_type}>
-        %1 = linalg.fill ins(%cst : {acc_element_type}) outs(%0 : tensor<{M}x{N}x{acc_element_type}>) -> tensor<{M}x{N}x{acc_element_type}>
-        %2 = linalg.matmul ins(%arg0, %arg1 : tensor<{M}x{K}x{operand_element_type}>, tensor<{K}x{N}x{operand_element_type}>)
-                           outs(%1 : tensor<{M}x{N}x{acc_element_type}>)
-          -> tensor<{M}x{N}x{acc_element_type}>
+    func.func @main(%arg0: {M_K_operand_tensor_type}, %arg1: {K_N_operand_tensor_type}) -> {M_N_result_tensor_type} {{
+        %cst = arith.constant {literal_zero}
+        %0 = tensor.empty() : {M_N_acc_tensor_type}
+        %1 = linalg.fill ins(%cst : {acc_element_type}) outs(%0 : {M_N_acc_tensor_type}) -> {M_N_acc_tensor_type}
+        %2 = linalg.matmul ins(%arg0, %arg1 : {M_K_operand_tensor_type}, {K_N_operand_tensor_type})
+                           outs(%1 : {M_N_acc_tensor_type})
+          -> {M_N_acc_tensor_type}
 """
     mlir_template_matmul = mlir_template_matmul_transpose_a if tA == "T" else mlir_template_matmul_transpose_b if tB == "T" else mlir_template_matmul_normal
 
     mlir_template_return_truncated = f"""
-        %3 = {trunc_op} %2 : tensor<{M}x{N}x{acc_element_type}> to tensor<{M}x{N}x{result_element_type}>
-        return %3 : tensor<{M}x{N}x{result_element_type}>
+        %3 = {trunc_op} %2 : {M_N_acc_tensor_type} to {M_N_result_tensor_type}
+        return %3 : {M_N_result_tensor_type}
     }}
 }}
 """
 
     mlir_template_return_untruncated = f"""
-        return %2 : tensor<{M}x{N}x{result_element_type}>
+        return %2 : {M_N_result_tensor_type}
     }}
 }}
 """
@@ -167,7 +189,7 @@ def get_tk_tuned_config(config: GemmConfig) -> TkTunedConfig:
     # Default config
     return TkTunedConfig(64, 64, 32, 2, 2, 1, 2, 2, 2, 1, 1, 2)
 
-def _convert_dtype(dtype: str):
+def _convert_dtype_to_tk(dtype: str):
     dtypes = {
         "i8": tkl.i8,
         "i16": tkl.i16,
@@ -189,7 +211,7 @@ def generate_tk_mlir(config: GemmConfig, vmfb_file: Path):
     assert config.operand_element_type == 'f16', "Unsupported problem"
     assert config.accumulator_element_type == 'f32', "Unsupported problem"
 
-    res_dtype = _convert_dtype(config.result_element_type)
+    res_dtype = _convert_dtype_to_tk(config.result_element_type)
     # Input sizes
     M = tkl.sym.M
     N = tkl.sym.N
@@ -306,7 +328,8 @@ def compile_gemm_config(
                 f.write(traceback.format_exc())
             return mlir_file, None
     else:
-        mlir_content = generate_mlir(config)
+        with ir.Context():
+            mlir_content = generate_mlir(config)
 
     # Write MLIR content to file
     with open(mlir_file, "w") as f:
