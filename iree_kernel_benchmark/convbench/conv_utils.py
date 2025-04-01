@@ -52,57 +52,17 @@ class ConvConfig:
         if "nhwc" in self.OP:
             in_h = self.H * self.S + self.P - 1
             in_w = self.W * self.S + self.Q - 1
-            return (
-                str(self.N)
-                + "x"
-                + str(in_h)
-                + "x"
-                + str(in_w)
-                + "x"
-                + str(self.C)
-                + "x"
-                + self.input_dtype
-            )
+            return f"{self.N}x{in_h}x{in_w}x{self.C}x{self.input_dtype}"
         if "nchw" in self.OP:
             in_h = self.H * self.S + self.P - 1
             in_w = self.W * self.S + self.Q - 1
-            return (
-                str(self.N)
-                + "x"
-                + str(self.C)
-                + "x"
-                + str(in_h)
-                + "x"
-                + str(in_w)
-                + "x"
-                + self.input_dtype
-            )
+            return f"{self.N}x{self.C}x{in_h}x{in_w}x{self.input_dtype}"
 
     def get_kernel_shape(self) -> str:
         if "nhwc" in self.OP:
-            return (
-                str(self.P)
-                + "x"
-                + str(self.Q)
-                + "x"
-                + str(self.C)
-                + "x"
-                + str(self.F)
-                + "x"
-                + self.input_dtype
-            )
+            return f"{self.P}x{self.Q}x{self.C}x{self.F}x{self.input_dtype}"
         if "nchw" in self.OP:
-            return (
-                str(self.F)
-                + "x"
-                + str(self.C)
-                + "x"
-                + str(self.P)
-                + "x"
-                + str(self.Q)
-                + "x"
-                + self.input_dtype
-            )
+            return f"{self.F}x{self.C}x{self.P}x{self.Q}x{self.input_dtype}"
 
     def get_out_shape(self) -> str:
         padding = 0
@@ -113,29 +73,9 @@ class ConvConfig:
         n = self.N
         nf = self.F
         if "nhwc" in self.OP:
-            return (
-                str(n)
-                + "x"
-                + str(h_out)
-                + "x"
-                + str(w_out)
-                + "x"
-                + str(nf)
-                + "x"
-                + self.output_dtype
-            )
+            return f"{n}x{h_out}x{w_out}x{nf}x{self.output_dtype}"
         if "nchw" in self.OP:
-            return (
-                str(n)
-                + "x"
-                + str(nf)
-                + "x"
-                + str(h_out)
-                + "x"
-                + str(w_out)
-                + "x"
-                + self.output_dtype
-            )
+            return f"{n}x{nf}x{h_out}x{w_out}x{self.output_dtype}"
 
     def get_byte_count(self) -> int:
         dtype_bits_map = {
@@ -202,74 +142,14 @@ def generate_mlir(config: ConvConfig):
     in_w = str(int(w) * int(stride) + int(q) - 1)
     if "nhwc" in operation:
         conv_type = "nhwc_hwcf"
-        lhs = (
-            str(n)
-            + "x"
-            + str(in_h)
-            + "x"
-            + str(in_w)
-            + "x"
-            + str(c)
-            + "x"
-            + str(elem_types[0])
-        )
-        rhs = (
-            str(p)
-            + "x"
-            + str(q)
-            + "x"
-            + str(c)
-            + "x"
-            + str(f)
-            + "x"
-            + str(elem_types[1])
-        )
-        out = (
-            str(n)
-            + "x"
-            + str(h)
-            + "x"
-            + str(w)
-            + "x"
-            + str(f)
-            + "x"
-            + str(elem_types[2])
-        )
+        lhs = f"{n}x{in_h}x{in_w}x{c}x{elem_types[0]}"
+        rhs = f"{p}x{q}x{c}x{f}x{elem_types[1]}"
+        out = f"{n}x{h}x{w}x{f}x{elem_types[2]}"
     if "nchw" in operation:
         conv_type = "nchw_fchw"
-        lhs = (
-            str(n)
-            + "x"
-            + str(c)
-            + "x"
-            + str(in_h)
-            + "x"
-            + str(in_w)
-            + "x"
-            + str(elem_types[0])
-        )
-        rhs = (
-            str(f)
-            + "x"
-            + str(c)
-            + "x"
-            + str(p)
-            + "x"
-            + str(q)
-            + "x"
-            + str(elem_types[1])
-        )
-        out = (
-            str(n)
-            + "x"
-            + str(f)
-            + "x"
-            + str(h)
-            + "x"
-            + str(w)
-            + "x"
-            + str(elem_types[2])
-        )
+        lhs = f"{n}x{c}x{in_h}x{in_w}x{elem_types[0]}"
+        rhs = f"{f}x{c}x{p}x{q}x{elem_types[1]}"
+        out = f"{n}x{f}x{h}x{w}x{elem_types[2]}"
     one = "1"
     zero = "0"
     if elem_types[0][0] == "f" or elem_types[0][0] == "b":
