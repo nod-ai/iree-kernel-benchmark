@@ -13,13 +13,20 @@ from .problems import get_conv_configs, get_tk_conv_configs, get_conv_test_confi
 
 from .wave_conv_utils import compile_wave_conv_config
 
+
 def compile_conv_iree(tag, config, kernel_dir, vmfb_dir, extra_compiler_args):
-    mlir_file, vmfb_file, dump_path = compile_conv_config(config, kernel_dir, vmfb_dir, extra_compiler_args)
+    mlir_file, vmfb_file, dump_path = compile_conv_config(
+        config, kernel_dir, vmfb_dir, extra_compiler_args
+    )
     return (tag, config, mlir_file, vmfb_file, dump_path)
 
+
 def compile_conv_wave(tag, config, kernel_dir, vmfb_dir, extra_compiler_args):
-    mlir_file, vmfb_file, dump_path = compile_wave_conv_config(config, kernel_dir, vmfb_dir, extra_compiler_args)
+    mlir_file, vmfb_file, dump_path = compile_wave_conv_config(
+        config, kernel_dir, vmfb_dir, extra_compiler_args
+    )
     return (tag, config, mlir_file, vmfb_file, dump_path)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Config file updater.")
@@ -30,12 +37,17 @@ if __name__ == "__main__":
         type=str.upper,
         help="Set the logging level",
     )
-    parser.add_argument("--device", help="The IREE device to execute benchmarks on", type=str, default="hip")
+    parser.add_argument(
+        "--device",
+        help="The IREE device to execute benchmarks on",
+        type=str,
+        default="hip",
+    )
     parser.add_argument(
         "--Xiree_compile",
-        nargs='+',
+        nargs="+",
         default=[],
-        help="Extra command line arguments passed to the IREE compiler. The flags need to be specified without the `--` or `-`."
+        help="Extra command line arguments passed to the IREE compiler. The flags need to be specified without the `--` or `-`.",
     )
     parser.add_argument(
         "--roofline",
@@ -43,10 +55,16 @@ if __name__ == "__main__":
         default=None,
     )
     parser.add_argument("--plot", help="location to save plot", default=None)
-    parser.add_argument("--batch", help="roofline on certain batch", type=int, default=None)
+    parser.add_argument(
+        "--batch", help="roofline on certain batch", type=int, default=None
+    )
     parser.add_argument("--dtype", help="roofline on certain dtype", default=None)
     parser.add_argument("--model", help="roofline on certain model", default=None)
-    parser.add_argument('--tk', help="Run conv kernels using Turbine Kernels", action=argparse.BooleanOptionalAction)
+    parser.add_argument(
+        "--tk",
+        help="Run conv kernels using Turbine Kernels",
+        action=argparse.BooleanOptionalAction,
+    )
 
     args = parser.parse_args()
     logging.basicConfig(level=args.log_level)
@@ -72,9 +90,10 @@ if __name__ == "__main__":
     vmfb_dir.mkdir(parents=True, exist_ok=True)
     device = args.device
 
-    extra_compiler_args = ['--' + x for x in list(args.Xiree_compile)]
+    extra_compiler_args = ["--" + x for x in list(args.Xiree_compile)]
     compile_args = itertools.starmap(
-        lambda tag, config: (tag, config, kernel_dir, vmfb_dir, extra_compiler_args), configs
+        lambda tag, config: (tag, config, kernel_dir, vmfb_dir, extra_compiler_args),
+        configs,
     )
     compile_conv = compile_conv_wave if args.tk else compile_conv_iree
     with Pool(num_cpus) as pool:

@@ -12,6 +12,7 @@ import sys
 import hashlib
 import warnings
 
+
 def generate_md5_hex(file_path):
     md5 = hashlib.md5()
     with open(file_path, "rb") as f:
@@ -19,9 +20,11 @@ def generate_md5_hex(file_path):
             md5.update(chunk)
     return md5.hexdigest()
 
+
 BenchmarkResult = namedtuple(
     "BenchmarkResult", "benchmark_name time cpu_time iterations user_counters"
 )
+
 
 def run_iree_command(args: Sequence[str] = ()):
     command = "Exec:", " ".join(args)
@@ -45,6 +48,7 @@ def run_iree_command(args: Sequence[str] = ()):
         f"Stdout diagnostics:\n{proc.stdout}\n"
     )
     return 1, proc.stdout, proc.stderr
+
 
 def decode_output(bench_lines):
     benchmark_results = []
@@ -70,6 +74,7 @@ def decode_output(bench_lines):
         )
     return benchmark_results
 
+
 def bench_summary_process(ret_value, output):
     if ret_value == 1:
         # Output should have already been logged earlier.
@@ -80,17 +85,20 @@ def bench_summary_process(ret_value, output):
     benchmark_results = decode_output(bench_lines)
     logging.getLogger().info(benchmark_results)
     benchmark_mean_time = float(benchmark_results[3].time.split()[0])
-    
+
     return benchmark_mean_time
 
-def write_results_to_csv(results : list[tuple] | list[list] | list[dict], output_filename: str, fieldnames: []):
+
+def write_results_to_csv(
+    results: list[tuple] | list[list] | list[dict], output_filename: str, fieldnames: []
+):
     if len(results) == 0:
-        print('No valid results')
+        print("No valid results")
         return
-    
+
     fieldnames = fieldnames
 
-    with open(output_filename, 'w', newline='') as f:
+    with open(output_filename, "w", newline="") as f:
         if isinstance(results[0], list) or isinstance(results[0], tuple):
             writer = csv.writer(f)
             writer.writerow(fieldnames)
@@ -98,18 +106,19 @@ def write_results_to_csv(results : list[tuple] | list[list] | list[dict], output
             writer = csv.DictWriter(f, fieldnames)
             writer.writeheader()
         else:
-            print('Invalid result format')
+            print("Invalid result format")
             return
-        
+
         for result in results:
             writer.writerow(result)
+
 
 def filter_batch(data, b):
     data_new = []
     for row in data:
-        if ("B" in row and int(row["B"]) == b):
+        if "B" in row and int(row["B"]) == b:
             data_new.append(row)
-        elif ("N" in row and int(row["N"]) == b):
+        elif "N" in row and int(row["N"]) == b:
             data_new.append(row)
     return data_new
 
@@ -117,16 +126,20 @@ def filter_batch(data, b):
 def filter_dtype(data, dtype):
     data_new = []
     for row in data:
-        if ("input_dtype" in row and row["input_dtype"] == dtype) or ("dtype" in row and row["dtype"] == dtype):
+        if ("input_dtype" in row and row["input_dtype"] == dtype) or (
+            "dtype" in row and row["dtype"] == dtype
+        ):
             data_new.append(row)
     return data_new
+
 
 def filter_model(data, model):
     data_new = []
     for row in data:
-        if ("tag" in row and model in row["tag"]):
+        if "tag" in row and model in row["tag"]:
             data_new.append(row)
     return data_new
+
 
 def roofline(results=None, out=None, batch=None, dtype=None, model=None, **kwargs):
     """Generate a roofline plot of GEMM performance from multiple result files and save raw data as CSV."""
@@ -135,18 +148,28 @@ def roofline(results=None, out=None, batch=None, dtype=None, model=None, **kwarg
     if out is None:
         raise ValueError("No output file path provided")
 
-    files = results.split(',')
-    colors = cycle(['b', 'g', 'r', 'c', 'm', 'y', 'k'])
-    
+    files = results.split(",")
+    colors = cycle(["b", "g", "r", "c", "m", "y", "k"])
+
     plt.figure(figsize=(12, 8))
 
     for idx, result_file in enumerate(files):
         data = []
-        with open(result_file.strip(), mode='r') as csvfile:
+        with open(result_file.strip(), mode="r") as csvfile:
             reader = csv.DictReader(csvfile)
             for row in reader:
-                row = {k: float(v) if k in ['index', 'mean_microseconds', 'arithmetic_intensity', 'tflops', 'roofline_tflops', 'roofline_percent'] else v for k, v in row.items()}
-                row['ok'] = True if 'ok' not in row else row['ok'] == 'True'
+                float_columns = [
+                    "index",
+                    "mean_microseconds",
+                    "arithmetic_intensity",
+                    "tflops",
+                    "roofline_tflops",
+                    "roofline_percent",
+                ]
+                row = {
+                    k: (float(v) if k in float_columns else v) for k, v in row.items()
+                }
+                row["ok"] = True if "ok" not in row else row["ok"] == "True"
                 data.append(row)
         if batch:
             data = filter_batch(data, batch)
@@ -155,18 +178,20 @@ def roofline(results=None, out=None, batch=None, dtype=None, model=None, **kwarg
         if model:
             data = filter_model(data, model)
         if len(data) == 0:
-            warnings.warn(f"No data to plot with filters dtype={dtype}, batch={batch}, model={model} there were no kernels with the target config")
+            warnings.warn(
+                f"No data to plot with filters dtype={dtype}, batch={batch}, model={model} there were no kernels with the target config"
+            )
             return
-        x = [item['arithmetic_intensity'] for item in data]
-        y = [item['tflops'] for item in data]
-        
+        x = [item["arithmetic_intensity"] for item in data]
+        y = [item["tflops"] for item in data]
+
         plt.scatter(x, y, alpha=0.6, color=next(colors), label=result_file.strip())
-    
-    plt.xscale('log')
-    plt.yscale('log')
-    plt.xlabel('Arithmetic Intensity (FLOP/byte)')
-    plt.ylabel('Performance (TFLOP/s)')
-    plt.title('Roofline Plot of Kernel Performance')
+
+    plt.xscale("log")
+    plt.yscale("log")
+    plt.xlabel("Arithmetic Intensity (FLOP/byte)")
+    plt.ylabel("Performance (TFLOP/s)")
+    plt.title("Roofline Plot of Kernel Performance")
 
     tflops_map = {
         "f32": 653.7,
@@ -175,7 +200,7 @@ def roofline(results=None, out=None, batch=None, dtype=None, model=None, **kwarg
         "f8E4M3FNUZ": 2614.9,
         "i8": 2614.9,
     }
-    
+
     peak_memory_bandwidth = 5.3
     if dtype is not None:
         peak_compute = tflops_map[dtype]
@@ -185,23 +210,30 @@ def roofline(results=None, out=None, batch=None, dtype=None, model=None, **kwarg
     x_range = np.logspace(np.log10(min(x)), np.log10(max(max(x), 150)), 100)
     y_memory = peak_memory_bandwidth * x_range
     y_compute = np.full_like(x_range, peak_compute)
-    
+
     y_cutoff = 1300
     mask = (peak_memory_bandwidth * x_range) <= y_cutoff
     x_filtered = x_range[mask]
     y_memory_filtered = peak_memory_bandwidth * x_filtered
 
-    plt.plot(x_filtered, y_memory_filtered, 'r-', label='Memory Bound')
-    plt.plot(x_range, y_compute, 'g-', label='Compute Bound')
-    plt.plot(x_range, np.minimum(y_memory, y_compute), 'k-', linewidth=2, label='Roofline')
-    
+    plt.plot(x_filtered, y_memory_filtered, "r-", label="Memory Bound")
+    plt.plot(x_range, y_compute, "g-", label="Compute Bound")
+    plt.plot(
+        x_range, np.minimum(y_memory, y_compute), "k-", linewidth=2, label="Roofline"
+    )
+
     plt.legend()
     plt.grid(True, which="both", ls="-", alpha=0.2)
-    
-    plt.text(x_range[-1], peak_compute, f'{peak_compute:.1f} TFLOP/s', 
-             verticalalignment='bottom', horizontalalignment='right')
 
-    plt.savefig(out, dpi=300, bbox_inches='tight')
+    plt.text(
+        x_range[-1],
+        peak_compute,
+        f"{peak_compute:.1f} TFLOP/s",
+        verticalalignment="bottom",
+        horizontalalignment="right",
+    )
+
+    plt.savefig(out, dpi=300, bbox_inches="tight")
     plt.close()
-    
+
     print(f"Roofline plot saved as '{out}'")
