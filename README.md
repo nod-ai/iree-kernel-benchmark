@@ -27,6 +27,8 @@ To run the unit tests for the suite:
 pytest
 ```
 
+Please run `black` code formatting before committing.
+
 ## Performance
 
 Pick any of the following kernels to test through IREE.

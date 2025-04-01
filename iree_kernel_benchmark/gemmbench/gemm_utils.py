@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
+
 try:
     import iree.turbine.kernel as tk
     import iree.turbine.kernel.lang as tkl
@@ -11,9 +12,9 @@ try:
         get_default_scheduling_params,
     )
 except ImportError:
-    TURBINE_AVAILABLE=False
+    TURBINE_AVAILABLE = False
 else:
-    TURBINE_AVAILABLE=True
+    TURBINE_AVAILABLE = True
 
 from ..utils import *
 import os
@@ -65,13 +66,14 @@ class GemmConfig:
         }
         operand_bytes_per_element = dtype_to_bytes[self.operand_element_type]
         result_bytes_per_element = dtype_to_bytes[self.result_element_type]
-        byte_count_input = (self.M  + self.N) * self.K * operand_bytes_per_element
+        byte_count_input = (self.M + self.N) * self.K * operand_bytes_per_element
         byte_count_output = (self.M * self.N) * result_bytes_per_element
         return byte_count_input + byte_count_output
 
     def get_flops(self) -> int:
         flops = 2 * self.M * self.N * self.K
         return flops
+
 
 def _convert_dtype_to_mlir(dtype: str) -> ir.Type:
     dtypes = {
@@ -86,6 +88,7 @@ def _convert_dtype_to_mlir(dtype: str) -> ir.Type:
     }
     return dtypes[dtype]()
 
+
 def generate_mlir(config: GemmConfig):
     K = config.K
     M = config.M
@@ -98,7 +101,11 @@ def generate_mlir(config: GemmConfig):
         acc_element_type = _convert_dtype_to_mlir(config.accumulator_element_type)
         result_element_type = _convert_dtype_to_mlir(config.result_element_type)
         is_integer = isinstance(operand_element_type, ir.IntegerType)
-        literal_zero = ir.IntegerAttr.get(acc_element_type, 0) if is_integer else ir.FloatAttr.get(acc_element_type, 0.0)
+        literal_zero = (
+            ir.IntegerAttr.get(acc_element_type, 0)
+            if is_integer
+            else ir.FloatAttr.get(acc_element_type, 0.0)
+        )
 
         # Transpose A
         if tA == "T":
@@ -117,25 +124,30 @@ def generate_mlir(config: GemmConfig):
 
         module = ir.Module.create()
         with ir.InsertionPoint(module.body):
+
             @func.FuncOp.from_py_func(arg0_type, arg1_type)
             def main(arg0, arg1):
-                zero_element = arith.constant(value = literal_zero, result = acc_element_type)
-                empty_tensor = tensor.empty(element_type = acc_element_type, sizes = [M, N])
-                filled_tensor = linalg.fill(zero_element, outs = [empty_tensor])
+                zero_element = arith.constant(
+                    value=literal_zero, result=acc_element_type
+                )
+                empty_tensor = tensor.empty(element_type=acc_element_type, sizes=[M, N])
+                filled_tensor = linalg.fill(zero_element, outs=[empty_tensor])
 
                 if tA == "T":
-                    acc = linalg.matmul_transpose_a(arg0, arg1, outs = [filled_tensor])
+                    acc = linalg.matmul_transpose_a(arg0, arg1, outs=[filled_tensor])
                 elif tB == "T":
-                    acc = linalg.matmul_transpose_b(arg0, arg1, outs = [filled_tensor])
+                    acc = linalg.matmul_transpose_b(arg0, arg1, outs=[filled_tensor])
                 else:
-                    acc = linalg.matmul(arg0, arg1, outs = [filled_tensor])
+                    acc = linalg.matmul(arg0, arg1, outs=[filled_tensor])
 
                 if acc_element_type == result_element_type:
                     return acc
                 if is_integer:
                     return arith.trunci(result_type, acc)
                 return arith.truncf(result_type, acc)
+
         return f"{module}"
+
 
 @dataclass
 class TkTunedConfig:
@@ -167,6 +179,7 @@ def get_tk_tuned_config(config: GemmConfig) -> TkTunedConfig:
     # Default config
     return TkTunedConfig(64, 64, 32, 2, 2, 1, 2, 2, 2, 1, 1, 2)
 
+
 def _convert_dtype_to_tk(dtype: str):
     dtypes = {
         "i8": tkl.i8,
@@ -181,13 +194,12 @@ def _convert_dtype_to_tk(dtype: str):
     return dtypes[dtype]
 
 
-
 def generate_tk_mlir(config: GemmConfig, vmfb_file: Path):
     # TODO: Enable waves_per_eu
     # TODO: Use scheduling barriers with LLVM patch
     tc = get_tk_tuned_config(config)
-    assert config.operand_element_type == 'f16', "Unsupported problem"
-    assert config.accumulator_element_type == 'f32', "Unsupported problem"
+    assert config.operand_element_type == "f16", "Unsupported problem"
+    assert config.accumulator_element_type == "f32", "Unsupported problem"
 
     res_dtype = _convert_dtype_to_tk(config.result_element_type)
     # Input sizes
@@ -205,16 +217,16 @@ def generate_tk_mlir(config: GemmConfig, vmfb_file: Path):
     STORE_ELEMS_PER_THREAD = tkl.sym.STORE_ELEMS_PER_THREAD
 
     # Expose user-constraints
-    constraints: list[tkw.Constraint] = [
-        tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
     constraints += [tkw.TilingConstraint(K, BLOCK_K)]
     constraints += [tkw.WaveConstraint(M, BLOCK_M / tc.RATIO_M)]
     constraints += [tkw.WaveConstraint(N, BLOCK_N / tc.RATIO_N)]
 
     constraints += [
-        tkw.HardwareConstraint(threads_per_wave=64,
-                               waves_per_block=(tc.RATIO_M, tc.RATIO_N, 1))
+        tkw.HardwareConstraint(
+            threads_per_wave=64, waves_per_block=(tc.RATIO_M, tc.RATIO_N, 1)
+        )
     ]
 
     # Wave-level micro-kernel.
@@ -250,7 +262,7 @@ def generate_tk_mlir(config: GemmConfig, vmfb_file: Path):
         tkw.write(repeat, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
 
     shape = [config.M, config.N, config.K]
-    schedule = (config.K < 4096)
+    schedule = config.K < 4096
 
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
@@ -267,7 +279,6 @@ def generate_tk_mlir(config: GemmConfig, vmfb_file: Path):
     # config = get_default_run_config() TODO: detects device as CPU for some reason
     config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
 
-
     # TODO: Scheduling is taking too long time with large K.
     with tk.gen.TestLaunchContext(
         hyperparams,
@@ -282,7 +293,12 @@ def generate_tk_mlir(config: GemmConfig, vmfb_file: Path):
 
 
 def compile_gemm_config(
-    config: GemmConfig, kernel_dir: Path, vmfb_dir: Path, target, extra_compiler_args, tk
+    config: GemmConfig,
+    kernel_dir: Path,
+    vmfb_dir: Path,
+    target,
+    extra_compiler_args,
+    tk,
 ) -> tuple[Path, Optional[Path]]:
     mlir_file = kernel_dir / (config.get_name() + ".mlir")
     vmfb_file = vmfb_dir / (config.get_name() + ".vmfb")
@@ -300,7 +316,9 @@ def compile_gemm_config(
         except Exception as e:
             traceback.print_exc()
             error_file = vmfb_dir / (config.get_name() + "_error.txt")
-            print(f"Failed to compile {config.get_name()}. Error dumped in {error_file}")
+            print(
+                f"Failed to compile {config.get_name()}. Error dumped in {error_file}"
+            )
             with open(error_file, "w") as f:
                 f.write(str(e))
                 f.write(traceback.format_exc())
@@ -327,7 +345,7 @@ def compile_gemm_config(
     if target == "host_cpu":
         exec_args += [
             "--iree-hal-target-backends=llvm-cpu",
-            "--iree-llvmcpu-target-cpu=host"
+            "--iree-llvmcpu-target-cpu=host",
         ]
     else:
         exec_args += [

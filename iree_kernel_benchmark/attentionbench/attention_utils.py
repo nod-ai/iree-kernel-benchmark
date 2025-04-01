@@ -31,6 +31,7 @@ class IntrinsicType(Enum):
     * C = 8-bit integer (any signedness)
     * D enumerates intrinsics that share the same 0xABC* bits.
     """
+
     # Intrinsics introduced in CDNA1
     MFMA_F32_16x16x16_F16 = 0x1020
     MFMA_F32_32x32x8_F16 = 0x1021
@@ -52,6 +53,7 @@ def get_intrinsic_string(intrinsic: IntrinsicType):
         case _:
             return f"#iree_gpu.mma_layout<{intrinsic.name}>"
 
+
 def get_pv_intrinsic(intrinsic: IntrinsicType):
     """
     QK intrinsics and PV intrinsics can differ. Mostly used for
@@ -62,6 +64,7 @@ def get_pv_intrinsic(intrinsic: IntrinsicType):
             return IntrinsicType.MFMA_F32_32x32x8_F16
         case _:
             return intrinsic
+
 
 @dataclass
 class AttentionConfig:
@@ -237,7 +240,15 @@ def compile_attention_config(
 
     # TODO: Use different tuning specs for different configs. This is just a
     # general tuning config that worked well for sdxl shapes.
-    spec = TuningSpec([1, 128, 0, 0, 0], [0, 0, 0, 0, 32], 4, 1, IntrinsicType.VMFMA_F32_32x32x16_F16, 2, True)
+    spec = TuningSpec(
+        [1, 128, 0, 0, 0],
+        [0, 0, 0, 0, 32],
+        4,
+        1,
+        IntrinsicType.VMFMA_F32_32x32x16_F16,
+        2,
+        True,
+    )
     # Generate mlir content
     mlir_content = generate_mlir(config, spec)
 
@@ -277,8 +288,17 @@ def compile_attention_config(
 
     return mlir_file, vmfb_file
 
+
 # Dummy test generation
 if __name__ == "__main__":
     config = AttentionConfig(20, 4096, 64, 64, 4096, "f16")
-    spec = TuningSpec([1, 128, 0, 0, 0], [0, 0, 0, 0, 32], 4, 1, IntrinsicType.VMFMA_F32_32x32x16_F16, 2, True)
+    spec = TuningSpec(
+        [1, 128, 0, 0, 0],
+        [0, 0, 0, 0, 32],
+        4,
+        1,
+        IntrinsicType.VMFMA_F32_32x32x16_F16,
+        2,
+        True,
+    )
     print(generate_mlir(config, spec))

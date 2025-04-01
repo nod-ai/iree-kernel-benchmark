@@ -46,6 +46,7 @@ def bert_attn_sweep(dtype: str) -> list[AttentionConfig]:
         configs.append(AttentionConfig(B, M, N, K1, K2, dtype))
     return configs
 
+
 def llama3_405b_attn_sweep(dtype: str) -> list[AttentionConfig]:
     configs = []
     for M in [1024, 2048, 3072, 4096, 5120, 6144, 7168, 8192]:
@@ -53,6 +54,7 @@ def llama3_405b_attn_sweep(dtype: str) -> list[AttentionConfig]:
         configs.append(AttentionConfig(512, M, 128, 128, K2, dtype))
         M += 128
     return configs
+
 
 def get_attention_configs() -> list[tuple[str, AttentionConfig]]:
     configs: list[tuple[str, AttentionConfig]] = []

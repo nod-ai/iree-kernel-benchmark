@@ -14,5 +14,5 @@ setup(
             "iree_kernel_benchmark.*",
         ],
     ),
-    package_dir={'': '.'},
+    package_dir={"": "."},
 )

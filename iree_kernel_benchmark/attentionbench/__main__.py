@@ -31,9 +31,16 @@ if __name__ == "__main__":
         help="Comma seperated csv file list to generate roofline plot with",
         default=None,
     )
-    parser.add_argument("--device", help="The IREE device to execute benchmarks on", type=str, default="hip")
+    parser.add_argument(
+        "--device",
+        help="The IREE device to execute benchmarks on",
+        type=str,
+        default="hip",
+    )
     parser.add_argument("--plot", help="location to save plot", default=None)
-    parser.add_argument("--batch", help="roofline on certain batch", type=int, default=None)
+    parser.add_argument(
+        "--batch", help="roofline on certain batch", type=int, default=None
+    )
     parser.add_argument("--dtype", help="roofline on certain dtype", default=None)
     parser.add_argument("--model", help="roofline on certain model", default=None)
 
@@ -64,7 +71,9 @@ if __name__ == "__main__":
         lambda tag, config: (tag, config, kernel_dir, vmfb_dir), configs
     )
     with Pool(num_cpus) as pool:
-        compilation_results = list(tqdm(pool.starmap(compile_attention, list(compile_args))))
+        compilation_results = list(
+            tqdm(pool.starmap(compile_attention, list(compile_args)))
+        )
 
     error_count = 0
     for tag, config, mlir_file, vmfb_file in compilation_results:

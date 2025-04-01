@@ -17,14 +17,16 @@ from .gemm_utils import *
 from .problems import get_gemm_configs, get_tk_gemm_configs, get_matching_configs
 
 
-def compile_gemm(tag, config, kernel_dir, vmfb_dir, target, extra_compiler_args, tk, dump_dir=None):
+def compile_gemm(
+    tag, config, kernel_dir, vmfb_dir, target, extra_compiler_args, tk, dump_dir=None
+):
     if dump_dir:
         name = config.get_name()
         dpath = os.path.join(dump_dir, name)
-        extra_compiler_args.extend([
-            f"--iree-hal-dump-executable-files-to={dpath}"
-        ])
-    mlir_file, vmfb_file = compile_gemm_config(config, kernel_dir, vmfb_dir, target, extra_compiler_args, tk)
+        extra_compiler_args.extend([f"--iree-hal-dump-executable-files-to={dpath}"])
+    mlir_file, vmfb_file = compile_gemm_config(
+        config, kernel_dir, vmfb_dir, target, extra_compiler_args, tk
+    )
     return (tag, config, mlir_file, vmfb_file)
 
 
@@ -38,31 +40,50 @@ if __name__ == "__main__":
         help="Set the logging level",
     )
 
-    parser.add_argument("--target", help="The IREE hip target to compile for. The special value host_cpu results in a llvm-cpu benchmark instead of HIP, compiled for the host CPU.", type=str, default="gfx942")
-    parser.add_argument("--device", help="The IREE device to execute benchmarks on", type=str, default="hip")
     parser.add_argument(
-        "--Xiree_compile",
-        nargs='+',
-        default=[],
-        help="Extra command line arguments passed to the IREE compiler. The flags need to be specified without the `--` or `-`"
+        "--target",
+        help="The IREE hip target to compile for. The special value host_cpu results in a llvm-cpu benchmark instead of HIP, compiled for the host CPU.",
+        type=str,
+        default="gfx942",
     )
     parser.add_argument(
-        "--dtypes", nargs='+', default=[], help="List of data types to benchmark. Defaults to all supported types."
+        "--device",
+        help="The IREE device to execute benchmarks on",
+        type=str,
+        default="hip",
+    )
+    parser.add_argument(
+        "--Xiree_compile",
+        nargs="+",
+        default=[],
+        help="Extra command line arguments passed to the IREE compiler. The flags need to be specified without the `--` or `-`",
+    )
+    parser.add_argument(
+        "--dtypes",
+        nargs="+",
+        default=[],
+        help="List of data types to benchmark. Defaults to all supported types.",
     )
     parser.add_argument(
         "--variants",
-        nargs='+',
+        nargs="+",
         default=[],
-        help="List of matmul variants to benchmark. Default to all variants: NN, NT, TN, and TT."
+        help="List of matmul variants to benchmark. Default to all variants: NN, NT, TN, and TT.",
     )
     parser.add_argument(
         "--tag_regex",
         help="Regular expression for allowed benchmark tags. Defaults to all tags allowed.",
-        default=".*"
+        default=".*",
     )
-    parser.add_argument("--roofline", help="Comma separated csv file list to generate roofline plot with", default=None)
+    parser.add_argument(
+        "--roofline",
+        help="Comma separated csv file list to generate roofline plot with",
+        default=None,
+    )
     parser.add_argument("--plot", help="location to save plot", default=None)
-    parser.add_argument("--batch", help="roofline on certain batch", type=int, default=None)
+    parser.add_argument(
+        "--batch", help="roofline on certain batch", type=int, default=None
+    )
     parser.add_argument("--model", help="roofline on certain model", default=None)
     parser.add_argument(
         "--tk",
@@ -74,29 +95,43 @@ if __name__ == "__main__":
         "--dump_dir",
         type=str,
         default=None,
-        help="Directory to which executable files will be dumped."
+        help="Directory to which executable files will be dumped.",
     )
     parser.add_argument(
         "--raw_accumulators",
-        action='store_true',
-        help="If true, benchmark matmuls returning the raw accumulator type with no truncation. If false (default), the results are truncated and cast to the input element type."
+        action="store_true",
+        help="If true, benchmark matmuls returning the raw accumulator type with no truncation. If false (default), the results are truncated and cast to the input element type.",
     )
 
     args = parser.parse_args()
     # Handle default values here, since list args are not compatible with defaulted lists.
     requested_dtypes = ["f16", "bf16", "i8"] if not args.dtypes else list(args.dtypes)
-    requested_variants = ["NN", "NT", "TN", "TT"] if not args.variants else list(args.variants)
+    requested_variants = (
+        ["NN", "NT", "TN", "TT"] if not args.variants else list(args.variants)
+    )
 
     logging.basicConfig(level=args.log_level)
 
     if args.roofline:
         for dtype in requested_dtypes:
-            roofline(args.roofline, f"{args.plot.split('.')[0]}_{dtype}.png", args.batch, dtype, args.model)
+            roofline(
+                args.roofline,
+                f"{args.plot.split('.')[0]}_{dtype}.png",
+                args.batch,
+                dtype,
+                args.model,
+            )
         sys.exit()
 
     tk = args.tk
     configs = get_tk_gemm_configs() if tk else get_gemm_configs()
-    configs = get_matching_configs(configs, requested_dtypes, requested_variants, args.tag_regex, args.raw_accumulators)
+    configs = get_matching_configs(
+        configs,
+        requested_dtypes,
+        requested_variants,
+        args.tag_regex,
+        args.raw_accumulators,
+    )
     print(f"Generated {len(configs)} gemm configs.")
 
     num_cpus = max(1, max(cpu_count() // 2, 1))
@@ -111,12 +146,22 @@ if __name__ == "__main__":
     kernel_dir.mkdir(parents=True, exist_ok=True)
     vmfb_dir.mkdir(parents=True, exist_ok=True)
     target = args.target
-    extra_compiler_args = ['--' + x for x in list(args.Xiree_compile)]
+    extra_compiler_args = ["--" + x for x in list(args.Xiree_compile)]
     dump_dir = args.dump_dir
     device = "local-task" if args.target == "host_cpu" else args.device
 
     compile_args = itertools.starmap(
-        lambda tag, config: (tag, config, kernel_dir, vmfb_dir, target, extra_compiler_args, tk, dump_dir), configs
+        lambda tag, config: (
+            tag,
+            config,
+            kernel_dir,
+            vmfb_dir,
+            target,
+            extra_compiler_args,
+            tk,
+            dump_dir,
+        ),
+        configs,
     )
     with Pool(num_cpus) as pool:
         compilation_results = list(tqdm(pool.starmap(compile_gemm, list(compile_args))))
@@ -182,30 +227,41 @@ if __name__ == "__main__":
         arithmetic_intensity = flops / byte_count
         tflops_per_second = (flops / 1e12) / (benchmark_gemm_mean_time_us / 1e6)
 
-        results.append((
-            index, tag, name, vmfb_hash, config.M, config.N, config.K, config.operand_element_type, config.tA, config.tB,
-            round(benchmark_gemm_mean_time_us, 4),
-            round(arithmetic_intensity, 4),
-            round(tflops_per_second, 4),
-            ok
-        ))
+        results.append(
+            (
+                index,
+                tag,
+                name,
+                vmfb_hash,
+                config.M,
+                config.N,
+                config.K,
+                config.operand_element_type,
+                config.tA,
+                config.tB,
+                round(benchmark_gemm_mean_time_us, 4),
+                round(arithmetic_intensity, 4),
+                round(tflops_per_second, 4),
+                ok,
+            )
+        )
         index += 1
 
     fieldnames = [
-        'index',
-        'tag',
-        'name',
-        'vmfb_hash',
-        'M',
-        'N',
-        'K',
-        'dtype',
-        'tA',
-        'tB',
-        'mean_microseconds',
-        'arithmetic_intensity',
-        'tflops',
-        'ok'
+        "index",
+        "tag",
+        "name",
+        "vmfb_hash",
+        "M",
+        "N",
+        "K",
+        "dtype",
+        "tA",
+        "tB",
+        "mean_microseconds",
+        "arithmetic_intensity",
+        "tflops",
+        "ok",
     ]
 
     write_results_to_csv(results, output_csv, fieldnames)
