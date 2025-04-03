@@ -99,14 +99,14 @@ if __name__ == "__main__":
     with Pool(num_cpus) as pool:
         compilation_results = list(tqdm(pool.starmap(compile_conv, list(compile_args))))
 
-    error_count = 0
+    compile_error_count = 0
     for tag, config, mlir_file, vmfb_file, dump_path in compilation_results:
         if vmfb_file:
             vmfb_dict[vmfb_file] = (tag, config, dump_path)
         else:
-            error_count += 1
+            compile_error_count += 1
     print(
-        f"{len(configs) - error_count} Success, {error_count} Failed out of {len(configs)} configs"
+        f"{len(configs) - compile_error_count} Success, {compile_error_count} Failed out of {len(configs)} configs"
     )
 
     print("Compilation process completed.")
@@ -119,6 +119,7 @@ if __name__ == "__main__":
     if not os.path.exists(csv_dir):
         os.makedirs(csv_dir)
 
+    run_error_count = 0
     for vmfb_filename, value in vmfb_dict.items():
         tag, config, dump_path = value
         name = config.get_name()
@@ -145,6 +146,8 @@ if __name__ == "__main__":
         # iree benchmark kernels
         ret_value, cmd_out, cmd_stderr = run_iree_command(exec_args)
         ok = ret_value == 0
+        if not ok:
+            run_error_count += 1
         benchmark_conv_mean_time_ms = bench_summary_process(ret_value, cmd_out)
         benchmark_conv_mean_time_us = benchmark_conv_mean_time_ms * 1000
 
@@ -214,3 +217,8 @@ if __name__ == "__main__":
 
     write_results_to_csv(results, output_csv, fieldnames)
     print(f"Results written to {output_csv}")
+
+    if compile_error_count != 0 or run_error_count != 0:
+        exit(1)
+    else:
+        exit(0)
