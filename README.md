@@ -21,13 +21,21 @@ If you plan to run the TK benchmarks, also install iree-turbine with
 pip install iree-turbine@git+https://github.com/iree-org/iree-turbine.git@main
 ```
 
-To run the unit tests for the suite:
+## Development guide
+
+Install the development requirements:
+
+```
+pip install -r dev-requirements.txt
+```
+
+Run the unit tests for the suite:
 
 ```
 pytest
 ```
 
-Please run `black` code formatting before committing.
+This repo uses [`pre-commit`](https://pre-commit.com/) hooks to check code formatting rules. You can run `pre-commit install` to set up the hooks.
 
 ## Performance
 
