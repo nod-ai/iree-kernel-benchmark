@@ -2,5 +2,4 @@ numpy
 tqdm
 matplotlib
 torch>=2.3.0
-pytest>=8.3.5
 PyYAML>=6.0.2 # Required by iree.compiler.dialects.linalg
