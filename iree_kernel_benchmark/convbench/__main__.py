@@ -8,6 +8,7 @@ import csv
 import argparse
 import sys
 import re
+from collections import OrderedDict
 from ..utils import *
 from .conv_utils import *
 from .problems import get_conv_configs, get_tk_conv_configs, get_conv_test_configs
@@ -17,14 +18,14 @@ from .wave_conv_utils import compile_wave_conv_config
 
 def compile_conv_iree(tag, config, kernel_dir, vmfb_dir, extra_compiler_args):
     mlir_file, vmfb_file, dump_path = compile_conv_config(
-        config, kernel_dir, vmfb_dir, extra_compiler_args
+        tag, config, kernel_dir, vmfb_dir, extra_compiler_args
     )
     return (tag, config, mlir_file, vmfb_file, dump_path)
 
 
 def compile_conv_wave(tag, config, kernel_dir, vmfb_dir, extra_compiler_args):
     mlir_file, vmfb_file, dump_path = compile_wave_conv_config(
-        config, kernel_dir, vmfb_dir, extra_compiler_args
+        tag, config, kernel_dir, vmfb_dir, extra_compiler_args
     )
     return (tag, config, mlir_file, vmfb_file, dump_path)
 
@@ -82,6 +83,9 @@ if __name__ == "__main__":
     # configs = get_conv_test_configs()
     configs = get_tk_conv_configs() if args.tk else get_conv_configs()
     print(f"Generated {len(configs)} conv configs.")
+
+    configs = list(OrderedDict({config: None for config in configs}))
+    print(f"Deduplicated to {len(configs)} conv configs.")
 
     if args.filter_config is not None:
         filter_regex = re.compile(args.filter_config)

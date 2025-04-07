@@ -48,6 +48,14 @@ class ConvConfig:
             + str(self.S)
         )
 
+    def __eq__(self, other):
+        if not isinstance(other, ConvConfig):
+            return NotImplemented
+        return self.get_name() == other.get_name()
+
+    def __hash__(self):
+        return hash(self.get_name())
+
     def get_img_shape(self) -> str:
         if "nhwc" in self.OP:
             in_h = self.H * self.S + self.P - 1
@@ -188,12 +196,19 @@ def generate_mlir(config: ConvConfig):
 
 
 def compile_conv_config(
-    config: ConvConfig, kernel_dir: Path, vmfb_dir: Path, extra_compiler_args: list[str]
+    tag: str,
+    config: ConvConfig,
+    kernel_dir: Path,
+    vmfb_dir: Path,
+    extra_compiler_args: list[str],
 ) -> tuple[Path, Optional[Path]]:
-    mlir_file = kernel_dir / (config.get_name() + ".mlir")
-    vmfb_file = vmfb_dir / (config.get_name() + ".vmfb")
-    dump_file = kernel_dir / (config.get_name() + ".stderr.mlir")
-    files_path = vmfb_dir / config.get_name()
+    # Name with tag is used for filenames so that duplicate configs with
+    # different tags will not clobber eachother.
+    name_with_tag = tag + "-" + config.get_name()
+    mlir_file = kernel_dir / (name_with_tag + ".mlir")
+    vmfb_file = vmfb_dir / (name_with_tag + ".vmfb")
+    dump_file = kernel_dir / (name_with_tag + ".stderr.mlir")
+    files_path = vmfb_dir / name_with_tag
 
     # Generate mlir content
     mlir_content = generate_mlir(config)
