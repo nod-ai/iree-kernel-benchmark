@@ -25,14 +25,21 @@ else:
 
 
 def compile_wave_conv_config(
-    config: ConvConfig, kernel_dir: Path, vmfb_dir: Path, extra_compiler_args: list[str]
+    tag: str,
+    config: ConvConfig,
+    kernel_dir: Path,
+    vmfb_dir: Path,
+    extra_compiler_args: list[str],
 ) -> tuple[Path, Optional[Path]]:
     if not TURBINE_AVAILABLE:
         raise ValueError("iree.turbine package is not available")
 
-    mlir_file = kernel_dir / (config.get_name() + ".mlir")
-    vmfb_file = vmfb_dir / (config.get_name() + ".vmfb")
-    files_path = vmfb_dir / config.get_name()
+    # Name with tag is used for filenames so that duplicate configs with
+    # different tags will not clobber eachother.
+    name_with_tag = tag + "-" + config.get_name()
+    mlir_file = kernel_dir / (name_with_tag + ".mlir")
+    vmfb_file = vmfb_dir / (name_with_tag + ".vmfb")
+    files_path = vmfb_dir / name_with_tag
 
     try:
         _compile_conv(config, mlir_file, vmfb_file)
