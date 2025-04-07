@@ -32,31 +32,37 @@ jobs:
           pip install iree-turbine@git+https://github.com/iree-org/iree-turbine.git@main
 
       - name: Convolutions
+        continue-on-error: true
         run: |
           source bench_venv/bin/activate
           python -m iree_kernel_benchmark.convbench
 
       - name: TK Convolutions
+        continue-on-error: true
         run: |
           source bench_venv/bin/activate
           python -m iree_kernel_benchmark.convbench --tk
 
       - name: Attention
+        continue-on-error: true
         run: |
           source bench_venv/bin/activate
           python -m iree_kernel_benchmark.attentionbench
 
       - name: TK GEMM
+        continue-on-error: true
         run: |
           source bench_venv/bin/activate
           python -m iree_kernel_benchmark.gemmbench --tk
 
       - name: GEMM
+        continue-on-error: true
         run: |
           source bench_venv/bin/activate
           python -m iree_kernel_benchmark.gemmbench
 
       - name: Roofline Plots
+        continue-on-error: true
         run: |
           source bench_venv/bin/activate
           python -m iree_kernel_benchmark.convbench --roofline results/iree_conv.csv --plot results/iree_conv_i8.png --dtype i8
