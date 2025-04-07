@@ -7,6 +7,7 @@ from pathlib import Path
 import csv
 import argparse
 import sys
+import re
 from ..utils import *
 from .conv_utils import *
 from .problems import get_conv_configs, get_tk_conv_configs, get_conv_test_configs
@@ -50,6 +51,11 @@ if __name__ == "__main__":
         help="Extra command line arguments passed to the IREE compiler. The flags need to be specified without the `--` or `-`.",
     )
     parser.add_argument(
+        "--filter-config",
+        help="Only execute configs matching the provided regex",
+        type=str,
+    )
+    parser.add_argument(
         "--roofline",
         help="Comma seperated csv file list to generate roofline plot with",
         default=None,
@@ -76,6 +82,13 @@ if __name__ == "__main__":
     # configs = get_conv_test_configs()
     configs = get_tk_conv_configs() if args.tk else get_conv_configs()
     print(f"Generated {len(configs)} conv configs.")
+
+    if args.filter_config is not None:
+        filter_regex = re.compile(args.filter_config)
+        configs = list(
+            filter(lambda config: filter_regex.match(config[1].get_name()), configs)
+        )
+        print(f"Filtered down to {len(configs)} conv configs.")
 
     num_cpus = max(1, cpu_count() - 20)
     print(f"Using {num_cpus} CPUs for parallel processing.")
