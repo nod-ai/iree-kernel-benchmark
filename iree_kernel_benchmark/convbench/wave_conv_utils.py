@@ -9,17 +9,17 @@ try:
     import iree.turbine.kernel as tk
     import iree.turbine.kernel.lang as tkl
     from iree.turbine.kernel.wave.templates.conv import get_igemm_conv2d
-    from iree.turbine.kernel.wave.utils import (
-        get_default_arch,
-        get_default_run_config,
-        get_default_compile_config,
+    from iree.turbine.kernel.wave.compile import wave_compile, WaveCompileOptions
+    from iree.turbine.kernel.wave.scheduling.schedule_enums import SchedulingType
+    from iree.turbine.kernel.wave.utils.torch_utils import (
         device_randn,
         device_randint,
         device_randperm,
         device_zeros,
     )
-except ImportError:
+except ImportError as e:
     TURBINE_AVAILABLE = False
+    turbine_import_error = e
 else:
     TURBINE_AVAILABLE = True
 
@@ -32,7 +32,9 @@ def compile_wave_conv_config(
     extra_compiler_args: list[str],
 ) -> tuple[Path, Optional[Path]]:
     if not TURBINE_AVAILABLE:
-        raise ValueError("iree.turbine package is not available")
+        raise ValueError(
+            f"Can't compile TK benchmark because of a failed import (most likely iree.turbine is missing): {turbine_import_error}"
+        )
 
     # Name with tag is used for filenames so that duplicate configs with
     # different tags will not clobber eachother.
@@ -98,19 +100,17 @@ def _compile_conv(config: ConvConfig, mlir_file: Path, vmfb_file: Path):
     else:
         raise ValueError(f"Unsupported op_type: {op_type}")
 
-    # config = get_default_run_config()
-    config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
-
-    with tk.gen.TestLaunchContext(
-        hyperparams,
+    options = WaveCompileOptions(
+        subs=hyperparams,
         canonicalize=True,
         create_vmfb_file=vmfb_file,
-        run_config=config,
-        schedule=False,
-        inline=False,
-    ):
-        mod = conv().module_op  # This will generate vmfb file
-        with open(mlir_file, "w") as f:
-            f.write(str(mod))
+        schedule=SchedulingType.NONE,
+        # inline=False, (TODO: how to do this with new API?)
+        backend="rocm",
+        target="gfx942",
+    )
+    result = wave_compile(options, conv)
+    with open(mlir_file, "w") as f:
+        f.write(result.asm)
 
-        print(f"Successfully compiled to {vmfb_file}")
+    print(f"Successfully compiled to {vmfb_file}")
