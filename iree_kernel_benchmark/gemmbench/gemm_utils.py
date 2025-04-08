@@ -7,12 +7,14 @@ try:
     import iree.turbine.kernel.lang as tkl
     import iree.turbine.kernel.wave as tkw
     from iree.turbine.kernel.lang.global_symbols import *
-    from iree.turbine.kernel.wave.utils import (
-        get_default_run_config,
+    from iree.turbine.kernel.wave.compile import wave_compile, WaveCompileOptions
+    from iree.turbine.kernel.wave.utils.general_utils import (
         get_default_scheduling_params,
     )
-except ImportError:
+    from iree.turbine.kernel.wave.scheduling.schedule_enums import SchedulingType
+except ImportError as e:
     TURBINE_AVAILABLE = False
+    turbine_import_error = e
 else:
     TURBINE_AVAILABLE = True
 
@@ -262,7 +264,7 @@ def generate_tk_mlir(config: GemmConfig, vmfb_file: Path):
         tkw.write(repeat, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
 
     shape = [config.M, config.N, config.K]
-    schedule = config.K < 4096
+    schedule = SchedulingType.MODULO if config.K < 4096 else SchedulingType.NONE
 
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
@@ -276,20 +278,18 @@ def generate_tk_mlir(config: GemmConfig, vmfb_file: Path):
         K: shape[2],
     }
     hyperparams.update(get_default_scheduling_params())
-    # config = get_default_run_config() TODO: detects device as CPU for some reason
-    config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
 
     # TODO: Scheduling is taking too long time with large K.
-    with tk.gen.TestLaunchContext(
-        hyperparams,
+    options = WaveCompileOptions(
+        subs=hyperparams,
         canonicalize=True,
         create_vmfb_file=vmfb_file,
-        run_config=config,
+        backend="rocm",
+        target="gfx942",
         schedule=schedule,
-    ):
-        mb = gemm()
-
-        return mb.module_op.get_asm()
+    )
+    result = wave_compile(options, gemm)
+    return result.asm
 
 
 def compile_gemm_config(
@@ -309,7 +309,9 @@ def compile_gemm_config(
 
     # Generate mlir content
     if tk and not TURBINE_AVAILABLE:
-        raise ValueError("Requested TK benchmarks but Turbine isn't available")
+        raise ValueError(
+            f"Can't compile TK benchmark because of a failed import (most likely iree.turbine is missing): {turbine_import_error}"
+        )
     if tk:
         try:
             mlir_content = generate_tk_mlir(config, vmfb_file)
