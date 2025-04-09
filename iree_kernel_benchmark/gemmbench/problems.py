@@ -1114,9 +1114,11 @@ def get_matching_configs(
     dtypes: list[str],
     variants: list[str],
     tag_regex: str,
+    config_regex: str,
     raw_accumulators: bool,
 ) -> list[tuple[str, GemmConfig]]:
     tag_re = re.compile(tag_regex)
+    config_re = re.compile(config_regex)
     matching_configs: list[tuple[str, GemmConfig]] = []
     for tag, config in tagged_configs:
         if config.operand_element_type not in dtypes:
@@ -1124,6 +1126,8 @@ def get_matching_configs(
         if f"{config.tA}{config.tB}" not in variants:
             continue
         if not tag_re.match(tag):
+            continue
+        if not config_re.match(config.get_name()):
             continue
         # The raw_accumulators arg means "test configs where the result element
         # type is different from what it would be in the default mode".
