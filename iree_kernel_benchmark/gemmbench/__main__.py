@@ -76,6 +76,11 @@ if __name__ == "__main__":
         default=".*",
     )
     parser.add_argument(
+        "--config_regex",
+        help="Regular expression for allowed benchmark configurations. Defaults to all allowed.",
+        default=".*",
+    )
+    parser.add_argument(
         "--roofline",
         help="Comma separated csv file list to generate roofline plot with",
         default=None,
@@ -130,6 +135,7 @@ if __name__ == "__main__":
         requested_dtypes,
         requested_variants,
         args.tag_regex,
+        args.config_regex,
         args.raw_accumulators,
     )
     print(f"Generated {len(configs)} gemm configs.")
