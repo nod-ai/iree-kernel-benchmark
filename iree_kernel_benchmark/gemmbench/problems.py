@@ -1129,6 +1129,11 @@ def get_matching_configs(
             continue
         if not config_re.match(config.get_name()):
             continue
+        # TODO(https://github.com/iree-org/iree/issues/20446):
+        # Mx1xK transpose-A configurations temporarily skipped because they
+        # trigger an IREE/MLIR bug causing a compilation failure.
+        if config.N == 1 and config.tA == "T":
+            continue
         # The raw_accumulators arg means "test configs where the result element
         # type is different from what it would be in the default mode".
         # We can't just test for (result_element_type == accumulator_element_type),
