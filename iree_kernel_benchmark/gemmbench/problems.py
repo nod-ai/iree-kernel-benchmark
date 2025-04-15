@@ -5,7 +5,7 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 from .gemm_utils import GemmConfig
-
+from typing import Optional
 import re
 
 
@@ -1116,36 +1116,44 @@ def get_matching_configs(
     tag_regex: str,
     config_regex: str,
     raw_accumulators: bool,
+    fp8_dtype: Optional[str],
 ) -> list[tuple[str, GemmConfig]]:
     tag_re = re.compile(tag_regex)
     config_re = re.compile(config_regex)
     matching_configs: list[tuple[str, GemmConfig]] = []
-    for tag, config in tagged_configs:
-        if config.operand_element_type not in dtypes:
-            continue
-        if f"{config.tA}{config.tB}" not in variants:
-            continue
-        if not tag_re.match(tag):
-            continue
-        if not config_re.match(config.get_name()):
-            continue
-        # TODO(https://github.com/iree-org/iree/issues/20446):
-        # Mx1xK transpose-A configurations temporarily skipped because they
-        # trigger an IREE/MLIR bug causing a compilation failure.
-        if config.N == 1 and config.tA == "T":
-            continue
-        # The raw_accumulators arg means "test configs where the result element
-        # type is different from what it would be in the default mode".
-        # We can't just test for (result_element_type == accumulator_element_type),
-        # as that would cause e.g. f32 matmuls to be omitted in the default mode.
-        default_result_element_type = get_default_result_element_type(
-            config.operand_element_type, False
-        )
-        is_raw_accumulators_config = (
-            config.result_element_type != default_result_element_type
-        )
-        if raw_accumulators != is_raw_accumulators_config:
-            continue
-        matching_configs.append((tag, config))
+    for tag, original_config in tagged_configs:
+        fp16_and_fp8_configs = [original_config]
+        if fp8_dtype is not None and original_config.has_f16_types():
+            fp8_config = original_config.clone_replacing_f16_types_with(fp8_dtype)
+            fp16_and_fp8_configs.append(fp8_config)
+
+        for config in fp16_and_fp8_configs:
+            if config.operand_element_type not in dtypes:
+                continue
+            if f"{config.tA}{config.tB}" not in variants:
+                continue
+            if not tag_re.match(tag):
+                continue
+            if not config_re.match(config.get_name()):
+                continue
+            # TODO(https://github.com/iree-org/iree/issues/20446):
+            # Mx1xK transpose-A configurations temporarily skipped because they
+            # trigger an IREE/MLIR bug causing a compilation failure.
+            if config.N == 1 and config.tA == "T":
+                continue
+            # The raw_accumulators arg means "test configs where the result
+            # element type is different from what it would be in the default
+            # mode". We can't just test for (result_element_type ==
+            # accumulator_element_type), as that would cause e.g. f32 matmuls to
+            # be omitted in the default mode.
+            default_result_element_type = get_default_result_element_type(
+                config.operand_element_type, False
+            )
+            is_raw_accumulators_config = (
+                config.result_element_type != default_result_element_type
+            )
+            if raw_accumulators != is_raw_accumulators_config:
+                continue
+            matching_configs.append((tag, config))
 
     return matching_configs

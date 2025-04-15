@@ -41,6 +41,34 @@ def test_n_t_f16_f32_f16():
     )
 
 
+def test_n_t_f8_f32_f8():
+    # From 'llama8b_prefill' (f8 version is synthetic)
+    cfg = GemmConfig(
+        M=512,
+        N=4096,
+        K=14336,
+        tA="N",
+        tB="T",
+        operand_element_type="f8E4M3FNUZ",
+        accumulator_element_type="f32",
+        result_element_type="f8E4M3FNUZ",
+    )
+    mlir = generate_mlir(cfg)
+    match_lines(
+        mlir,
+        [
+            "module {",
+            "func.func @main(%arg0: tensor<512x14336xf8E4M3FNUZ>, %arg1: tensor<4096x14336xf8E4M3FNUZ>) -> tensor<512x4096xf8E4M3FNUZ> {",
+            "%cst = arith.constant 0.000000e+00 : f32",
+            "%0 = tensor.empty() : tensor<512x4096xf32>",
+            "%1 = linalg.fill ins(%cst : f32) outs(%0 : tensor<512x4096xf32>) -> tensor<512x4096xf32>",
+            "%2 = linalg.matmul_transpose_b {cast = #linalg.type_fn<cast_signed>} ins(%arg0, %arg1 : tensor<512x14336xf8E4M3FNUZ>, tensor<4096x14336xf8E4M3FNUZ>) outs(%1 : tensor<512x4096xf32>) -> tensor<512x4096xf32>",
+            "%3 = arith.truncf %2 : tensor<512x4096xf32> to tensor<512x4096xf8E4M3FNUZ>",
+            "return %3 : tensor<512x4096xf8E4M3FNUZ>",
+        ],
+    )
+
+
 def test_n_t_bf16_f32_bf16():
     # From 'llama70bmemory'
     cfg = GemmConfig(

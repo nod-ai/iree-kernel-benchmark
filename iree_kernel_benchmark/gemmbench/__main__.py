@@ -65,6 +65,12 @@ if __name__ == "__main__":
         help="List of data types to benchmark. Defaults to all supported types.",
     )
     parser.add_argument(
+        "--fp8-dtype",
+        help="FP8 format to use for generating synthetic FP8 benchmark configs from FP16 configs. The default is 'f8E4M3FNUZ'. Specify 'none' to skip FP8 benchmarks.",
+        type=str,
+        default="f8E4M3FNUZ",
+    )
+    parser.add_argument(
         "--variants",
         nargs="+",
         default=[],
@@ -110,7 +116,11 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     # Handle default values here, since list args are not compatible with defaulted lists.
-    requested_dtypes = ["f16", "bf16", "i8"] if not args.dtypes else list(args.dtypes)
+    default_dtypes = ["f16", "bf16", "i8"]
+    fp8_dtype = args.fp8_dtype if args.fp8_dtype != "none" else None
+    if fp8_dtype is not None:
+        default_dtypes.append(fp8_dtype)
+    requested_dtypes = default_dtypes if not args.dtypes else list(args.dtypes)
     requested_variants = (
         ["NN", "NT", "TN", "TT"] if not args.variants else list(args.variants)
     )
@@ -137,6 +147,7 @@ if __name__ == "__main__":
         args.tag_regex,
         args.config_regex,
         args.raw_accumulators,
+        fp8_dtype,
     )
     print(f"Generated {len(configs)} gemm configs.")
 

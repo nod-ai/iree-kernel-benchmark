@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
+from typing_extensions import Self
 
 try:
     import iree.turbine.kernel as tk
@@ -19,6 +20,7 @@ else:
     TURBINE_AVAILABLE = True
 
 from ..utils import *
+import copy
 import os
 import traceback
 from iree.compiler import ir
@@ -76,6 +78,28 @@ class GemmConfig:
         flops = 2 * self.M * self.N * self.K
         return flops
 
+    def has_f16_types(self) -> bool:
+        return "f16" in [
+            self.operand_element_type,
+            self.accumulator_element_type,
+            self.result_element_type,
+        ]
+
+    def clone_replacing_f16_types_with(self, new_type: str) -> Self:
+        new = copy.copy(self)
+        new.operand_element_type = (
+            new_type if new.operand_element_type == "f16" else new.operand_element_type
+        )
+        new.accumulator_element_type = (
+            new_type
+            if new.accumulator_element_type == "f16"
+            else new.accumulator_element_type
+        )
+        new.result_element_type = (
+            new_type if new.result_element_type == "f16" else new.result_element_type
+        )
+        return new
+
 
 def _convert_dtype_to_mlir(dtype: str) -> ir.Type:
     dtypes = {
@@ -83,6 +107,7 @@ def _convert_dtype_to_mlir(dtype: str) -> ir.Type:
         "i16": lambda: ir.IntegerType.get_signless(16),
         "i32": lambda: ir.IntegerType.get_signless(32),
         "i64": lambda: ir.IntegerType.get_signless(64),
+        "f8E4M3FNUZ": lambda: ir.Float8E4M3FNUZType.get(),
         "f16": lambda: ir.F16Type.get(),
         "f32": lambda: ir.F32Type.get(),
         "f64": lambda: ir.F64Type.get(),
