@@ -46,15 +46,20 @@ jobs:
           source bench_venv/bin/activate
           python -m iree_kernel_benchmark.attentionbench
 
-      - name: TK GEMM
+      - name: TK GEMM FP16
         run: |
           source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.gemmbench --tk
+          python -m iree_kernel_benchmark.gemmbench --tk --dtypes f16
 
-      - name: GEMM
+      - name: GEMM FP16
         run: |
           source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.gemmbench
+          python -m iree_kernel_benchmark.gemmbench --dtypes f16
+
+      - name: GEMM I8
+        run: |
+          source bench_venv/bin/activate
+          python -m iree_kernel_benchmark.gemmbench --dtypes i8
 
       - name: Roofline Plots
         run: |

@@ -693,265 +693,11 @@ SQUARE = [
 ]
 
 
-def llama8b_prefill(dtype: str, pad_contraction_dimension: bool) -> list[GemmConfig]:
+def llama8b_prefill(dtype: str, raw_accumulators: bool) -> list[GemmConfig]:
     configs = []
-    """LLAMA 8b Prefill, FP16."""
+    """LLAMA 8b Prefill."""
     for m, n, k, model in LLAMA:
         if model == "8b_prefill":
-            for raw_accumulators in [False, True]:
-                cache_line_size_bytes = 128
-                padded_k = k + cache_line_size_bytes // num_bytes(dtype)
-                configs.append(
-                    GemmConfig(
-                        m,
-                        n,
-                        padded_k if pad_contraction_dimension else k,
-                        "N",
-                        "T",
-                        dtype,
-                        get_default_accumulator_element_type(dtype),
-                        get_default_result_element_type(dtype, raw_accumulators),
-                    )
-                )
-    return configs
-
-
-def llama13bmatvec(dtype: str) -> list[GemmConfig]:
-    configs = []
-    """LLAMA 13b, single batch, FP16."""
-    for m, n, k, model in LLAMA:
-        if n == 1 and model == "13b":
-            for raw_accumulators in [False, True]:
-                configs.append(
-                    GemmConfig(
-                        m,
-                        n,
-                        k,
-                        "N",
-                        "T",
-                        dtype,
-                        get_default_accumulator_element_type(dtype),
-                        get_default_result_element_type(dtype, raw_accumulators),
-                    )
-                )
-    return configs
-
-
-def llama13bmatvecbf16(dtype: str) -> list[GemmConfig]:
-    configs = []
-    """LLAMA 13b, single batch, BF16."""
-    for m, n, k, model in LLAMA:
-        if n == 1 and model == "13b":
-            for raw_accumulators in [False, True]:
-                configs.append(
-                    GemmConfig(
-                        m,
-                        n,
-                        k,
-                        "N",
-                        "T",
-                        dtype,
-                        get_default_accumulator_element_type(dtype),
-                        get_default_result_element_type(dtype, raw_accumulators),
-                    )
-                )
-    return configs
-
-
-def llama70bmatvec(dtype: str) -> list[GemmConfig]:
-    """LLAMA 70b, single batch, FP16."""
-    configs = []
-    for m, n, k, model in LLAMA:
-        if n == 1 and model == "70b":
-            for raw_accumulators in [False, True]:
-                configs.append(
-                    GemmConfig(
-                        m,
-                        n,
-                        k,
-                        "N",
-                        "T",
-                        dtype,
-                        get_default_accumulator_element_type(dtype),
-                        get_default_result_element_type(dtype, raw_accumulators),
-                    )
-                )
-    return configs
-
-
-def llama70bmatvecbf16(dtype: str) -> list[GemmConfig]:
-    """LLAMA 70b, single batch, BF16."""
-    configs = []
-    for m, n, k, model in LLAMA:
-        if n == 1 and model == "70b":
-            for raw_accumulators in [False, True]:
-                configs.append(
-                    GemmConfig(
-                        m,
-                        n,
-                        k,
-                        "N",
-                        "T",
-                        dtype,
-                        get_default_accumulator_element_type(dtype),
-                        get_default_result_element_type(dtype, raw_accumulators),
-                    )
-                )
-    return configs
-
-
-def llama13bskinny(dtype: str) -> list[GemmConfig]:
-    """LLAMA 13b, multiple batches, FP16."""
-    configs = []
-    for m, n, k, model in LLAMA:
-        if n == 1 and model == "13b":
-            for batch in [2, 4, 8, 16, 32]:
-                for raw_accumulators in [False, True]:
-                    configs.append(
-                        GemmConfig(
-                            m,
-                            batch,
-                            k,
-                            "N",
-                            "T",
-                            dtype,
-                            get_default_accumulator_element_type(dtype),
-                            get_default_result_element_type(dtype, raw_accumulators),
-                        )
-                    )
-    return configs
-
-
-def llama13bskinnybf16(dtype: str) -> list[GemmConfig]:
-    """LLAMA 13b, multiple batches, BF16."""
-    configs = []
-    for m, n, k, model in LLAMA:
-        if n == 1 and model == "13b":
-            for batch in [2, 4, 8, 16, 32]:
-                for raw_accumulators in [False, True]:
-                    configs.append(
-                        GemmConfig(
-                            m,
-                            batch,
-                            k,
-                            "N",
-                            "T",
-                            dtype,
-                            get_default_accumulator_element_type(dtype),
-                            get_default_result_element_type(dtype, raw_accumulators),
-                        )
-                    )
-    return configs
-
-
-def llama70bskinny(dtype: str) -> list[GemmConfig]:
-    """LLAMA 70b, multiple batches, FP16."""
-    configs = []
-    for m, n, k, model in LLAMA:
-        if n == 1 and model == "70b":
-            for batch in [2, 4, 8, 16, 32]:
-                for raw_accumulators in [False, True]:
-                    configs.append(
-                        GemmConfig(
-                            m,
-                            batch,
-                            k,
-                            "N",
-                            "T",
-                            dtype,
-                            get_default_accumulator_element_type(dtype),
-                            get_default_result_element_type(dtype, raw_accumulators),
-                        )
-                    )
-    return configs
-
-
-def llama70bskinnybf16(dtype: str) -> list[GemmConfig]:
-    """LLAMA 70b, multiple batches, BF16."""
-    configs = []
-    for m, n, k, model in LLAMA:
-        if n == 1 and model == "70b":
-            for batch in [2, 4, 8, 16, 32]:
-                for raw_accumulators in [False, True]:
-                    configs.append(
-                        GemmConfig(
-                            m,
-                            batch,
-                            k,
-                            "N",
-                            "T",
-                            dtype,
-                            get_default_accumulator_element_type(dtype),
-                            get_default_result_element_type(dtype, raw_accumulators),
-                        )
-                    )
-    return configs
-
-
-def gpt4memory(dtype: str) -> list[GemmConfig]:
-    """GPT4 memory bound GEMMs; FP16."""
-    configs = []
-    for m, n, k in GPT4:
-        for raw_accumulators in [False, True]:
-            hgemm = GemmConfig(
-                m,
-                n,
-                k,
-                "N",
-                "N",
-                dtype,
-                get_default_accumulator_element_type(dtype),
-                get_default_result_element_type(dtype, raw_accumulators),
-            )
-            if not is_compute_bound(m, n, k, dtype, raw_accumulators):
-                configs.append(hgemm)
-    return configs
-
-
-def gpt4compute(dtype: str) -> list[GemmConfig]:
-    """GPT4 compute bound GEMMs; FP16."""
-    configs = []
-    for m, n, k in GPT4:
-        for raw_accumulators in [False, True]:
-            hgemm = GemmConfig(
-                m,
-                n,
-                k,
-                "N",
-                "N",
-                dtype,
-                get_default_accumulator_element_type(dtype),
-                get_default_result_element_type(dtype, raw_accumulators),
-            )
-            if is_compute_bound(m, n, k, dtype, raw_accumulators):
-                configs.append(hgemm)
-    return configs
-
-
-def tk_default(dtype: str) -> list[GemmConfig]:
-    """TK Shapes."""
-    for raw_accumulators in [False, True]:
-        acc_type = get_default_accumulator_element_type(dtype)
-        res_type = get_default_result_element_type(dtype, raw_accumulators)
-        configs = []
-        M, N, K = 2048, 10240, 1280
-        configs.append(GemmConfig(M, N, K, "N", "T", dtype, acc_type, res_type))
-        M, N, K = 2048, 1280, 1280
-        configs.append(GemmConfig(M, N, K, "N", "T", dtype, acc_type, res_type))
-        M, N, K = 2048, 1280, 5120
-        configs.append(GemmConfig(M, N, K, "N", "T", dtype, acc_type, res_type))
-        M, N, K = 128, 1280, 2048
-        configs.append(GemmConfig(M, N, K, "N", "T", dtype, acc_type, res_type))
-        M, N, K = 8192, 5120, 640
-        configs.append(GemmConfig(M, N, K, "N", "T", dtype, acc_type, res_type))
-    return configs
-
-
-def tk_unet(dtype: str) -> list[GemmConfig]:
-    """UNET Shapes for TK."""
-    configs = []
-    for m, n, k in UNET:
-        for raw_accumulators in [False, True]:
             configs.append(
                 GemmConfig(
                     m,
@@ -967,16 +713,16 @@ def tk_unet(dtype: str) -> list[GemmConfig]:
     return configs
 
 
-def llama70bmemory(dtype: str) -> list[GemmConfig]:
-    """LLAMA 70b memory bound GEMMs; NT; BF16."""
+def llama13bmatvec(dtype: str, raw_accumulators: bool) -> list[GemmConfig]:
     configs = []
-    for n in [1280, 3584, 7168]:
-        for raw_accumulators in [False, True]:
+    """LLAMA 13b, single batch."""
+    for m, n, k, model in LLAMA:
+        if n == 1 and model == "13b":
             configs.append(
                 GemmConfig(
-                    2,
+                    m,
                     n,
-                    8192,
+                    k,
                     "N",
                     "T",
                     dtype,
@@ -987,16 +733,190 @@ def llama70bmemory(dtype: str) -> list[GemmConfig]:
     return configs
 
 
-def compute(dtype: str) -> list[GemmConfig]:
+def llama70bmatvec(dtype: str, raw_accumulators: bool) -> list[GemmConfig]:
+    """LLAMA 70b, single batch."""
+    configs = []
+    for m, n, k, model in LLAMA:
+        if n == 1 and model == "70b":
+            configs.append(
+                GemmConfig(
+                    m,
+                    n,
+                    k,
+                    "N",
+                    "T",
+                    dtype,
+                    get_default_accumulator_element_type(dtype),
+                    get_default_result_element_type(dtype, raw_accumulators),
+                )
+            )
+    return configs
+
+
+def llama13bskinny(dtype: str, raw_accumulators: bool) -> list[GemmConfig]:
+    """LLAMA 13b, multiple batches."""
+    configs = []
+    for m, n, k, model in LLAMA:
+        if n == 1 and model == "13b":
+            for batch in [2, 4, 8, 16, 32]:
+                configs.append(
+                    GemmConfig(
+                        m,
+                        batch,
+                        k,
+                        "N",
+                        "T",
+                        dtype,
+                        get_default_accumulator_element_type(dtype),
+                        get_default_result_element_type(dtype, raw_accumulators),
+                    )
+                )
+    return configs
+
+
+def llama70bskinny(dtype: str, raw_accumulators: bool) -> list[GemmConfig]:
+    """LLAMA 70b, multiple batches."""
+    configs = []
+    for m, n, k, model in LLAMA:
+        if n == 1 and model == "70b":
+            for batch in [2, 4, 8, 16, 32]:
+                configs.append(
+                    GemmConfig(
+                        m,
+                        batch,
+                        k,
+                        "N",
+                        "T",
+                        dtype,
+                        get_default_accumulator_element_type(dtype),
+                        get_default_result_element_type(dtype, raw_accumulators),
+                    )
+                )
+    return configs
+
+
+def gpt4memory(dtype: str, raw_accumulators: bool) -> list[GemmConfig]:
+    """GPT4 memory bound GEMMs."""
+    configs = []
+    for m, n, k in GPT4:
+        hgemm = GemmConfig(
+            m,
+            n,
+            k,
+            "N",
+            "N",
+            dtype,
+            get_default_accumulator_element_type(dtype),
+            get_default_result_element_type(dtype, raw_accumulators),
+        )
+        if not is_compute_bound(m, n, k, dtype, raw_accumulators):
+            configs.append(hgemm)
+    return configs
+
+
+def gpt4compute(dtype: str, raw_accumulators: bool) -> list[GemmConfig]:
+    """GPT4 compute bound GEMMs."""
+    configs = []
+    for m, n, k in GPT4:
+        hgemm = GemmConfig(
+            m,
+            n,
+            k,
+            "N",
+            "N",
+            dtype,
+            get_default_accumulator_element_type(dtype),
+            get_default_result_element_type(dtype, raw_accumulators),
+        )
+        if is_compute_bound(m, n, k, dtype, raw_accumulators):
+            configs.append(hgemm)
+    return configs
+
+
+def tk_default(dtype: str, raw_accumulators: bool) -> list[GemmConfig]:
+    """TK Shapes."""
+    acc_type = get_default_accumulator_element_type(dtype)
+    res_type = get_default_result_element_type(dtype, raw_accumulators)
+    configs = []
+    M, N, K = 2048, 10240, 1280
+    configs.append(GemmConfig(M, N, K, "N", "T", dtype, acc_type, res_type))
+    M, N, K = 2048, 1280, 1280
+    configs.append(GemmConfig(M, N, K, "N", "T", dtype, acc_type, res_type))
+    M, N, K = 2048, 1280, 5120
+    configs.append(GemmConfig(M, N, K, "N", "T", dtype, acc_type, res_type))
+    M, N, K = 128, 1280, 2048
+    configs.append(GemmConfig(M, N, K, "N", "T", dtype, acc_type, res_type))
+    M, N, K = 8192, 5120, 640
+    configs.append(GemmConfig(M, N, K, "N", "T", dtype, acc_type, res_type))
+    return configs
+
+
+def tk_unet(dtype: str, raw_accumulators: bool) -> list[GemmConfig]:
+    """UNET Shapes for TK."""
+    configs = []
+    for m, n, k in UNET:
+        configs.append(
+            GemmConfig(
+                m,
+                n,
+                k,
+                "N",
+                "T",
+                dtype,
+                get_default_accumulator_element_type(dtype),
+                get_default_result_element_type(dtype, raw_accumulators),
+            )
+        )
+    return configs
+
+
+def llama70bmemory(dtype: str, raw_accumulators: bool) -> list[GemmConfig]:
+    """LLAMA 70b memory bound GEMMs; NT."""
+    configs = []
+    for n in [1280, 3584, 7168]:
+        configs.append(
+            GemmConfig(
+                2,
+                n,
+                8192,
+                "N",
+                "T",
+                dtype,
+                get_default_accumulator_element_type(dtype),
+                get_default_result_element_type(dtype, raw_accumulators),
+            )
+        )
+    return configs
+
+
+def compute(dtype: str, raw_accumulators: bool) -> list[GemmConfig]:
     """Compute bound GEMMs."""
     configs = []
     for tA, tB in [("N", "N"), ("N", "T"), ("T", "N")]:
-        for raw_accumulators in [False, True]:
+        configs.append(
+            GemmConfig(
+                4096,
+                4096,
+                8192,
+                tA,
+                tB,
+                dtype,
+                get_default_accumulator_element_type(dtype),
+                get_default_result_element_type(dtype, raw_accumulators),
+            )
+        )
+    return configs
+
+
+def unet(dtype: str, raw_accumulators: bool) -> list[GemmConfig]:
+    configs = []
+    for tA, tB in [("N", "N"), ("N", "T")]:
+        for m, n, k in UNET:
             configs.append(
                 GemmConfig(
-                    4096,
-                    4096,
-                    8192,
+                    m,
+                    n,
+                    k,
                     tA,
                     tB,
                     dtype,
@@ -1007,84 +927,41 @@ def compute(dtype: str) -> list[GemmConfig]:
     return configs
 
 
-def unet(dtype: str) -> list[GemmConfig]:
-    configs = []
-    for tA, tB in [("N", "N"), ("N", "T")]:
-        for m, n, k in UNET:
-            for raw_accumulators in [False, True]:
-                configs.append(
-                    GemmConfig(
-                        m,
-                        n,
-                        k,
-                        tA,
-                        tB,
-                        dtype,
-                        get_default_accumulator_element_type(dtype),
-                        get_default_result_element_type(dtype, raw_accumulators),
-                    )
-                )
-    return configs
-
-
-def square(dtype: str) -> list[GemmConfig]:
+def square(dtype: str, raw_accumulators: bool) -> list[GemmConfig]:
     configs = []
     for m, n, k in SQUARE:
-        for raw_accumulators in [False, True]:
-            configs.append(
-                GemmConfig(
-                    m,
-                    n,
-                    k,
-                    "N",
-                    "T",
-                    dtype,
-                    get_default_accumulator_element_type(dtype),
-                    get_default_result_element_type(dtype, raw_accumulators),
-                )
+        configs.append(
+            GemmConfig(
+                m,
+                n,
+                k,
+                "N",
+                "T",
+                dtype,
+                get_default_accumulator_element_type(dtype),
+                get_default_result_element_type(dtype, raw_accumulators),
             )
+        )
     return configs
 
 
-def get_gemm_configs() -> list[tuple[str, GemmConfig]]:
-    llama8b_prefill_configs = llama8b_prefill("f16", False)
-    llama8b_prefill_padded_configs = llama8b_prefill("f16", True)
-
-    llama13bmatvec_configs: list[GemmConfig] = []
-    llama13bmatvec_configs += llama13bmatvec("f16")
-    llama13bmatvec_configs += llama13bmatvecbf16("bf16")
-
-    llama70bmatvec_configs: list[GemmConfig] = []
-    llama70bmatvec_configs += llama70bmatvec("f16")
-    llama70bmatvec_configs += llama70bmatvecbf16("bf16")
-
-    llama13bskinny_configs: list[GemmConfig] = []
-    llama13bskinny_configs += llama13bskinny("f16")
-    llama13bskinny_configs += llama13bskinnybf16("bf16")
-
-    llama70bskinny_configs: list[GemmConfig] = []
-    llama70bskinny_configs += llama70bskinny("f16")
-    llama70bskinny_configs += llama70bskinnybf16("bf16")
-
-    gpt4compute_configs = gpt4compute("f16")
-    llama70bmemory_configs = llama70bmemory("bf16")
-    tk_default_configs = tk_default("f16")
-
-    compute_configs: list[GemmConfig] = []
-    compute_configs += compute("f16")
-    compute_configs += compute("bf16")
-
-    unet_configs: list[GemmConfig] = []
-    unet_configs += unet("f16")
-    unet_configs += unet("bf16")
-
-    square_configs: list[GemmConfig] = square("f16") + square("bf16") + square("i8")
+def get_gemm_configs(
+    dtype: str, raw_accumulators: bool
+) -> list[tuple[str, GemmConfig]]:
+    llama8b_prefill_configs = llama8b_prefill(dtype, raw_accumulators)
+    llama13bmatvec_configs = llama13bmatvec(dtype, raw_accumulators)
+    llama70bmatvec_configs = llama70bmatvec(dtype, raw_accumulators)
+    llama13bskinny_configs = llama13bskinny(dtype, raw_accumulators)
+    llama70bskinny_configs = llama70bskinny(dtype, raw_accumulators)
+    gpt4compute_configs = gpt4compute(dtype, raw_accumulators)
+    llama70bmemory_configs = llama70bmemory(dtype, raw_accumulators)
+    tk_default_configs = tk_default(dtype, raw_accumulators)
+    compute_configs = compute(dtype, raw_accumulators)
+    unet_configs = unet(dtype, raw_accumulators)
+    square_configs = square(dtype, raw_accumulators)
 
     all_configs: list[tuple[str, GemmConfig]] = []
     all_configs += [("llama8b_prefill", x) for x in llama8b_prefill_configs]
-    all_configs += [
-        ("llama8b_prefill_padded", x) for x in llama8b_prefill_padded_configs
-    ]
     all_configs += [("llama13bmatvec", x) for x in llama13bmatvec_configs]
     all_configs += [("llama70bmatvec", x) for x in llama70bmatvec_configs]
     all_configs += [("llama13bskinny", x) for x in llama13bskinny_configs]
@@ -1099,10 +976,12 @@ def get_gemm_configs() -> list[tuple[str, GemmConfig]]:
     return all_configs
 
 
-def get_tk_gemm_configs() -> list[tuple[str, GemmConfig]]:
+def get_tk_gemm_configs(
+    dtype: str, raw_accumulators: bool
+) -> list[tuple[str, GemmConfig]]:
     configs: list[tuple[str, GemmConfig]] = []
-    tk_default_configs = tk_default("f16")
-    tk_unet_configs = tk_unet("f16")
+    tk_default_configs = tk_default(dtype, raw_accumulators)
+    tk_unet_configs = tk_unet(dtype, raw_accumulators)
 
     configs += [("tk", x) for x in tk_default_configs]
     configs += [("unet", x) for x in tk_unet_configs]
@@ -1111,18 +990,14 @@ def get_tk_gemm_configs() -> list[tuple[str, GemmConfig]]:
 
 def get_matching_configs(
     tagged_configs: list[tuple[str, GemmConfig]],
-    dtypes: list[str],
     variants: list[str],
     tag_regex: str,
     config_regex: str,
-    raw_accumulators: bool,
 ) -> list[tuple[str, GemmConfig]]:
     tag_re = re.compile(tag_regex)
     config_re = re.compile(config_regex)
     matching_configs: list[tuple[str, GemmConfig]] = []
     for tag, config in tagged_configs:
-        if config.operand_element_type not in dtypes:
-            continue
         if f"{config.tA}{config.tB}" not in variants:
             continue
         if not tag_re.match(tag):
@@ -1133,18 +1008,6 @@ def get_matching_configs(
         # Mx1xK transpose-A/-B configurations temporarily skipped because they
         # trigger an IREE/MLIR bug causing a compilation failure.
         if config.N == 1 and (config.tA == "T" or config.tB == "T"):
-            continue
-        # The raw_accumulators arg means "test configs where the result element
-        # type is different from what it would be in the default mode".
-        # We can't just test for (result_element_type == accumulator_element_type),
-        # as that would cause e.g. f32 matmuls to be omitted in the default mode.
-        default_result_element_type = get_default_result_element_type(
-            config.operand_element_type, False
-        )
-        is_raw_accumulators_config = (
-            config.result_element_type != default_result_element_type
-        )
-        if raw_accumulators != is_raw_accumulators_config:
             continue
         matching_configs.append((tag, config))
 
