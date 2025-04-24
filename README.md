@@ -60,11 +60,15 @@ python -m iree_kernel_benchmark.convbench --tk
 python -m iree_kernel_benchmark.gemmbench
 ```
 
+This will only generate FP16 benchmarks. You may want to specify a different set of types with `--dtypes`, e.g. `--dtypes i8 bf16`.
+
 ### TK GEMM Benchmarking
 
 ```
 python -m iree_kernel_benchmark.gemmbench --tk
 ```
+
+Same remark about types applies.
 
 ### Attention Benchmarking
 

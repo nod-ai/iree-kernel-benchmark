@@ -62,13 +62,18 @@ if __name__ == "__main__":
         "--dtypes",
         nargs="+",
         default=[],
-        help="List of data types to benchmark. Defaults to all supported types.",
+        help="List of data types to generate benchmarks for. Defaults to f16. Other options include f32, bf16, i8.",
+    )
+    parser.add_argument(
+        "--raw_accumulators",
+        action="store_true",
+        help="If true, generate benchmark matmuls returning the raw accumulator type with no truncation. If false (default), generate benchmark matmuls where results are truncated and cast to the input element type.",
     )
     parser.add_argument(
         "--variants",
         nargs="+",
         default=[],
-        help="List of matmul variants to benchmark. Default to all variants: NN, NT, TN, and TT.",
+        help="List of matmul variants to filter benchmarks by. Default to all variants: NN, NT, TN, and TT.",
     )
     parser.add_argument(
         "--tag_regex",
@@ -102,15 +107,10 @@ if __name__ == "__main__":
         default=None,
         help="Directory to which executable files will be dumped.",
     )
-    parser.add_argument(
-        "--raw_accumulators",
-        action="store_true",
-        help="If true, benchmark matmuls returning the raw accumulator type with no truncation. If false (default), the results are truncated and cast to the input element type.",
-    )
 
     args = parser.parse_args()
     # Handle default values here, since list args are not compatible with defaulted lists.
-    requested_dtypes = ["f16", "bf16", "i8"] if not args.dtypes else list(args.dtypes)
+    requested_dtypes = ["f16"] if not args.dtypes else list(args.dtypes)
     requested_variants = (
         ["NN", "NT", "TN", "TT"] if not args.variants else list(args.variants)
     )
@@ -129,14 +129,18 @@ if __name__ == "__main__":
         sys.exit()
 
     tk = args.tk
-    configs = get_tk_gemm_configs() if tk else get_gemm_configs()
+    configs = []
+    for dtype in requested_dtypes:
+        configs += (
+            get_tk_gemm_configs(dtype, args.raw_accumulators)
+            if tk
+            else get_gemm_configs(dtype, args.raw_accumulators)
+        )
     configs = get_matching_configs(
         configs,
-        requested_dtypes,
         requested_variants,
         args.tag_regex,
         args.config_regex,
-        args.raw_accumulators,
     )
     print(f"Generated {len(configs)} gemm configs.")
 
