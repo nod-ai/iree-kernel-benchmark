@@ -62,7 +62,7 @@ if __name__ == "__main__":
         "--dtypes",
         nargs="+",
         default=[],
-        help="List of data types to generate benchmarks for. Defaults to f16. Other options include f32, bf16, i8.",
+        help="List of data types to generate benchmarks for. Defaults to f16. Other options include (for example) f32, bf16, i8, f8E4M3FNUZ.",
     )
     parser.add_argument(
         "--raw_accumulators",

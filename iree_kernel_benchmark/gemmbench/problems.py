@@ -4,19 +4,23 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-from .gemm_utils import GemmConfig
+from .gemm_utils import GemmConfig, num_bytes
 
 import re
 
 
-def num_bytes(dtype: str) -> int:
-    return {"f16": 2, "bf16": 2, "f32": 4, "i8": 1, "i32": 4}[dtype]
-
-
 def get_default_accumulator_element_type(operand_element_type: str) -> str:
-    return {"f16": "f32", "bf16": "f32", "f32": "f32", "i8": "i32", "i32": "i32"}[
-        operand_element_type
-    ]
+    return {
+        "f16": "f32",
+        "bf16": "f32",
+        "f32": "f32",
+        "f8E4M3FNUZ": "f32",
+        "f8E5M2FNUZ": "f32",
+        "f8E4M3FN": "f32",
+        "f8E5M2": "f32",
+        "i8": "i32",
+        "i32": "i32",
+    }[operand_element_type]
 
 
 def get_default_result_element_type(

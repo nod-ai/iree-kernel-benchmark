@@ -25,6 +25,21 @@ from iree.compiler import ir
 from iree.compiler.dialects import arith, func, linalg, tensor
 
 
+def num_bytes(dtype: str) -> int:
+    dtype_to_bytes = {
+        "f32": 4,
+        "f16": 2,
+        "bf16": 2,
+        "f8E4M3FNUZ": 1,
+        "f8E5M2FNUZ": 1,
+        "f8E4M3FN": 1,
+        "f8E5M2": 1,
+        "i8": 1,
+        "i32": 4,
+    }
+    return dtype_to_bytes[dtype]
+
+
 @dataclass
 class GemmConfig:
     M: int
@@ -58,16 +73,8 @@ class GemmConfig:
         return f"{self.M}x{self.N}x{self.result_element_type}"
 
     def get_byte_count(self) -> int:
-        dtype_to_bytes = {
-            "f32": 4,
-            "f16": 2,
-            "bf16": 2,
-            "f8E4M3FNUZ": 1,
-            "i8": 1,
-            "i32": 4,
-        }
-        operand_bytes_per_element = dtype_to_bytes[self.operand_element_type]
-        result_bytes_per_element = dtype_to_bytes[self.result_element_type]
+        operand_bytes_per_element = num_bytes(self.operand_element_type)
+        result_bytes_per_element = num_bytes(self.result_element_type)
         byte_count_input = (self.M + self.N) * self.K * operand_bytes_per_element
         byte_count_output = (self.M * self.N) * result_bytes_per_element
         return byte_count_input + byte_count_output
@@ -83,6 +90,10 @@ def _convert_dtype_to_mlir(dtype: str) -> ir.Type:
         "i16": lambda: ir.IntegerType.get_signless(16),
         "i32": lambda: ir.IntegerType.get_signless(32),
         "i64": lambda: ir.IntegerType.get_signless(64),
+        "f8E4M3FNUZ": lambda: ir.Float8E4M3FNUZType.get(),
+        "f8E5M2FNUZ": lambda: ir.Float8E5M2FNUZType.get(),
+        "f8E4M3FN": lambda: ir.Float8E4M3FNType.get(),
+        "f8E5M2": lambda: ir.Float8E5M2Type.get(),
         "f16": lambda: ir.F16Type.get(),
         "f32": lambda: ir.F32Type.get(),
         "f64": lambda: ir.F64Type.get(),
