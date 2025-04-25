@@ -727,8 +727,8 @@ def llama13bmatvec(dtype: str, raw_accumulators: bool) -> list[GemmConfig]:
                     m,
                     n,
                     k,
-                    "T",
                     "N",
+                    "T",
                     dtype,
                     get_default_accumulator_element_type(dtype),
                     get_default_result_element_type(dtype, raw_accumulators),
@@ -747,8 +747,8 @@ def llama70bmatvec(dtype: str, raw_accumulators: bool) -> list[GemmConfig]:
                     m,
                     n,
                     k,
-                    "T",
                     "N",
+                    "T",
                     dtype,
                     get_default_accumulator_element_type(dtype),
                     get_default_result_element_type(dtype, raw_accumulators),
@@ -768,8 +768,8 @@ def llama13bskinny(dtype: str, raw_accumulators: bool) -> list[GemmConfig]:
                         m,
                         batch,
                         k,
-                        "T",
                         "N",
+                        "T",
                         dtype,
                         get_default_accumulator_element_type(dtype),
                         get_default_result_element_type(dtype, raw_accumulators),
@@ -789,8 +789,8 @@ def llama70bskinny(dtype: str, raw_accumulators: bool) -> list[GemmConfig]:
                         m,
                         batch,
                         k,
-                        "T",
                         "N",
+                        "T",
                         dtype,
                         get_default_accumulator_element_type(dtype),
                         get_default_result_element_type(dtype, raw_accumulators),
@@ -1009,9 +1009,9 @@ def get_matching_configs(
         if not config_re.match(config.get_name()):
             continue
         # TODO(https://github.com/iree-org/iree/issues/20446):
-        # Mx1xK transpose-A configurations temporarily skipped because they
+        # Mx1xK transpose-A/-B configurations temporarily skipped because they
         # trigger an IREE/MLIR bug causing a compilation failure.
-        if config.N == 1 and config.tA == "T":
+        if config.N == 1 and (config.tA == "T" or config.tB == "T"):
             continue
         matching_configs.append((tag, config))
 
