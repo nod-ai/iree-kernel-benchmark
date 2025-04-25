@@ -1,0 +1,27 @@
+name: Unit tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  pytest:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: "Checkout Repo"
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup venv
+        run: |
+          python3 -m venv bench_venv
+          source bench_venv/bin/activate
+          pip install --upgrade pip
+          pip install --pre --no-cache-dir --find-links https://iree.dev/pip-release-links.html iree-base-compiler iree-base-runtime --upgrade
+          pip install -r requirements.txt
+          pip install -r dev-requirements.txt
+
+      - name: Run pytest
+        run: |
+          source bench_venv/bin/activate
+          pytest
