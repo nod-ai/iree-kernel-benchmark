@@ -4,7 +4,7 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-from .gemm_utils import GemmConfig, num_bytes
+from .gemm_utils import GemmConfig, num_bytes, kDynamic
 
 import re
 
@@ -704,7 +704,7 @@ def llama8b_prefill(dtype: str, raw_accumulators: bool) -> list[GemmConfig]:
         if model == "8b_prefill":
             configs.append(
                 GemmConfig(
-                    m,
+                    kDynamic,
                     n,
                     k,
                     "N",
@@ -712,6 +712,7 @@ def llama8b_prefill(dtype: str, raw_accumulators: bool) -> list[GemmConfig]:
                     dtype,
                     get_default_accumulator_element_type(dtype),
                     get_default_result_element_type(dtype, raw_accumulators),
+                    runtime_dim=m,
                 )
             )
     return configs

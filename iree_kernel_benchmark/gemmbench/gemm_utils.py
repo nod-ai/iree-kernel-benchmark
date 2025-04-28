@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 
 try:
     import iree.turbine.kernel as tk
@@ -24,6 +24,8 @@ import traceback
 from iree.compiler import ir
 from iree.compiler.dialects import arith, func, linalg, tensor
 
+kDynamic = ir.ShapedType.get_dynamic_size()
+
 
 def num_bytes(dtype: str) -> int:
     dtype_to_bytes = {
@@ -42,6 +44,7 @@ def num_bytes(dtype: str) -> int:
 
 @dataclass
 class GemmConfig:
+    # Note that M, N and K may be set to kDynamic, a special value
     M: int
     N: int
     K: int
@@ -50,37 +53,62 @@ class GemmConfig:
     operand_element_type: str
     accumulator_element_type: str
     result_element_type: str
+    # runtime_dim subtitutes for any dynamic dims when executing.
+    # TODO: It would be better if we could execute the same compiled dynamic
+    #       kernel for a series of different sizes, rather than duplicating the
+    #       GemmConfig. The current design's advantage is that no changes have
+    #       to be made to the execution logic (looks just like a static shape).
+    runtime_dim: Optional[int] = None
 
     def get_name(self) -> str:
-        name = f"gemm_{self.M}_{self.N}_{self.K}_{self.operand_element_type}_{self.accumulator_element_type}"
+        M = self.M if self.M != kDynamic else "D"
+        N = self.N if self.N != kDynamic else "D"
+        K = self.K if self.K != kDynamic else "D"
+        name = f"gemm_{M}_{N}_{K}_{self.operand_element_type}_{self.accumulator_element_type}"
         if self.tA == "T":
             name += "_tA"
         elif self.tB == "T":
             name += "_tB"
+        if self.runtime_dim is not None:
+            name += f"_D={self.runtime_dim}"
         return name
 
+    def get_runtime_dims(self) -> Tuple[int, int, int]:
+        """
+        Get concrete dims to use when executing this kernel.
+        """
+        M = self.M if self.M != kDynamic else self.runtime_dim
+        N = self.N if self.N != kDynamic else self.runtime_dim
+        K = self.K if self.K != kDynamic else self.runtime_dim
+        return M, N, K
+
     def get_inp1(self) -> str:
+        M, N, K = self.get_runtime_dims()
         if self.tA == "T":
-            return f"{self.K}x{self.M}x{self.operand_element_type}"
-        return f"{self.M}x{self.K}x{self.operand_element_type}"
+            return f"{K}x{M}x{self.operand_element_type}"
+        return f"{M}x{K}x{self.operand_element_type}"
 
     def get_inp2(self) -> str:
+        M, N, K = self.get_runtime_dims()
         if self.tB == "T":
-            return f"{self.N}x{self.K}x{self.operand_element_type}"
-        return f"{self.K}x{self.N}x{self.operand_element_type}"
+            return f"{N}x{K}x{self.operand_element_type}"
+        return f"{K}x{N}x{self.operand_element_type}"
 
     def get_out(self) -> str:
-        return f"{self.M}x{self.N}x{self.result_element_type}"
+        M, N, K = self.get_runtime_dims()
+        return f"{M}x{N}x{self.result_element_type}"
 
     def get_byte_count(self) -> int:
         operand_bytes_per_element = num_bytes(self.operand_element_type)
         result_bytes_per_element = num_bytes(self.result_element_type)
-        byte_count_input = (self.M + self.N) * self.K * operand_bytes_per_element
-        byte_count_output = (self.M * self.N) * result_bytes_per_element
+        M, N, K = self.get_runtime_dims()
+        byte_count_input = (M + N) * K * operand_bytes_per_element
+        byte_count_output = (M * N) * result_bytes_per_element
         return byte_count_input + byte_count_output
 
     def get_flops(self) -> int:
-        flops = 2 * self.M * self.N * self.K
+        M, N, K = self.get_runtime_dims()
+        flops = 2 * M * N * K
         return flops
 
 
@@ -123,16 +151,22 @@ def generate_mlir(config: GemmConfig):
         # Transpose A
         if tA == "T":
             arg0_type = ir.RankedTensorType.get([K, M], operand_element_type)
+            arg0_M_idx = 1
             arg1_type = ir.RankedTensorType.get([K, N], operand_element_type)
+            arg1_N_idx = 1
         # Transpose B
         elif tB == "T":
             arg0_type = ir.RankedTensorType.get([M, K], operand_element_type)
+            arg0_M_idx = 0
             arg1_type = ir.RankedTensorType.get([N, K], operand_element_type)
+            arg1_N_idx = 0
         # "Normal" path (can't transpose both)
         else:
             assert tA == "N" and tB == "N"
             arg0_type = ir.RankedTensorType.get([M, K], operand_element_type)
+            arg0_M_idx = 0
             arg1_type = ir.RankedTensorType.get([K, N], operand_element_type)
+            arg1_N_idx = 1
         result_type = ir.RankedTensorType.get([M, N], result_element_type)
 
         module = ir.Module.create()
@@ -143,7 +177,24 @@ def generate_mlir(config: GemmConfig):
                 zero_element = arith.constant(
                     value=literal_zero, result=acc_element_type
                 )
-                empty_tensor = tensor.empty(element_type=acc_element_type, sizes=[M, N])
+                if M == kDynamic:
+                    M_dynamic_dim_idx = arith.constant(
+                        value=arg0_M_idx, result=ir.IndexType.get()
+                    )
+                    M_dynamic_dim = tensor.dim(arg0, M_dynamic_dim_idx)
+                if N == kDynamic:
+                    N_dynamic_dim_idx = arith.constant(
+                        value=arg1_N_idx, result=ir.IndexType.get()
+                    )
+                    N_dynamic_dim = tensor.dim(arg1, N_dynamic_dim_idx)
+
+                empty_tensor = tensor.empty(
+                    element_type=acc_element_type,
+                    sizes=[
+                        M_dynamic_dim if M == kDynamic else M,
+                        N_dynamic_dim if N == kDynamic else N,
+                    ],
+                )
                 filled_tensor = linalg.fill(zero_element, outs=[empty_tensor])
 
                 if tA == "T":
