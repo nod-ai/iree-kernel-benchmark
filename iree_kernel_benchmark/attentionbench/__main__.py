@@ -12,8 +12,15 @@ from .attention_utils import *
 from .problems import get_attention_configs
 
 
-def compile_attention(tag, config, kernel_dir, vmfb_dir):
-    mlir_file, vmfb_file = compile_attention_config(config, kernel_dir, vmfb_dir)
+def compile_attention(
+    tag, config, kernel_dir, vmfb_dir, 
+    extra_compiler_args=[], tk=False, dump_dir=None,
+):
+    if dump_dir:
+        dump_dir = Path(dump_dir)
+        dpath = dump_dir / config.get_name()
+        extra_compiler_args.extend([f"--iree-hal-dump-executable-files-to={dpath}"])
+    mlir_file, vmfb_file = compile_attention_config(config, kernel_dir, vmfb_dir, dump_dir, extra_compiler_args, tk)
     return (tag, config, mlir_file, vmfb_file)
 
 
@@ -43,6 +50,18 @@ if __name__ == "__main__":
     )
     parser.add_argument("--dtype", help="roofline on certain dtype", default=None)
     parser.add_argument("--model", help="roofline on certain model", default=None)
+    parser.add_argument(
+        "--tk",
+        action="store_true",
+        default=False,
+        help="Run attention kernels using Wave Kernels",
+    )
+    parser.add_argument(
+        "--dump_dir",
+        type=str,
+        default=None,
+        help="Directory to which executable files will be dumped.",
+    )
 
     args = parser.parse_args()
     logging.basicConfig(level=args.log_level)
@@ -50,6 +69,8 @@ if __name__ == "__main__":
     if args.roofline:
         roofline(args.roofline, args.plot, args.batch, args.dtype, args.model)
         sys.exit()
+    
+    tk = args.tk
 
     configs = get_attention_configs()
     print(f"Generated {len(configs)} attention configs.")
@@ -61,14 +82,16 @@ if __name__ == "__main__":
     vmfb_dict = manager.dict()
 
     repo_root = Path(__file__).parent.parent
-    kernel_dir = repo_root / "attention" / "mlir"
-    vmfb_dir = repo_root / "attention" / "vmfb"
+    backend_name = "wave" if tk else "iree"
+    kernel_dir = repo_root / "attention" / backend_name / "mlir"
+    vmfb_dir = repo_root / "attention" / backend_name / "vmfb"
+    dump_dir = args.dump_dir
     device = args.device
     kernel_dir.mkdir(parents=True, exist_ok=True)
     vmfb_dir.mkdir(parents=True, exist_ok=True)
 
     compile_args = itertools.starmap(
-        lambda tag, config: (tag, config, kernel_dir, vmfb_dir), configs
+        lambda tag, config: (tag, config, kernel_dir, vmfb_dir, [], tk, dump_dir), configs
     )
     with Pool(num_cpus) as pool:
         compilation_results = list(
@@ -89,12 +112,12 @@ if __name__ == "__main__":
 
     results = []
     index = 0
-    output_csv = "results/iree_attention.csv"
+    output_csv = "results/attention_wave.csv" if tk else "results/attention_iree.csv"
     csv_dir = os.path.dirname(output_csv)
     if not os.path.exists(csv_dir):
         os.makedirs(csv_dir)
 
-    for vmfb_filename, value in vmfb_dict.items():
+    for vmfb_filename, value in tqdm(vmfb_dict.items(), desc="Benchmarking Attention Kernels"):
         tag, config = value
         name = config.get_name()
 
@@ -113,6 +136,14 @@ if __name__ == "__main__":
             f"--input={value_shape}",
             "--benchmark_repetitions=3",
         ]
+
+        if tk:
+            out_shape : str = config.get_output_shape()
+            out_shape = 'x'.join(out_shape.split('x')[:-1] + ['f32'])
+            exec_args.append(f"--input={out_shape}")
+            exec_args += ["--function=isolated_benchmark"]
+        else:
+            exec_args += ["--function=main"]
 
         # iree benchmark kernels
         ret_value, cmd_out, cmd_err = run_iree_command(exec_args)

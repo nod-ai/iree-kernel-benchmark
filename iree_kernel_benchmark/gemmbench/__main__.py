@@ -99,7 +99,7 @@ if __name__ == "__main__":
         "--tk",
         action="store_true",
         default=False,
-        help="Run gemm kernels using Turbine Kernels",
+        help="Run gemm kernels using Wave Kernels",
     )
     parser.add_argument(
         "--dump_dir",
@@ -135,6 +135,7 @@ if __name__ == "__main__":
             get_tk_gemm_configs(dtype, args.raw_accumulators)
             if tk
             else get_gemm_configs(dtype, args.raw_accumulators)
+            # get_gemm_configs(dtype, args.raw_accumulators)
         )
     configs = get_matching_configs(
         configs,
@@ -201,7 +202,7 @@ if __name__ == "__main__":
         os.makedirs(csv_dir)
 
     run_error_count = 0
-    for vmfb_filename, value in vmfb_dict.items():
+    for vmfb_filename, value in tqdm(vmfb_dict.items(), desc="Benchmarking Gemm Kernels"):
         tag, config = value
         vmfb_hash = generate_md5_hex(vmfb_filename)
         name = config.get_name()

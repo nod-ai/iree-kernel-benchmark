@@ -4,6 +4,18 @@ from pathlib import Path
 from typing import Optional
 from enum import Enum
 
+import iree.turbine.kernel.lang as tkl
+import iree.turbine.kernel.wave as tkw
+from iree.turbine.kernel.wave.templates.vanilla_attention import get_vanilla_attention_kernel
+from iree.turbine.kernel.wave.templates.attention_common import AttentionShape
+from iree.turbine.kernel.lang.global_symbols import *
+from iree.turbine.kernel.wave.constraints import MMAType
+from iree.turbine.kernel.wave.compile import wave_compile, WaveCompileOptions
+from iree.turbine.kernel.wave.utils.general_utils import (
+    get_default_scheduling_params,
+)
+from iree.turbine.kernel.wave.scheduling.schedule_enums import SchedulingType
+from typing import Optional
 
 class IntrinsicType(Enum):
     """
@@ -228,15 +240,66 @@ func.func @main(%Q : !Q, %K : !K, %V : !V) -> !O {{
 
 
 def get_attention_flags() -> list[str]:
-    return ["--iree-codegen-gpu-native-math-precision"]
+    # return ["--iree-codegen-gpu-native-math-precision"]
+    return []
 
+def generate_tk_attention_mlir(
+        config: AttentionConfig, 
+        vmfb_file: Path,
+        intermediate_dir: Path=None,
+        executable_dir: Path=None):
+    attention_shape = AttentionShape(
+        num_query_heads=config.B,
+        num_kv_heads=config.B,
+        head_size=config.K1,
+        head_size_kv=config.N,
+        batch_size=None,
+        query_seq_len=config.M,
+        kv_seq_len=config.K2,
+        num_seqs=None,
+        max_seq_len=None,
+        total_seq_len=None,
+        context_len=None,
+        fixed_seq_len_prefix=None,
+        fixed_seq_len_extend=None,
+        block_size=None
+    )
+
+    base_attention, hyperparams, dynamic_symbols = \
+        get_vanilla_attention_kernel(shape=attention_shape, 
+                                     mfma_variant=(MMAType.F32_32x32x16_K8_F16, MMAType.F32_32x32x8_F16),
+                                     dynamic_dims=False)
+
+    hyperparams.update(get_default_scheduling_params())
+
+    compile_options = WaveCompileOptions(
+        subs=hyperparams,
+        canonicalize=True,
+        create_vmfb_file=vmfb_file,
+        backend="rocm",
+        target="gfx942",
+        schedule=SchedulingType.NONE,
+        print_ir_after_all=False,
+        dump_intermediates=intermediate_dir,
+        dump_binaries=executable_dir,
+    )
+    result = wave_compile(compile_options, base_attention)
+
+    return result.asm
 
 def compile_attention_config(
-    config: AttentionConfig, kernel_dir: Path, vmfb_dir: Path
+    config: AttentionConfig, 
+    kernel_dir: Path, 
+    vmfb_dir: Path, 
+    dump_dir: Path = None,
+    extra_compiler_args: list[str] = [],
+    tk: bool = False,
 ) -> tuple[Path, Optional[Path]]:
     mlir_file = kernel_dir / (config.get_name() + ".mlir")
     vmfb_file = vmfb_dir / (config.get_name() + ".vmfb")
     dump_file = kernel_dir / (config.get_name() + ".stderr.mlir")
+    intermediate_dir = dump_dir / "inter" if dump_dir else None
+    executable_dir = dump_dir / "exe" if dump_dir else None
 
     # TODO: Use different tuning specs for different configs. This is just a
     # general tuning config that worked well for sdxl shapes.
@@ -250,11 +313,18 @@ def compile_attention_config(
         True,
     )
     # Generate mlir content
-    mlir_content = generate_mlir(config, spec)
+    if tk:
+        mlir_content = generate_tk_attention_mlir(
+            config, vmfb_file, intermediate_dir, executable_dir)
+    else:
+        mlir_content = generate_mlir(config, spec)
 
     # Write MLIR content to file
     with open(mlir_file, "w") as f:
         f.write(mlir_content)
+
+    if tk:
+        return mlir_file, vmfb_file
 
     # TODO: Do not hardcode device information, instead pass it as a class
     # Compile MLIR to vmfb

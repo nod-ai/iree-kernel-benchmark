@@ -23,6 +23,7 @@ wheelhouse
 *.egg-info
 *.whl
 bench_venv/
+*.venv/
 
 # Bench Artifacts
 attention/

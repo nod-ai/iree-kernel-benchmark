@@ -137,7 +137,7 @@ if __name__ == "__main__":
         os.makedirs(csv_dir)
 
     run_error_count = 0
-    for vmfb_filename, value in vmfb_dict.items():
+    for vmfb_filename, value in tqdm(vmfb_dict.items(), desc="Benchmarking conv kernels"):
         tag, config, dump_path = value
         name = config.get_name()
 
@@ -159,7 +159,6 @@ if __name__ == "__main__":
             out_shape = config.get_out_shape()
             exec_args.append(f"--input={out_shape}")
 
-        print(f"Running {vmfb_filename}...")
         # iree benchmark kernels
         ret_value, cmd_out, cmd_stderr = run_iree_command(exec_args)
         ok = ret_value == 0

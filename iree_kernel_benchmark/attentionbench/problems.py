@@ -59,13 +59,13 @@ def llama3_405b_attn_sweep(dtype: str) -> list[AttentionConfig]:
 def get_attention_configs() -> list[tuple[str, AttentionConfig]]:
     configs: list[tuple[str, AttentionConfig]] = []
     llm_configs = llm_sweep("f16")
-    llm_configs += llm_sweep("f8E4M3FNUZ")
+    # llm_configs += llm_sweep("f8E4M3FNUZ")
     sdxl_configs = sdxl_unet_sweep("f16")
-    sdxl_configs += sdxl_unet_sweep("f8E4M3FNUZ")
+    # sdxl_configs += sdxl_unet_sweep("f8E4M3FNUZ")
     bert_configs = bert_attn_sweep("f16")
-    bert_configs += bert_attn_sweep("f8E4M3FNUZ")
+    # bert_configs += bert_attn_sweep("f8E4M3FNUZ")
     llama3_configs = llama3_405b_attn_sweep("f16")
-    llama3_configs += llama3_405b_attn_sweep("f8E4M3FNUZ")
+    # llama3_configs += llama3_405b_attn_sweep("f8E4M3FNUZ")
 
     configs += [("llm", x) for x in llm_configs]
     configs += [("sdxl_unet", x) for x in sdxl_configs]
