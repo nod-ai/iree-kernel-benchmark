@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 from enum import Enum
+import math
 
 import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
@@ -243,11 +244,226 @@ def get_attention_flags() -> list[str]:
     # return ["--iree-codegen-gpu-native-math-precision"]
     return []
 
+def get_custom_vanilla_attention_kernel(
+    shape: AttentionShape,
+    mfma_variant: MMAType,
+    tuning_spec: TuningSpec,
+    dynamic_dims: bool,
+    is_causal: bool = False,
+    is_v_transposed: bool = False,
+    sliding_window_size: int = -1,
+    scale: float = None,
+):
+
+    if sliding_window_size > 0 and not is_causal:
+        raise NotImplementedError(
+            "Sliding window is only supported for causal attention."
+        )
+
+    scale = scale or (1.0 / math.sqrt(shape.head_size))
+    scale *= math.log2(math.e)
+
+    # Input sizes
+    B = tkl.sym.B
+    M = tkl.sym.M
+    N = tkl.sym.N
+    K1 = tkl.sym.K1
+    K2 = tkl.sym.K2
+    # Workgroup tile sizes
+    BLOCK_B = tkl.sym.BLOCK_B
+    BLOCK_M = tkl.sym.BLOCK_M
+    BLOCK_N = tkl.sym.BLOCK_N
+    BLOCK_K1 = tkl.sym.BLOCK_K1
+    BLOCK_K2 = tkl.sym.BLOCK_K2
+    # Workgroup tile sizes
+    REDUCTION_B = tkl.sym.REDUCTION_B
+    REDUCTION_M = tkl.sym.REDUCTION_M
+    REDUCTION_N = tkl.sym.REDUCTION_N
+    REDUCTION_K1 = tkl.sym.REDUCTION_K1
+    REDUCTION_K2 = tkl.sym.REDUCTION_K2
+    # Address space (for GPU, shared(1) or global(0))
+    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+
+    axes = [B, M, N, K1, K2]
+    blocks = [BLOCK_B, BLOCK_M, BLOCK_N, BLOCK_K1, BLOCK_K2]
+    reduction_tiles = [REDUCTION_B, REDUCTION_M, REDUCTION_N, REDUCTION_K1, REDUCTION_K2]
+
+    M_waves = tuning_spec.M_warp
+    N_waves = tuning_spec.N_warp
+
+    constraints: list[tkw.Constraint] = []
+    for wg_dim, wg_block_size in enumerate(tuning_spec.wg_tiles):
+        if wg_block_size > 0:
+            constraints.append(
+                tkw.WorkgroupConstraint(axes[wg_dim], blocks[wg_dim], wg_dim))
+        # else:
+        #     constraints.append(
+        #         tkw.WorkgroupConstraint(axes[wg_dim], axes[wg_dim], wg_dim))
+    for wg_dim, reduction_block_size in enumerate(tuning_spec.reduction_tiles):
+        if reduction_block_size > 0:
+            constraints.append(tkw.TilingConstraint(axes[wg_dim], reduction_tiles[wg_dim]))
+    if M_waves > 1:
+        constraints.append(tkw.WaveConstraint(M, BLOCK_M / M_waves))
+    if N_waves > 1:
+        constraints.append(tkw.WaveConstraint(N, BLOCK_N / N_waves))
+
+    # constraints.append(tkw.WorkgroupConstraint(M, BLOCK_M, 0))
+    # constraints.append(tkw.WorkgroupConstraint(N, BLOCK_N, 1))
+    # constraints.append(tkw.WorkgroupConstraint(B, BLOCK_B, 2))
+    # constraints.append(tkw.TilingConstraint(K2, BLOCK_K2))
+    # constraints.append(tkw.WaveConstraint(M, BLOCK_M / 4))
+    # constraints.append(tkw.WaveConstraint(N, BLOCK_N / 1))
+
+    # if mfma_variant[1] == MMAType.F32_16x16x16_F16:
+    #     Mvec = 16
+    #     Nvec = 16
+    # if mfma_variant[1] == MMAType.F32_32x32x8_F16:
+    Mvec = 32
+    Nvec = 32
+
+    constraints += [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            mma_type=mfma_variant[1],
+            vector_shapes={B: 0, M: Mvec, N: Nvec},
+        )
+    ]
+
+    if dynamic_dims:
+        constraints += [tkw.Assumption(K2 > BLOCK_K2 * 4)]
+
+    i = tkw.IndexMapping.iterator(0)
+    j = tkw.IndexMapping.iterator(1)
+    k = tkw.IndexMapping.iterator(2)
+    mapping = tkw.IndexMapping(
+        num_iterators=3, inputs={B: i, N: j, M: k}, outputs={B: i, M: k, N: j}
+    )
+
+    # Value tensor mapping to transpose for efficient computation if the input is
+    # not already transposed.
+    v_mapping = tkw.IndexMapping(
+        num_iterators=3, inputs={B: i, N: j, K2: k}, outputs={B: i, N: j, K2: k}
+    )
+
+    def base_attention_core(q, k, v, c):
+        c_reg = tkl.Register[B, N, M, tkl.f32](0.0)
+        init_sum = tkl.Register[B, M, tkl.f32](0.0)
+        init_max = tkl.Register[B, M, tkl.f32](-1e6)
+        sliding_window = tkl.Register[M, K2, tkl.i64](sliding_window_size)
+        qk_scaling = tkl.Register[B, M, K2, tkl.f32](scale)
+        ZEROF = tkl.Register[M, K2, tkl.f32](0.0)
+        MIN_INF = tkl.Register[M, K2, tkl.f32](-1e6)
+
+        # This microkernel encodes the fact that if the reduction
+        # dimension were tiled, then we would need to materialize a loop.
+        @tkw.iterate(K2, init_args=[init_max, init_sum, c_reg])
+        def repeat(
+            partial_max: tkl.Register[B, M, tkl.f32],
+            partial_sum: tkl.Register[B, M, tkl.f32],
+            acc: tkl.Register[B, N, M, tkl.f32],
+        ):
+            imm_reg = tkl.Register[B, K2, M, tkl.f32](0.0)
+            q_reg = tkw.read(q)
+            k_reg = tkw.read(k)
+            inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
+            x_j = tkw.permute(inner_acc, target_shape=[B, M, K2])
+            k2_index = tkw.self_index(K2, tkl.i64)
+            mask = tkw.apply_expr(k2_index, lambda x: x < K2)
+            mask = tkw.broadcast(mask, target_shape=[M, K2])
+            if is_causal:
+                # Indices i and j broadcasted along K2 with a twist:
+                # here we use *static* information that is *implicitly* encoded
+                # in the *transformation*: under the distribution constraints
+                # specified we know that the shape [M] will eventually resolve
+                # to [1] and can thus be "cast + broadcast" to [K2].
+                m_index = tkw.self_index(M, tkl.i64)
+                m_index = tkw.broadcast(m_index, target_shape=[M, K2])
+                mask = (m_index >= k2_index) & mask
+                if sliding_window_size > 0:
+                    mask = (m_index - k2_index <= sliding_window) & mask
+            mask = tkw.cast(mask, tkw.i1)
+            bias = tkw.select(mask, ZEROF, MIN_INF)
+            x_j = x_j + bias
+            x_j *= qk_scaling
+            m_j = tkw.max(x_j, partial_max, dim=K2)
+            e_delta_max = tkw.exp2(partial_max - m_j)
+            e_delta = tkw.exp2(x_j - m_j)
+            e_init = partial_sum * e_delta_max
+            d_j = tkw.sum(e_delta, e_init, dim=K2)
+            imm_f16 = tkw.cast(e_delta, tkl.f16)
+            if is_v_transposed:
+                v_reg = tkw.read(v)
+            else:
+                v_reg = tkw.read(v, mapping=v_mapping)
+            new_acc = acc * e_delta_max
+            acc = tkw.mma(v_reg, imm_f16, new_acc)
+            return m_j, d_j, acc
+
+        # repeat represents the results of the loop
+        res_max, res_sum, res_mm = repeat
+        reciprocal_sum = tkw.reciprocal(res_sum)
+        res = res_mm * reciprocal_sum
+        tkw.write(res, c, mapping=mapping)
+
+    @tkw.wave(constraints)
+    def base_attention_transposed_v(
+        q: tkl.Memory[B, M, K1, GLOBAL_ADDRESS_SPACE, tkl.f16],
+        k: tkl.Memory[B, K2, K1, ADDRESS_SPACE, tkl.f16],
+        v: tkl.Memory[B, N, K2, ADDRESS_SPACE, tkl.f16],
+        c: tkl.Memory[B, M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
+    ):
+        base_attention_core(q, k, v, c)
+
+    @tkw.wave(constraints)
+    def base_attention(
+        q: tkl.Memory[B, M, K1, GLOBAL_ADDRESS_SPACE, tkl.f16],
+        k: tkl.Memory[B, K2, K1, ADDRESS_SPACE, tkl.f16],
+        v: tkl.Memory[B, K2, N, ADDRESS_SPACE, tkl.f16],
+        c: tkl.Memory[B, M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
+    ):
+        base_attention_core(q, k, v, c)
+
+    hyperparams = {
+        ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
+        BLOCK_B: tuning_spec.wg_tiles[0],
+        BLOCK_M: tuning_spec.wg_tiles[1],
+        BLOCK_N: tuning_spec.wg_tiles[2],
+        BLOCK_K1: tuning_spec.wg_tiles[3],
+        BLOCK_K2: tuning_spec.wg_tiles[4],
+        REDUCTION_B: tuning_spec.reduction_tiles[0],
+        REDUCTION_M: tuning_spec.reduction_tiles[1],
+        REDUCTION_N: tuning_spec.reduction_tiles[2],
+        REDUCTION_K1: tuning_spec.reduction_tiles[3],
+        REDUCTION_K2: tuning_spec.reduction_tiles[4],
+        B: shape.num_query_heads,
+        M: shape.query_seq_len,
+        N: shape.head_size_kv,
+        K1: shape.head_size,
+        K2: shape.kv_seq_len,
+    }
+
+    dynamic_symbols = []
+    if dynamic_dims:
+        dynamic_symbols.append(M)
+        dynamic_symbols.append(N)
+        dynamic_symbols.append(B)
+        dynamic_symbols.append(K2)
+        del hyperparams[M]
+        del hyperparams[N]
+        del hyperparams[B]
+        del hyperparams[K2]
+
+    if is_v_transposed:
+        base_attention = base_attention_transposed_v
+
+    return base_attention, hyperparams, dynamic_symbols
+
 def generate_tk_attention_mlir(
         config: AttentionConfig, 
+        spec: TuningSpec,
         vmfb_file: Path,
-        intermediate_dir: Path=None,
-        executable_dir: Path=None):
+        dump_dir: Path,
+        mfma_variant: tuple[MMAType] = (MMAType.F32_32x32x16_K8_F16, MMAType.F32_32x32x8_F16)):
     attention_shape = AttentionShape(
         num_query_heads=config.B,
         num_kv_heads=config.B,
@@ -266,11 +482,15 @@ def generate_tk_attention_mlir(
     )
 
     base_attention, hyperparams, dynamic_symbols = \
-        get_vanilla_attention_kernel(shape=attention_shape, 
-                                     mfma_variant=(MMAType.F32_32x32x16_K8_F16, MMAType.F32_32x32x8_F16),
-                                     dynamic_dims=False)
+        get_custom_vanilla_attention_kernel(shape=attention_shape, 
+                                            mfma_variant=mfma_variant,
+                                            tuning_spec=spec,
+                                            dynamic_dims=False)
 
     hyperparams.update(get_default_scheduling_params())
+
+    if dump_dir:
+        phase_dump = dump_dir / 'wave' / config.get_name()
 
     compile_options = WaveCompileOptions(
         subs=hyperparams,
@@ -280,8 +500,7 @@ def generate_tk_attention_mlir(
         target="gfx942",
         schedule=SchedulingType.NONE,
         print_ir_after_all=False,
-        dump_intermediates=intermediate_dir,
-        dump_binaries=executable_dir,
+        dump_phases=phase_dump if dump_dir else None
     )
     result = wave_compile(compile_options, base_attention)
 
@@ -294,19 +513,23 @@ def compile_attention_config(
     dump_dir: Path = None,
     extra_compiler_args: list[str] = [],
     tk: bool = False,
+    mfma_variant: tuple[MMAType] = (MMAType.F32_32x32x16_K8_F16, MMAType.F32_32x32x8_F16),
 ) -> tuple[Path, Optional[Path]]:
     mlir_file = kernel_dir / (config.get_name() + ".mlir")
     vmfb_file = vmfb_dir / (config.get_name() + ".vmfb")
     dump_file = kernel_dir / (config.get_name() + ".stderr.mlir")
-    intermediate_dir = dump_dir / "inter" if dump_dir else None
-    executable_dir = dump_dir / "exe" if dump_dir else None
 
     # TODO: Use different tuning specs for different configs. This is just a
     # general tuning config that worked well for sdxl shapes.
+
+    num_workgroups = 8
+    waves_per_workgroup = 4
+    tiles_per_workgroup = 32
+
     spec = TuningSpec(
-        [1, 128, 0, 0, 0],
+        [1, 256, 0, 0, 0],
         [0, 0, 0, 0, 32],
-        4,
+        waves_per_workgroup,
         1,
         IntrinsicType.VMFMA_F32_32x32x16_F16,
         2,
@@ -315,7 +538,7 @@ def compile_attention_config(
     # Generate mlir content
     if tk:
         mlir_content = generate_tk_attention_mlir(
-            config, vmfb_file, intermediate_dir, executable_dir)
+            config, spec, vmfb_file, dump_dir, mfma_variant)
     else:
         mlir_content = generate_mlir(config, spec)
 
@@ -340,6 +563,9 @@ def compile_attention_config(
         # Device: MI300x
         "--iree-hip-target=gfx942",
     ] + get_attention_flags()
+    if dump_dir:
+        phase_dump = dump_dir / 'iree' / config.get_name()
+        exec_args.append(f'--dump-compilation-phases-to={phase_dump}')
 
     print(" ".join(exec_args))
 

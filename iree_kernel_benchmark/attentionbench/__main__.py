@@ -15,12 +15,13 @@ from .problems import get_attention_configs
 def compile_attention(
     tag, config, kernel_dir, vmfb_dir, 
     extra_compiler_args=[], tk=False, dump_dir=None,
+    mfma_variant: tuple[MMAType] = (MMAType.F32_32x32x16_K8_F16, MMAType.F32_32x32x8_F16),
 ):
     if dump_dir:
         dump_dir = Path(dump_dir)
         dpath = dump_dir / config.get_name()
         extra_compiler_args.extend([f"--iree-hal-dump-executable-files-to={dpath}"])
-    mlir_file, vmfb_file = compile_attention_config(config, kernel_dir, vmfb_dir, dump_dir, extra_compiler_args, tk)
+    mlir_file, vmfb_file = compile_attention_config(config, kernel_dir, vmfb_dir, dump_dir, extra_compiler_args, tk, mfma_variant)
     return (tag, config, mlir_file, vmfb_file)
 
 
@@ -62,6 +63,12 @@ if __name__ == "__main__":
         default=None,
         help="Directory to which executable files will be dumped.",
     )
+    parser.add_argument(
+        "--iterations",
+        type=int,
+        default=3,
+        help="Number of benchmark iterations.",
+    )
 
     args = parser.parse_args()
     logging.basicConfig(level=args.log_level)
@@ -70,6 +77,15 @@ if __name__ == "__main__":
         roofline(args.roofline, args.plot, args.batch, args.dtype, args.model)
         sys.exit()
     
+    # mfma_configs = [
+    #     (MMAType.F32_32x32x16_K8_F16, MMAType.F32_32x32x8_F16),
+    #     (MMAType.F32_16x16x32_K8_F16, MMAType.F32_16x16x16_F16),
+    #     (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
+    #     (MMAType.F32_32x32x8_F16, MMAType.F32_32x32x8_F16),
+    # ]
+
+    mfma_config = (MMAType.F32_32x32x16_K8_F16, MMAType.F32_32x32x16_K8_F16)
+
     tk = args.tk
 
     configs = get_attention_configs()
@@ -91,7 +107,7 @@ if __name__ == "__main__":
     vmfb_dir.mkdir(parents=True, exist_ok=True)
 
     compile_args = itertools.starmap(
-        lambda tag, config: (tag, config, kernel_dir, vmfb_dir, [], tk, dump_dir), configs
+        lambda tag, config: (tag, config, kernel_dir, vmfb_dir, [], tk, dump_dir, mfma_config), configs
     )
     with Pool(num_cpus) as pool:
         compilation_results = list(
@@ -112,7 +128,9 @@ if __name__ == "__main__":
 
     results = []
     index = 0
-    output_csv = "results/attention_wave.csv" if tk else "results/attention_iree.csv"
+
+    csv_base_name = 'tiling/wg_1'
+    output_csv = f"results/{csv_base_name}_wave.csv" if tk else f"results/{csv_base_name}_iree.csv"
     csv_dir = os.path.dirname(output_csv)
     if not os.path.exists(csv_dir):
         os.makedirs(csv_dir)
@@ -134,7 +152,7 @@ if __name__ == "__main__":
             f"--input={query_shape}",
             f"--input={key_shape}",
             f"--input={value_shape}",
-            "--benchmark_repetitions=3",
+            f"--benchmark_repetitions={args.iterations}",
         ]
 
         if tk:
