@@ -3,25 +3,53 @@ from tqdm import tqdm
 from multiprocessing import Pool, cpu_count, Manager
 import logging
 import itertools
+from typing import Literal
 from pathlib import Path
-import csv
 import argparse
 import sys
 from ..utils import *
 from .attention_utils import *
+from .attention_config import *
+from .wave_attention import compile_attention_wave_vanilla
+from .iree_attention import compile_attention_iree
 from .problems import get_attention_configs
 
+type Backend = Literal["iree", "wave"]
 
 def compile_attention(
-    tag, config, kernel_dir, vmfb_dir, 
-    extra_compiler_args=[], tk=False, dump_dir=None,
+    tag: str, 
+    config: AttentionAttributes, 
+    kernel_dir: Path, 
+    vmfb_dir: Path, 
+    backend: Backend, 
+    extra_compiler_args: list[str] = [], 
+    dump_dir=None,
     mfma_variant: tuple[MMAType] = (MMAType.F32_32x32x16_K8_F16, MMAType.F32_32x32x8_F16),
 ):
+    name = config.to_bmnk1k2().get_name()
     if dump_dir:
         dump_dir = Path(dump_dir)
-        dpath = dump_dir / config.get_name()
+        dpath = dump_dir / name
         extra_compiler_args.extend([f"--iree-hal-dump-executable-files-to={dpath}"])
-    mlir_file, vmfb_file = compile_attention_config(config, kernel_dir, vmfb_dir, dump_dir, extra_compiler_args, tk, mfma_variant)
+    
+    mlir_file = kernel_dir / f"{name}.mlir"
+    vmfb_file = vmfb_dir / f"{name}.vmfb"
+    
+    spec = TuningSpec(
+        [1, 128, 0, 0, 0],
+        [0, 0, 0, 0, 32],
+        4,
+        1,
+        IntrinsicType.VMFMA_F32_32x32x16_F16,
+        2,
+        True,
+    )
+
+    if backend == "iree":
+        mlir_file, vmfb_file = compile_attention_iree(config, spec, mlir_file, vmfb_file, dump_dir, extra_compiler_args)
+    elif backend == "wave":
+        mlir_file, vmfb_file = compile_attention_wave_vanilla(config, spec, mlir_file, vmfb_file, dump_dir, mfma_variant)
+    
     return (tag, config, mlir_file, vmfb_file)
 
 
@@ -52,10 +80,10 @@ if __name__ == "__main__":
     parser.add_argument("--dtype", help="roofline on certain dtype", default=None)
     parser.add_argument("--model", help="roofline on certain model", default=None)
     parser.add_argument(
-        "--tk",
-        action="store_true",
-        default=False,
-        help="Run attention kernels using Wave Kernels",
+        "--backend",
+        choices=["iree", "wave"],
+        default="iree",
+        help="Backend to run kernels",
     )
     parser.add_argument(
         "--dump_dir",
@@ -86,8 +114,6 @@ if __name__ == "__main__":
 
     mfma_config = (MMAType.F32_32x32x16_K8_F16, MMAType.F32_32x32x16_K8_F16)
 
-    tk = args.tk
-
     configs = get_attention_configs()
     print(f"Generated {len(configs)} attention configs.")
 
@@ -97,8 +123,9 @@ if __name__ == "__main__":
     manager = Manager()
     vmfb_dict = manager.dict()
 
+    backend_name = args.backend
+
     repo_root = Path(__file__).parent.parent
-    backend_name = "wave" if tk else "iree"
     kernel_dir = repo_root / "attention" / backend_name / "mlir"
     vmfb_dir = repo_root / "attention" / backend_name / "vmfb"
     dump_dir = args.dump_dir
@@ -107,11 +134,12 @@ if __name__ == "__main__":
     vmfb_dir.mkdir(parents=True, exist_ok=True)
 
     compile_args = itertools.starmap(
-        lambda tag, config: (tag, config, kernel_dir, vmfb_dir, [], tk, dump_dir, mfma_config), configs
+        lambda tag, config: (tag, config, kernel_dir, vmfb_dir, backend_name, [], dump_dir, mfma_config), configs
     )
     with Pool(num_cpus) as pool:
         compilation_results = list(
-            tqdm(pool.starmap(compile_attention, list(compile_args)))
+            tqdm(pool.istarmap(compile_attention, compile_args),
+                 total=len(configs), desc="Compiling Attention Kernels")
         )
 
     error_count = 0
@@ -129,14 +157,16 @@ if __name__ == "__main__":
     results = []
     index = 0
 
-    csv_base_name = 'tiling/wg_1'
-    output_csv = f"results/{csv_base_name}_wave.csv" if tk else f"results/{csv_base_name}_iree.csv"
+    csv_base_name = 'tiling/test_refactor'
+    output_csv = f"results/{csv_base_name}_wave.csv" if backend_name == "wave" else f"results/{csv_base_name}_iree.csv"
     csv_dir = os.path.dirname(output_csv)
     if not os.path.exists(csv_dir):
         os.makedirs(csv_dir)
 
     for vmfb_filename, value in tqdm(vmfb_dict.items(), desc="Benchmarking Attention Kernels"):
-        tag, config = value
+        tag = value[0]
+        attn_attrs : AttentionAttributes = value[1]
+        config : AttentionConfigBMNK = attn_attrs.to_bmnk1k2()
         name = config.get_name()
 
         query_shape = config.get_query_shape()
@@ -155,12 +185,12 @@ if __name__ == "__main__":
             f"--benchmark_repetitions={args.iterations}",
         ]
 
-        if tk:
+        if backend_name == "wave":
             out_shape : str = config.get_output_shape()
             out_shape = 'x'.join(out_shape.split('x')[:-1] + ['f32'])
             exec_args.append(f"--input={out_shape}")
             exec_args += ["--function=isolated_benchmark"]
-        else:
+        elif backend_name == "iree":
             exec_args += ["--function=main"]
 
         # iree benchmark kernels
