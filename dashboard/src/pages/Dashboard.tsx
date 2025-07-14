@@ -4,6 +4,7 @@ import FilterControls from "../components/FilterControls";
 import { useEffect, useMemo, useState } from "react";
 import type { AttentionKernel, GemmKernel, Kernel, KernelType } from "../types";
 import { loadResultCsv } from "../utils/csv";
+import KernelView from "../components/KernelView";
 
 export default function Dashboard() {
   const [kernels, setKernels] = useState<Kernel[]>([]);
@@ -99,57 +100,14 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {selectedKernel && (
-        <div className="mt-8 border-t pt-6 space-y-4">
-          <h2 className="text-xl font-semibold">Selected Kernel Details</h2>
-
-          <div className="flex flex-wrap gap-4 items-center">
-            {selectedKernel.kernelType === "gemm" ? (
-              <>
-                <div>Type: GEMM</div>
-                <div>M: <select defaultValue={selectedKernel.M}><option>{selectedKernel.M}</option></select></div>
-                <div>N: <select defaultValue={selectedKernel.N}><option>{selectedKernel.N}</option></select></div>
-                <div>K: <select defaultValue={selectedKernel.K}><option>{selectedKernel.K}</option></select></div>
-              </>
-            ) : (
-              <>
-                <div>Type: Attention</div>
-                <div>B: <select defaultValue={selectedKernel.B}><option>{selectedKernel.B}</option></select></div>
-                <div>M: <select defaultValue={selectedKernel.M}><option>{selectedKernel.M}</option></select></div>
-                <div>N: <select defaultValue={selectedKernel.N}><option>{selectedKernel.N}</option></select></div>
-                <div>K1: <select defaultValue={selectedKernel.K1}><option>{selectedKernel.K1}</option></select></div>
-                <div>K2: <select defaultValue={selectedKernel.K2}><option>{selectedKernel.K2}</option></select></div>
-              </>
-            )}
-            <div>dtype: <select defaultValue={selectedKernel.dtype}><option>{selectedKernel.dtype}</option></select></div>
-            <button className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Tune Kernel</button>
-          </div>
-
-          <div className="space-y-2">
-            <h3 className="font-semibold">Performance Metrics by Backend:</h3>
-            <table className="table-auto w-full border text-sm">
-              <thead>
-                <tr className="bg-gray-100">
-                  <th className="border px-2 py-1 text-left">Backend</th>
-                  <th className="border px-2 py-1 text-left">Arithmetic Intensity</th>
-                  <th className="border px-2 py-1 text-left">Mean Time (μs)</th>
-                  <th className="border px-2 py-1 text-left">TFLOP/s</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sameShapeKernels.map(k => (
-                  <tr key={k.id}>
-                    <td className="border px-2 py-1">{k.backend}</td>
-                    <td className="border px-2 py-1">{k.arithmeticIntensity.toFixed(2)}</td>
-                    <td className="border px-2 py-1">{k.meanMicroseconds.toFixed(2)}</td>
-                    <td className="border px-2 py-1">{k.tflops.toFixed(2)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+      {selectedKernel && 
+        <KernelView 
+          selectedKernel={selectedKernel} 
+          sameShapeKernels={sameShapeKernels} 
+          kernels={kernels}
+          setSelected={setSelectedKernelId}
+        />
+      }
     </div>
   );
 }
