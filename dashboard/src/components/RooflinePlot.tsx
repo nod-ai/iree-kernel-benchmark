@@ -7,7 +7,8 @@ Chart.register(ScatterController, LinearScale, LogarithmicScale, PointElement, T
 
 interface RooflinePlotProps {
   kernels: Kernel[];
-  setSelected: (kernelId: string) => void;
+  selectedKernel?: Kernel;
+  setSelected: (kernelId: string | null) => void;
 }
 
 export const BACKEND_COLORS: Record<string, string> = {
@@ -16,7 +17,7 @@ export const BACKEND_COLORS: Record<string, string> = {
   hipblaslt: "#2ca02c",
 };
 
-export default function RooflinePlot({ kernels, setSelected }: RooflinePlotProps) {
+export default function RooflinePlot({ kernels, setSelected, selectedKernel }: RooflinePlotProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const chartRef = useRef<Chart | null>(null);
 
@@ -26,18 +27,36 @@ export default function RooflinePlot({ kernels, setSelected }: RooflinePlotProps
 
     const grouped = kernels.reduce<Record<string, { x: number; y: number; id: string; name: string }[]>>((acc, kernel) => {
       if (!acc[kernel.backend]) acc[kernel.backend] = [];
-      acc[kernel.backend].push({ x: kernel.arithmeticIntensity, y: kernel.tflops, id: kernel.id, name: kernel.name });
+      acc[kernel.backend].push({ 
+        x: kernel.arithmeticIntensity, 
+        y: kernel.tflops, 
+        id: kernel.id, 
+        name: kernel.name 
+      });
       return acc;
     }, {});
 
     const datasets = Object.entries(grouped).map(([backend, points]) => ({
       label: backend,
-      data: points,
+      data: points.filter(point => point.id !== selectedKernel?.id),
       borderColor: BACKEND_COLORS[backend] || "#888",
-      backgroundColor: BACKEND_COLORS[backend] || "#888",
+      backgroundColor: selectedKernel ? "rgba(200, 200, 200, 0.3)" : (BACKEND_COLORS[backend] || "#888"),
       showLine: false,
       pointRadius: 5,
     }));
+
+    if (selectedKernel) {
+      datasets.push({
+        label: selectedKernel.backend,
+        data: [{
+          x: selectedKernel.arithmeticIntensity, y: selectedKernel.tflops, id: selectedKernel.id, name: selectedKernel.name 
+        }],
+        borderColor: BACKEND_COLORS[selectedKernel.backend] || "#888",
+        backgroundColor: BACKEND_COLORS[selectedKernel.backend] || "#888",
+        showLine: false,
+        pointRadius: 5,
+      })
+    }
 
     const xMin = Math.max(0.01, Math.min(...kernels.map(k => k.arithmeticIntensity)));
     const xMax = Math.max(...kernels.map(k => k.arithmeticIntensity)) * 2;
@@ -134,11 +153,13 @@ export default function RooflinePlot({ kernels, setSelected }: RooflinePlotProps
             const index = elements[0].index;
             const point = (chartRef.current?.data.datasets[datasetIndex].data as any[])[index];
             if (point?.id) setSelected(point.id);
+          } else {
+            setSelected(null);
           }
         },
       },
     });
-  }, [kernels]);
+  }, [kernels, selectedKernel]);
 
   return <canvas ref={canvasRef} className="w-full h-[500px]" />;
 }

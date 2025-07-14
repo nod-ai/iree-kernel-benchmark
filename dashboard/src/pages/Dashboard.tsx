@@ -82,12 +82,20 @@ export default function Dashboard() {
           setSelectedTags={setSelectedTags}
         />
       </div>
-      <div className="flex flex-col lg:flex-row gap-6 items-end">
-        <div className="w-full lg:w-[60%]">
-          <RooflinePlot kernels={filteredKernels} setSelected={setSelectedKernelId} />
+      <div className="flex flex-col lg:flex-row gap-6 items-center">
+        <div className="w-full lg:w-[60%] flex flex-col items-center">
+          <h2 className="text-xl mb-4 font-bold">Roofline Plot</h2>
+          <RooflinePlot 
+            kernels={filteredKernels} 
+            setSelected={setSelectedKernelId} 
+            selectedKernel={selectedKernel} 
+          />
         </div>
-        <div className="w-full lg:w-[40%]">
-          <BarComparisonPlot kernels={filteredKernels} />
+        <div className="w-full lg:w-[40%] flex flex-col items-center">
+          <h2 className="text-xl mb-4 font-bold">Average runtime{selectedKernel ? `: ${selectedKernel.name}` : ' (microseconds)'}</h2>
+          <BarComparisonPlot 
+            kernels={selectedKernelId ? sameShapeKernels : filteredKernels} 
+          />
         </div>
       </div>
 
