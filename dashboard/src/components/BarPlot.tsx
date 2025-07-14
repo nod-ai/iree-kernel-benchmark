@@ -1,9 +1,26 @@
 import { useEffect, useRef } from "react";
-import { Chart, BarController, BarElement, CategoryScale, LinearScale, Tooltip, Legend, Title } from "chart.js";
+import {
+  Chart,
+  BarController,
+  BarElement,
+  CategoryScale,
+  LinearScale,
+  Tooltip,
+  Legend,
+  Title,
+} from "chart.js";
 import type { Kernel } from "../types";
 import { BACKEND_COLORS } from "./RooflinePlot";
 
-Chart.register(BarController, BarElement, CategoryScale, LinearScale, Tooltip, Legend, Title);
+Chart.register(
+  BarController,
+  BarElement,
+  CategoryScale,
+  LinearScale,
+  Tooltip,
+  Legend,
+  Title
+);
 
 interface BarComparisonPlotProps {
   kernels: Kernel[];
@@ -25,7 +42,7 @@ export function BarComparisonPlot({ kernels }: BarComparisonPlotProps) {
     }
 
     const labels = Object.keys(backendGroups);
-    const data = labels.map(label => {
+    const data = labels.map((label) => {
       const values = backendGroups[label];
       return values.reduce((a, b) => a + b, 0) / values.length;
     });
@@ -38,7 +55,9 @@ export function BarComparisonPlot({ kernels }: BarComparisonPlotProps) {
           {
             label: "Avg Mean Time (μs)",
             data,
-            backgroundColor: labels.map(label => BACKEND_COLORS[label] || "#888"),
+            backgroundColor: labels.map(
+              (label) => BACKEND_COLORS[label] || "#888"
+            ),
           },
         ],
       },

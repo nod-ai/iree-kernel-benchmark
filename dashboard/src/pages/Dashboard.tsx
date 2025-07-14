@@ -16,8 +16,16 @@ export default function Dashboard() {
 
   useEffect(() => {
     async function fetchData() {
-      const ireeKernels = await loadResultCsv('iree', 'attention', '/results/attention_iree.csv');
-      const waveKernels = await loadResultCsv('wave', 'attention', '/results/attention_wave.csv');
+      const ireeKernels = await loadResultCsv(
+        "iree",
+        "attention",
+        "/results/attention_iree.csv"
+      );
+      const waveKernels = await loadResultCsv(
+        "wave",
+        "attention",
+        "/results/attention_wave.csv"
+      );
       const kernels = ireeKernels.concat(waveKernels);
       setKernels(kernels);
     }
@@ -25,9 +33,9 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
-    const uniqueBackends = Array.from(new Set(kernels.map(k => k.backend)));
-    const uniqueDtypes = Array.from(new Set(kernels.map(k => k.dtype)));
-    const uniqueTags = Array.from(new Set(kernels.map(k => k.tag)));
+    const uniqueBackends = Array.from(new Set(kernels.map((k) => k.backend)));
+    const uniqueDtypes = Array.from(new Set(kernels.map((k) => k.dtype)));
+    const uniqueTags = Array.from(new Set(kernels.map((k) => k.tag)));
 
     setSelectedBackends(uniqueBackends);
     setSelectedDtypes(uniqueDtypes);
@@ -35,21 +43,22 @@ export default function Dashboard() {
   }, [kernels]);
 
   const filteredKernels = useMemo(() => {
-    return kernels.filter(k =>
-      selectedBackends.includes(k.backend) &&
-      selectedDtypes.includes(k.dtype) &&
-      selectedTags.includes(k.tag)
+    return kernels.filter(
+      (k) =>
+        selectedBackends.includes(k.backend) &&
+        selectedDtypes.includes(k.dtype) &&
+        selectedTags.includes(k.tag)
     );
   }, [kernels, selectedBackends, selectedDtypes, selectedTags]);
 
   const selectedKernel = useMemo(
-    () => kernels.find(k => k.id === selectedKernelId),
+    () => kernels.find((k) => k.id === selectedKernelId),
     [kernels, selectedKernelId]
   );
 
   const sameShapeKernels = useMemo(() => {
     if (!selectedKernel) return [];
-    return kernels.filter(k => {
+    return kernels.filter((k) => {
       if (k.kernelType !== selectedKernel.kernelType) return false;
       if (k.kernelType === "gemm") {
         const gk = selectedKernel as GemmKernel;
@@ -86,28 +95,31 @@ export default function Dashboard() {
       <div className="flex flex-col lg:flex-row gap-6 items-center">
         <div className="w-full lg:w-[60%] flex flex-col items-center">
           <h2 className="text-xl mb-4 font-bold">Roofline Plot</h2>
-          <RooflinePlot 
-            kernels={filteredKernels} 
-            setSelected={setSelectedKernelId} 
-            selectedKernel={selectedKernel} 
+          <RooflinePlot
+            kernels={filteredKernels}
+            setSelected={setSelectedKernelId}
+            selectedKernel={selectedKernel}
           />
         </div>
         <div className="w-full lg:w-[40%] flex flex-col items-center">
-          <h2 className="text-xl mb-4 font-bold">Average runtime{selectedKernel ? `: ${selectedKernel.name}` : ' (microseconds)'}</h2>
-          <BarComparisonPlot 
-            kernels={selectedKernelId ? sameShapeKernels : filteredKernels} 
+          <h2 className="text-xl mb-4 font-bold">
+            Average runtime
+            {selectedKernel ? `: ${selectedKernel.name}` : " (microseconds)"}
+          </h2>
+          <BarComparisonPlot
+            kernels={selectedKernelId ? sameShapeKernels : filteredKernels}
           />
         </div>
       </div>
 
-      {selectedKernel && 
-        <KernelView 
-          selectedKernel={selectedKernel} 
-          sameShapeKernels={sameShapeKernels} 
+      {selectedKernel && (
+        <KernelView
+          selectedKernel={selectedKernel}
+          sameShapeKernels={sameShapeKernels}
           kernels={kernels}
           setSelected={setSelectedKernelId}
         />
-      }
+      )}
     </div>
   );
 }
