@@ -8,8 +8,9 @@ from iree.turbine.kernel.wave.constraints import MMAType
 from typing import Optional
 
 
-def generate_attention_mlir_iree(config: AttentionConfigBMNK, 
-                                 tuning: Optional[TuningSpec] = None):
+def generate_attention_mlir_iree(
+    config: AttentionConfigBMNK, tuning: Optional[TuningSpec] = None
+):
     shapes = f"""\
 !dtype = {config.dtype}
 !Q     = tensor<{config.get_query_shape()}>
@@ -52,8 +53,9 @@ func.func @main(%Q : !Q, %K : !K, %V : !V) -> !O {{
     mlir_template = shapes + "\n" + spec + "\n" + attn_kernel
     return mlir_template
 
+
 def compile_attention_iree(
-    shape: AttentionAttributes, 
+    shape: AttentionAttributes,
     spec: TuningSpec,
     mlir_file: Path,
     vmfb_file: Path,
@@ -64,7 +66,7 @@ def compile_attention_iree(
 
     # TODO: Use different tuning specs for different configs. This is just a
     # general tuning config that worked well for sdxl shapes.
-    
+
     mlir_content = generate_attention_mlir_iree(config, spec)
 
     # Write MLIR content to file
@@ -84,12 +86,12 @@ def compile_attention_iree(
         "--iree-hal-target-device=hip",
         # Device: MI300x
         "--iree-hip-target=gfx942",
-        "--mlir-print-ir-after-all"
+        "--mlir-print-ir-after-all",
     ] + extra_compiler_args
     if dump_dir:
         dump_file = dump_dir / "iree" / (config.get_name() + ".debug.mlir")
-        phase_dump = dump_dir / 'iree' / config.get_name()
-        exec_args.append(f'--dump-compilation-phases-to={phase_dump}')
+        phase_dump = dump_dir / "iree" / config.get_name()
+        exec_args.append(f"--dump-compilation-phases-to={phase_dump}")
 
     ret_value, stdout, stderr = run_iree_command(exec_args)
 

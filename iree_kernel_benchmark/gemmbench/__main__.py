@@ -18,14 +18,20 @@ from .problems import get_gemm_configs, get_tk_gemm_configs, get_matching_config
 
 
 def compile_gemm(
-    tag: str, config: GemmConfig, kernel_dir: Path, vmfb_dir: Path, target: str, 
-    extra_compiler_args: list[str], tk: bool, dump_dir=None,
+    tag: str,
+    config: GemmConfig,
+    kernel_dir: Path,
+    vmfb_dir: Path,
+    target: str,
+    extra_compiler_args: list[str],
+    tk: bool,
+    dump_dir=None,
 ) -> tuple[str, GemmConfig, Path, Optional[Path]]:
     if dump_dir:
         name = config.get_name()
         dpath = os.path.join(dump_dir, name)
         extra_compiler_args.extend([f"--iree-hal-dump-executable-files-to={dpath}"])
-        
+
     mlir_file, vmfb_file = compile_gemm_config(
         config, kernel_dir, vmfb_dir, target, extra_compiler_args, tk
     )
@@ -185,9 +191,9 @@ if __name__ == "__main__":
     with Pool(num_cpus) as pool:
         compilation_results = list(
             tqdm(
-                pool.istarmap(compile_gemm, list(compile_args)), 
+                pool.istarmap(compile_gemm, list(compile_args)),
                 total=len(configs),
-                desc="Compiling GEMM Kernels"
+                desc="Compiling GEMM Kernels",
             )
         )
 
@@ -212,10 +218,12 @@ if __name__ == "__main__":
     csv_dir = os.path.dirname(output_csv)
     if not os.path.exists(csv_dir):
         os.makedirs(csv_dir)
-    print(f'Results will be written to {Path(output_csv)}')
+    print(f"Results will be written to {Path(output_csv)}")
 
     run_error_count = 0
-    for vmfb_filename, value in tqdm(vmfb_dict.items(), desc="Benchmarking GEMM Kernels"):
+    for vmfb_filename, value in tqdm(
+        vmfb_dict.items(), desc="Benchmarking GEMM Kernels"
+    ):
         tag, config = value
         vmfb_hash = generate_md5_hex(vmfb_filename)
         name = config.get_name()
@@ -247,7 +255,7 @@ if __name__ == "__main__":
             run_error_count += 1
         benchmark_gemm_mean_time_ms = bench_summary_process(ret_value, cmd_out)
         if benchmark_gemm_mean_time_ms is None:
-            print(f'{name} benchmark failed. Skipping')
+            print(f"{name} benchmark failed. Skipping")
             continue
         benchmark_gemm_mean_time_us = benchmark_gemm_mean_time_ms * 1000
 

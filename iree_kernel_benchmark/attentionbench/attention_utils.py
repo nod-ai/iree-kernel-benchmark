@@ -7,7 +7,9 @@ import math
 
 import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
-from iree.turbine.kernel.wave.templates.vanilla_attention import get_vanilla_attention_kernel
+from iree.turbine.kernel.wave.templates.vanilla_attention import (
+    get_vanilla_attention_kernel,
+)
 from iree.turbine.kernel.wave.templates.attention_common import AttentionShape
 from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel.wave.constraints import MMAType
@@ -19,15 +21,17 @@ from iree.turbine.kernel.wave.scheduling.schedule_enums import SchedulingType
 from typing import Optional
 from contextlib import contextmanager
 
+
 @contextmanager
 def redirect_stderr_to_file(filepath):
     original_stderr = sys.stderr
-    with open(filepath, 'w') as f:
+    with open(filepath, "w") as f:
         sys.stderr = f
         try:
             yield
         finally:
             sys.stderr = original_stderr
+
 
 class IntrinsicType(Enum):
     """
@@ -89,6 +93,7 @@ def get_pv_intrinsic(intrinsic: IntrinsicType):
         case _:
             return intrinsic
 
+
 # @dataclass
 # class AttentionConfig:
 #     B: int
@@ -139,10 +144,11 @@ def get_pv_intrinsic(intrinsic: IntrinsicType):
 #         total_flops = qk_matmul_flops + pv_matmul_flops
 #         return total_flops
 
+
 @dataclass
 class TuningSpec:
     wg_tiles: list[int]
-    reduction_tiles: list[int] 
+    reduction_tiles: list[int]
     M_warp: int
     N_warp: int
     intrinsic: str

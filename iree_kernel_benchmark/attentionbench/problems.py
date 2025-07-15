@@ -1,10 +1,13 @@
 from .attention_config import *
 
+
 def get_attention_attrs_bmnk(
-        B: int, M: int, N: int, K1: int, K2: int, dtype: str) -> list[AttentionAttributes]:
+    B: int, M: int, N: int, K1: int, K2: int, dtype: str
+) -> list[AttentionAttributes]:
     return bmnk1k2_to_attention_attributes(
         config_bmnk=AttentionConfigBMNK(dtype, B, M, N, K1, K2)
     )
+
 
 def llm_sweep(dtype: str) -> list[AttentionAttributes]:
     configs = []
@@ -60,6 +63,7 @@ def llama3_405b_attn_sweep(dtype: str) -> list[AttentionAttributes]:
         M += 128
     return configs
 
+
 def cai_attn(dtype: str) -> list[AttentionAttributes]:
     configs = []
     for M in [12288, 16384, 4145, 8192, 8698, 425, 8641, 8589, 4504]:
@@ -78,7 +82,9 @@ def cai_attn(dtype: str) -> list[AttentionAttributes]:
         )
     return configs
 
+
 type ConfigList = list[tuple[str, AttentionAttributes]]
+
 
 def get_attention_configs() -> ConfigList:
     configs: ConfigList = []
@@ -97,6 +103,7 @@ def get_attention_configs() -> ConfigList:
     configs += [("llama3_405b", x) for x in llama3_configs]
 
     return configs
+
 
 def get_attention_configs_gqa() -> ConfigList:
     cai_configs = cai_attn("bf16")

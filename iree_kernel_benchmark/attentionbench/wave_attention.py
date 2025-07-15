@@ -15,6 +15,7 @@ from iree.turbine.kernel.wave.utils.general_utils import (
 )
 from iree.turbine.kernel.wave.scheduling.schedule_enums import SchedulingType
 
+
 def get_custom_vanilla_attention_kernel(
     shape: AttentionAttributes,
     mfma_variant: MMAType,
@@ -58,7 +59,13 @@ def get_custom_vanilla_attention_kernel(
     dims = [2, 0, 1, 3, 4]
     axes = [B, M, N, K1, K2]
     blocks = [BLOCK_B, BLOCK_M, BLOCK_N, BLOCK_K1, BLOCK_K2]
-    reduction_tiles = [REDUCTION_B, REDUCTION_M, REDUCTION_N, REDUCTION_K1, REDUCTION_K2]
+    reduction_tiles = [
+        REDUCTION_B,
+        REDUCTION_M,
+        REDUCTION_N,
+        REDUCTION_K1,
+        REDUCTION_K2,
+    ]
 
     M_waves = tuning_spec.M_warp
     N_waves = tuning_spec.N_warp
@@ -67,10 +74,13 @@ def get_custom_vanilla_attention_kernel(
     for wg_dim, wg_block_size in enumerate(tuning_spec.wg_tiles):
         if wg_block_size > 0:
             constraints.append(
-                tkw.WorkgroupConstraint(axes[wg_dim], blocks[wg_dim], dims[wg_dim]))
+                tkw.WorkgroupConstraint(axes[wg_dim], blocks[wg_dim], dims[wg_dim])
+            )
     for wg_dim, reduction_block_size in enumerate(tuning_spec.reduction_tiles):
         if reduction_block_size > 0:
-            constraints.append(tkw.TilingConstraint(axes[wg_dim], reduction_tiles[wg_dim]))
+            constraints.append(
+                tkw.TilingConstraint(axes[wg_dim], reduction_tiles[wg_dim])
+            )
     if M_waves > 1:
         constraints.append(tkw.WaveConstraint(M, BLOCK_M // M_waves))
     if N_waves > 1:
@@ -222,20 +232,22 @@ def get_custom_vanilla_attention_kernel(
 
     return base_attention, hyperparams, dynamic_symbols
 
+
 def compile_attention_wave_vanilla(
-    shape: AttentionAttributes, 
+    shape: AttentionAttributes,
     spec: TuningSpec,
     mlir_file: Path,
     vmfb_file: Path,
     dump_dir: Optional[Path],
-    mfma_variant: tuple[MMAType] = (MMAType.F32_32x32x16_K8_F16, MMAType.F32_32x32x8_F16)
+    mfma_variant: tuple[MMAType] = (
+        MMAType.F32_32x32x16_K8_F16,
+        MMAType.F32_32x32x8_F16,
+    ),
 ) -> tuple[Path, Optional[Path]]:
 
-    base_attention, hyperparams, dynamic_symbols = \
-        get_custom_vanilla_attention_kernel(shape=shape, 
-                                            mfma_variant=mfma_variant,
-                                            tuning_spec=spec,
-                                            dynamic_dims=False)
+    base_attention, hyperparams, dynamic_symbols = get_custom_vanilla_attention_kernel(
+        shape=shape, mfma_variant=mfma_variant, tuning_spec=spec, dynamic_dims=False
+    )
 
     hyperparams.update(get_default_scheduling_params())
 
@@ -252,13 +264,13 @@ def compile_attention_wave_vanilla(
     )
 
     if dump_dir:
-        dump_file = dump_dir / 'wave' / (config.get_name() + '.debug.mlir')
+        dump_file = dump_dir / "wave" / (config.get_name() + ".debug.mlir")
         with redirect_stderr_to_file(dump_file):
             result = wave_compile(compile_options, base_attention)
     else:
         result = wave_compile(compile_options, base_attention)
 
-    with open(mlir_file, 'w') as mlir_out:
+    with open(mlir_file, "w") as mlir_out:
         mlir_out.write(result.asm)
-    
+
     return mlir_file, vmfb_file

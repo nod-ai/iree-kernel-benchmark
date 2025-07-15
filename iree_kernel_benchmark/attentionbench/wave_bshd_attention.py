@@ -21,25 +21,27 @@ from iree.turbine.kernel.wave.scheduling.schedule_enums import SchedulingType
 from typing import Optional
 
 DTYPE_TO_WAVE = {
-    'bf16': tkl.bf16,
-    'f8e5m2': tkl.f8e5m2,
-    'f8e5m2fnuz': tkl.f8e5m2fnuz,
-    'f8e4m3fn': tkl.f8e4m3fn,
-    'f8e4m3fnuz': tkl.f8e4m3fnuz,
-    'f16': tkl.f16,
-    'f32': tkl.f32,
-    'f64': tkl.f64,
-    'i16': tkl.i16,
-    'i32': tkl.i32,
-    'i64': tkl.i64,
-    'bool': tkl.bool,
+    "bf16": tkl.bf16,
+    "f8e5m2": tkl.f8e5m2,
+    "f8e5m2fnuz": tkl.f8e5m2fnuz,
+    "f8e4m3fn": tkl.f8e4m3fn,
+    "f8e4m3fnuz": tkl.f8e4m3fnuz,
+    "f16": tkl.f16,
+    "f32": tkl.f32,
+    "f64": tkl.f64,
+    "i16": tkl.i16,
+    "i32": tkl.i32,
+    "i64": tkl.i64,
+    "bool": tkl.bool,
 }
+
 
 def dtype_to_wave(dtype: str) -> tkw.DataType:
     try:
         return DTYPE_TO_WAVE[dtype]
     except KeyError:
         raise ValueError(f"Unable to map {dtype} to Wave datatype.")
+
 
 def get_gqa_bshd_attention_kernel(
     shape: AttentionAttributes,
@@ -58,7 +60,7 @@ def get_gqa_bshd_attention_kernel(
         raise NotImplementedError(
             "Sliding window is only supported for causal attention."
         )
-    
+
     input_dtype = shape.dtype
     output_dtype = "f32"
 
@@ -71,7 +73,7 @@ def get_gqa_bshd_attention_kernel(
     layer_scaling = (layer_scaling or dk_sqrt) * LOG2E
 
     f8_dtype: torch.dtype = torch.float8_e4m3fnuz
-    F8_DTYPE = dtype_to_wave('f8e4m3fnuz')
+    F8_DTYPE = dtype_to_wave("f8e4m3fnuz")
     F8_MAX = torch.finfo(f8_dtype).max
 
     # maximum expected value from attention softmax
@@ -140,10 +142,7 @@ def get_gqa_bshd_attention_kernel(
     constraints += [tkw.WaveConstraint(N_Q, BLOCK_N_Q / 4)]
     constraints += [tkw.WaveConstraint(D_KV, BLOCK_D_KV / 1)]
 
-    if (
-        '16x16' in mfma_variant[1].name
-        or '16x16' in mfma_variant[0].name
-    ):
+    if "16x16" in mfma_variant[1].name or "16x16" in mfma_variant[0].name:
         Mvec = 16
         Nvec = 16
     else:
@@ -261,11 +260,11 @@ def get_gqa_bshd_attention_kernel(
 
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
-        BLOCK_B: tuning_spec.wg_tiles[0], # 1,
-        BLOCK_H: tuning_spec.wg_tiles[1], # 1,
-        BLOCK_N_Q: tuning_spec.wg_tiles[2], # 128,
-        BLOCK_D_KV: tuning_spec.wg_tiles[3], # 128,
-        BLOCK_N_KV: tuning_spec.wg_tiles[4], # 32,
+        BLOCK_B: tuning_spec.wg_tiles[0],  # 1,
+        BLOCK_H: tuning_spec.wg_tiles[1],  # 1,
+        BLOCK_N_Q: tuning_spec.wg_tiles[2],  # 128,
+        BLOCK_D_KV: tuning_spec.wg_tiles[3],  # 128,
+        BLOCK_N_KV: tuning_spec.wg_tiles[4],  # 32,
         B: shape.num_seqs,
         H: shape.num_query_heads,
         H_KV: shape.num_kv_heads,
@@ -279,19 +278,22 @@ def get_gqa_bshd_attention_kernel(
 
     return base_attention, hyperparams, dynamic_symbols
 
+
 def compile_attention_wave_bshd(
-    shape: AttentionAttributes, 
+    shape: AttentionAttributes,
     spec: TuningSpec,
     mlir_file: Path,
     vmfb_file: Path,
     dump_dir: Optional[Path],
-    mfma_variant: tuple[MMAType] = (MMAType.F32_32x32x16_K8_F16, MMAType.F32_32x32x8_F16)
+    mfma_variant: tuple[MMAType] = (
+        MMAType.F32_32x32x16_K8_F16,
+        MMAType.F32_32x32x8_F16,
+    ),
 ) -> tuple[Path, Optional[Path]]:
 
-    base_attention, hyperparams, dynamic_symbols = \
-        get_gqa_bshd_attention_kernel(shape=shape, 
-                                      mfma_variant=mfma_variant,
-                                      tuning_spec=spec)
+    base_attention, hyperparams, dynamic_symbols = get_gqa_bshd_attention_kernel(
+        shape=shape, mfma_variant=mfma_variant, tuning_spec=spec
+    )
 
     hyperparams.update(get_default_scheduling_params())
 
@@ -309,13 +311,13 @@ def compile_attention_wave_bshd(
     )
 
     if dump_dir:
-        dump_file = dump_dir / 'wave' / (config.get_name() + '.debug.mlir')
+        dump_file = dump_dir / "wave" / (config.get_name() + ".debug.mlir")
         with redirect_stderr_to_file(dump_file):
             result = wave_compile(compile_options, base_attention)
     else:
         result = wave_compile(compile_options, base_attention)
 
-    with open(mlir_file, 'w') as mlir_out:
+    with open(mlir_file, "w") as mlir_out:
         mlir_out.write(result.asm)
-    
+
     return mlir_file, vmfb_file

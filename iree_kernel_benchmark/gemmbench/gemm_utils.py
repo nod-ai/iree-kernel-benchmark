@@ -290,8 +290,7 @@ def generate_tk_mlir(config: GemmConfig, vmfb_file: Path):
 
     constraints += [
         tkw.HardwareConstraint(
-            threads_per_wave=64, 
-            waves_per_block=(tc.RATIO_M, tc.RATIO_N, 1)
+            threads_per_wave=64, waves_per_block=(tc.RATIO_M, tc.RATIO_N, 1)
         )
     ]
 
@@ -354,6 +353,7 @@ def generate_tk_mlir(config: GemmConfig, vmfb_file: Path):
     )
     result = wave_compile(options, gemm)
     return result.asm
+
 
 def compile_gemm_config(
     config: GemmConfig,

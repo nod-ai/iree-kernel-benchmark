@@ -87,7 +87,7 @@ if __name__ == "__main__":
         sys.exit()
 
     # configs = get_conv_test_configs()
-    configs = get_tk_conv_configs() # if args.tk else get_conv_configs()
+    configs = get_tk_conv_configs()  # if args.tk else get_conv_configs()
     print(f"Generated {len(configs)} conv configs.")
 
     configs = list(OrderedDict({config: None for config in configs}))
@@ -124,7 +124,7 @@ if __name__ == "__main__":
             tqdm(
                 pool.istarmap(compile_conv, list(compile_args)),
                 total=len(configs),
-                desc="Compiling Conv Kernels"
+                desc="Compiling Conv Kernels",
             )
         )
 
@@ -142,15 +142,19 @@ if __name__ == "__main__":
 
     results = []
     index = 0
-    output_csv = "results/conv/conv_wave.csv" if args.tk else "results/conv/conv_iree.csv"
+    output_csv = (
+        "results/conv/conv_wave.csv" if args.tk else "results/conv/conv_iree.csv"
+    )
     entrypoint = "isolated_benchmark" if args.tk else "main"
     csv_dir = os.path.dirname(output_csv)
     if not os.path.exists(csv_dir):
         os.makedirs(csv_dir)
-    print(f'Results will be written to {Path(output_csv)}')
+    print(f"Results will be written to {Path(output_csv)}")
 
     run_error_count = 0
-    for vmfb_filename, value in tqdm(vmfb_dict.items(), desc="Benchmarking Conv Kernels"):
+    for vmfb_filename, value in tqdm(
+        vmfb_dict.items(), desc="Benchmarking Conv Kernels"
+    ):
         tag, config, dump_path = value
         name = config.get_name()
 
