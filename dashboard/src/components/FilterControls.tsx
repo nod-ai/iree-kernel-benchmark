@@ -23,9 +23,10 @@ export default function FilterControls({
   selectedTags,
   setSelectedTags,
 }: Props) {
-  const backends = Array.from(new Set(kernels.map((k) => k.backend)));
-  const dtypes = Array.from(new Set(kernels.map((k) => k.dtype)));
-  const tags = Array.from(new Set(kernels.map((k) => k.tag)));
+  const activeKernels = kernels.filter((k) => k.kernelType === kernelType);
+  const backends = Array.from(new Set(activeKernels.map((k) => k.backend)));
+  const dtypes = Array.from(new Set(activeKernels.map((k) => k.dtype)));
+  const tags = Array.from(new Set(activeKernels.map((k) => k.tag)));
 
   function handleToggle(
     value: string,

@@ -1,6 +1,12 @@
 import { parse } from "papaparse";
 import { v4 as uuidv4 } from "uuid";
-import type { Kernel, GemmKernel, AttentionKernel, KernelType } from "../types";
+import type {
+  Kernel,
+  GemmKernel,
+  AttentionKernel,
+  KernelType,
+  ConvKernel,
+} from "../types";
 
 export async function loadResultCsv(
   backend: string,
@@ -49,6 +55,20 @@ export async function loadResultCsv(
               N: row["N"],
               K1: row["K1"],
               K2: row["K2"],
+            };
+            results.push(kernel);
+          } else if (kernelType === "conv") {
+            const kernel: ConvKernel = {
+              ...common,
+              kernelType: "conv",
+              B: row["B"],
+              H: row["H"],
+              W: row["W"],
+              C: row["C"],
+              P: row["P"],
+              Q: row["Q"],
+              F: row["F"],
+              S: row["S"],
             };
             results.push(kernel);
           }

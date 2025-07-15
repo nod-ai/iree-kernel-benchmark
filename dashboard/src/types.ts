@@ -28,4 +28,16 @@ export interface AttentionKernel extends KernelBase {
   K2: number;
 }
 
-export type Kernel = GemmKernel | AttentionKernel;
+export interface ConvKernel extends KernelBase {
+  kernelType: "conv";
+  B: number;
+  H: number;
+  W: number;
+  C: number;
+  P: number;
+  Q: number;
+  F: number;
+  S: number;
+}
+
+export type Kernel = GemmKernel | AttentionKernel | ConvKernel;

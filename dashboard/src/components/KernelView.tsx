@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { Kernel } from "../types";
+import { toTitleCase } from "../utils/utils";
 
 interface ShapeSelectorProps {
   selectedKernel: any;
@@ -87,45 +88,26 @@ export default function KernelView({
   setSelected,
   sameShapeKernels,
 }: KernelViewProps) {
+  const kernelTypeDims = {
+    gemm: ["M", "N", "K", "dtype"],
+    attention: ["B", "M", "N", "K1", "K2", "dtype"],
+    conv: ["B", "H", "W", "C", "P", "Q", "F", "S", "dtype"],
+  };
+
   return (
     <div className="mt-8 border-t pt-6 space-y-4">
       <h2 className="text-xl font-semibold">Selected Kernel Details</h2>
 
       <div className="flex flex-wrap gap-4 items-center">
-        {selectedKernel.kernelType === "gemm" ? (
-          <>
-            <div>Type: GEMM</div>
-            <div>
-              M:{" "}
-              <select defaultValue={selectedKernel.M}>
-                <option>{selectedKernel.M}</option>
-              </select>
-            </div>
-            <div>
-              N:{" "}
-              <select defaultValue={selectedKernel.N}>
-                <option>{selectedKernel.N}</option>
-              </select>
-            </div>
-            <div>
-              K:{" "}
-              <select defaultValue={selectedKernel.K}>
-                <option>{selectedKernel.K}</option>
-              </select>
-            </div>
-          </>
-        ) : (
-          <>
-            <div>Type: Attention</div>
-            <ShapeSelector
-              dimensions={["B", "M", "N", "K1", "K2", "dtype"]}
-              kernels={kernels}
-              setSelected={setSelected}
-              selectedKernel={selectedKernel}
-            />
-          </>
-        )}
-        {/* <div>dtype: <select defaultValue={selectedKernel.dtype}><option>{selectedKernel.dtype}</option></select></div> */}
+        <div>Type: {toTitleCase(selectedKernel.kernelType)}</div>
+        <ShapeSelector
+          dimensions={kernelTypeDims[selectedKernel.kernelType]}
+          kernels={kernels.filter(
+            (k) => k.kernelType === selectedKernel.kernelType
+          )}
+          setSelected={setSelected}
+          selectedKernel={selectedKernel}
+        />
         <button className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
           Tune Kernel
         </button>
