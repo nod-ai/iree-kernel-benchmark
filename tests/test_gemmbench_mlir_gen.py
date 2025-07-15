@@ -33,12 +33,15 @@ def test_n_t_f16_f32_f16():
     match_lines(
         mlir,
         [
+            "#map = affine_map<(d0, d1, d2) -> (d0, d2)>",
+            "#map1 = affine_map<(d0, d1, d2) -> (d1, d2)>",
+            "#map2 = affine_map<(d0, d1, d2) -> (d0, d1)>",
             "module {",
             "func.func @main(%arg0: tensor<512x14336xf16>, %arg1: tensor<4096x14336xf16>) -> tensor<512x4096xf16> {",
             "%cst = arith.constant 0.000000e+00 : f32",
             "%0 = tensor.empty() : tensor<512x4096xf32>",
             "%1 = linalg.fill ins(%cst : f32) outs(%0 : tensor<512x4096xf32>) -> tensor<512x4096xf32>",
-            "%2 = linalg.matmul_transpose_b {cast = #linalg.type_fn<cast_signed>} ins(%arg0, %arg1 : tensor<512x14336xf16>, tensor<4096x14336xf16>) outs(%1 : tensor<512x4096xf32>) -> tensor<512x4096xf32>",
+            "%2 = linalg.matmul indexing_maps = [#map, #map1, #map2] ins(%arg0, %arg1 : tensor<512x14336xf16>, tensor<4096x14336xf16>) outs(%1 : tensor<512x4096xf32>) -> tensor<512x4096xf32>",
             "%3 = arith.truncf %2 : tensor<512x4096xf32> to tensor<512x4096xf16>",
             "return %3 : tensor<512x4096xf16>",
         ],
@@ -61,12 +64,17 @@ def test_n_t_f8_f32_f8():
     match_lines(
         mlir,
         [
+            "#map = affine_map<(d0, d1, d2) -> (d0, d2)>",
+            "#map1 = affine_map<(d0, d1, d2) -> (d1, d2)>",
+            "#map2 = affine_map<(d0, d1, d2) -> (d0, d1)>",
             "module {",
             "func.func @main(%arg0: tensor<512x14336xf8E4M3FNUZ>, %arg1: tensor<4096x14336xf8E4M3FNUZ>) -> tensor<512x4096xf8E4M3FNUZ> {",
             "%cst = arith.constant 0.000000e+00 : f32",
             "%0 = tensor.empty() : tensor<512x4096xf32>",
             "%1 = linalg.fill ins(%cst : f32) outs(%0 : tensor<512x4096xf32>) -> tensor<512x4096xf32>",
-            "%2 = linalg.matmul_transpose_b {cast = #linalg.type_fn<cast_signed>} ins(%arg0, %arg1 : tensor<512x14336xf8E4M3FNUZ>, tensor<4096x14336xf8E4M3FNUZ>) outs(%1 : tensor<512x4096xf32>) -> tensor<512x4096xf32>",
+            "%2 = linalg.matmul indexing_maps = [#map, #map1, #map2] "
+            "ins(%arg0, %arg1 : tensor<512x14336xf8E4M3FNUZ>, tensor<4096x14336xf8E4M3FNUZ>) "
+            "outs(%1 : tensor<512x4096xf32>) -> tensor<512x4096xf32>",
             "%3 = arith.truncf %2 : tensor<512x4096xf32> to tensor<512x4096xf8E4M3FNUZ>",
             "return %3 : tensor<512x4096xf8E4M3FNUZ>",
         ],
@@ -90,6 +98,9 @@ def test_n_t_f16_f32_f16_dynamic_dim_M():
     match_lines(
         mlir,
         [
+            "#map = affine_map<(d0, d1, d2) -> (d0, d2)>",
+            "#map1 = affine_map<(d0, d1, d2) -> (d1, d2)>",
+            "#map2 = affine_map<(d0, d1, d2) -> (d0, d1)>",
             "module {",
             "func.func @main(%arg0: tensor<?x4096xf16>, %arg1: tensor<14336x4096xf16>) -> tensor<?x14336xf16> {",
             "%cst = arith.constant 0.000000e+00 : f32",
@@ -97,7 +108,9 @@ def test_n_t_f16_f32_f16_dynamic_dim_M():
             "%dim = tensor.dim %arg0, %c0 : tensor<?x4096xf16>",
             "%0 = tensor.empty(%dim) : tensor<?x14336xf32>",
             "%1 = linalg.fill ins(%cst : f32) outs(%0 : tensor<?x14336xf32>) -> tensor<?x14336xf32>",
-            "%2 = linalg.matmul_transpose_b {cast = #linalg.type_fn<cast_signed>} ins(%arg0, %arg1 : tensor<?x4096xf16>, tensor<14336x4096xf16>) outs(%1 : tensor<?x14336xf32>) -> tensor<?x14336xf32>",
+            "%2 = linalg.matmul indexing_maps = [#map, #map1, #map2] "
+            "ins(%arg0, %arg1 : tensor<?x4096xf16>, tensor<14336x4096xf16>) "
+            "outs(%1 : tensor<?x14336xf32>) -> tensor<?x14336xf32>",
             "%3 = arith.truncf %2 : tensor<?x14336xf32> to tensor<?x14336xf16>",
             "return %3 : tensor<?x14336xf16>",
         ],
@@ -121,6 +134,9 @@ def test_t_n_f16_f32_f16_dynamic_dim_N():
     match_lines(
         mlir,
         [
+            "#map = affine_map<(d0, d1, d2) -> (d2, d0)>",
+            "#map1 = affine_map<(d0, d1, d2) -> (d2, d1)>",
+            "#map2 = affine_map<(d0, d1, d2) -> (d0, d1)>",
             "module {",
             "func.func @main(%arg0: tensor<4096x512xf16>, %arg1: tensor<4096x?xf16>) -> tensor<512x?xf16> {",
             "%cst = arith.constant 0.000000e+00 : f32",
@@ -128,7 +144,9 @@ def test_t_n_f16_f32_f16_dynamic_dim_N():
             "%dim = tensor.dim %arg1, %c1 : tensor<4096x?xf16>",
             "%0 = tensor.empty(%dim) : tensor<512x?xf32>",
             "%1 = linalg.fill ins(%cst : f32) outs(%0 : tensor<512x?xf32>) -> tensor<512x?xf32>",
-            "%2 = linalg.matmul_transpose_a {cast = #linalg.type_fn<cast_signed>} ins(%arg0, %arg1 : tensor<4096x512xf16>, tensor<4096x?xf16>) outs(%1 : tensor<512x?xf32>) -> tensor<512x?xf32>",
+            "%2 = linalg.matmul indexing_maps = [#map, #map1, #map2] "
+            "ins(%arg0, %arg1 : tensor<4096x512xf16>, tensor<4096x?xf16>) "
+            "outs(%1 : tensor<512x?xf32>) -> tensor<512x?xf32>",
             "%3 = arith.truncf %2 : tensor<512x?xf32> to tensor<512x?xf16>",
             "return %3 : tensor<512x?xf16>",
         ],
@@ -213,12 +231,17 @@ def test_n_t_bf16_f32_bf16():
     match_lines(
         mlir,
         [
+            "#map = affine_map<(d0, d1, d2) -> (d0, d2)>",
+            "#map1 = affine_map<(d0, d1, d2) -> (d1, d2)>",
+            "#map2 = affine_map<(d0, d1, d2) -> (d0, d1)>",
             "module {",
             "func.func @main(%arg0: tensor<2x8192xbf16>, %arg1: tensor<1280x8192xbf16>) -> tensor<2x1280xbf16> {",
             "%cst = arith.constant 0.000000e+00 : f32",
             "%0 = tensor.empty() : tensor<2x1280xf32>",
             "%1 = linalg.fill ins(%cst : f32) outs(%0 : tensor<2x1280xf32>) -> tensor<2x1280xf32>",
-            "%2 = linalg.matmul_transpose_b {cast = #linalg.type_fn<cast_signed>} ins(%arg0, %arg1 : tensor<2x8192xbf16>, tensor<1280x8192xbf16>) outs(%1 : tensor<2x1280xf32>) -> tensor<2x1280xf32>",
+            "%2 = linalg.matmul indexing_maps = [#map, #map1, #map2] "
+            "ins(%arg0, %arg1 : tensor<2x8192xbf16>, tensor<1280x8192xbf16>) "
+            "outs(%1 : tensor<2x1280xf32>) -> tensor<2x1280xf32>",
             "%3 = arith.truncf %2 : tensor<2x1280xf32> to tensor<2x1280xbf16>",
             "return %3 : tensor<2x1280xbf16>",
         ],
@@ -241,12 +264,17 @@ def test_t_n_f16_f32_f16():
     match_lines(
         mlir,
         [
+            "#map = affine_map<(d0, d1, d2) -> (d2, d0)>",
+            "#map1 = affine_map<(d0, d1, d2) -> (d2, d1)>",
+            "#map2 = affine_map<(d0, d1, d2) -> (d0, d1)>",
             "module {",
             "func.func @main(%arg0: tensor<5120x32000xf16>, %arg1: tensor<5120x1xf16>) -> tensor<32000x1xf16> {",
             "%cst = arith.constant 0.000000e+00 : f32",
             "%0 = tensor.empty() : tensor<32000x1xf32>",
             "%1 = linalg.fill ins(%cst : f32) outs(%0 : tensor<32000x1xf32>) -> tensor<32000x1xf32>",
-            "%2 = linalg.matmul_transpose_a {cast = #linalg.type_fn<cast_signed>} ins(%arg0, %arg1 : tensor<5120x32000xf16>, tensor<5120x1xf16>) outs(%1 : tensor<32000x1xf32>) -> tensor<32000x1xf32>",
+            "%2 = linalg.matmul indexing_maps = [#map, #map1, #map2] "
+            "ins(%arg0, %arg1 : tensor<5120x32000xf16>, tensor<5120x1xf16>) "
+            "outs(%1 : tensor<32000x1xf32>) -> tensor<32000x1xf32>",
             "%3 = arith.truncf %2 : tensor<32000x1xf32> to tensor<32000x1xf16>",
             "return %3 : tensor<32000x1xf16>",
         ],
@@ -269,12 +297,17 @@ def test_t_n_bf16_f32_bf16():
     match_lines(
         mlir,
         [
+            "#map = affine_map<(d0, d1, d2) -> (d2, d0)>",
+            "#map1 = affine_map<(d0, d1, d2) -> (d2, d1)>",
+            "#map2 = affine_map<(d0, d1, d2) -> (d0, d1)>",
             "module {",
             "func.func @main(%arg0: tensor<5120x32000xbf16>, %arg1: tensor<5120x1xbf16>) -> tensor<32000x1xbf16> {",
             "%cst = arith.constant 0.000000e+00 : f32",
             "%0 = tensor.empty() : tensor<32000x1xf32>",
             "%1 = linalg.fill ins(%cst : f32) outs(%0 : tensor<32000x1xf32>) -> tensor<32000x1xf32>",
-            "%2 = linalg.matmul_transpose_a {cast = #linalg.type_fn<cast_signed>} ins(%arg0, %arg1 : tensor<5120x32000xbf16>, tensor<5120x1xbf16>) outs(%1 : tensor<32000x1xf32>) -> tensor<32000x1xf32>",
+            "%2 = linalg.matmul indexing_maps = [#map, #map1, #map2] "
+            "ins(%arg0, %arg1 : tensor<5120x32000xbf16>, tensor<5120x1xbf16>) "
+            "outs(%1 : tensor<32000x1xf32>) -> tensor<32000x1xf32>",
             "%3 = arith.truncf %2 : tensor<32000x1xf32> to tensor<32000x1xbf16>",
             "return %3 : tensor<32000x1xbf16>",
         ],
@@ -325,12 +358,17 @@ def test_n_t_i8_i32_i8():
     match_lines(
         mlir,
         [
+            "#map = affine_map<(d0, d1, d2) -> (d0, d2)>",
+            "#map1 = affine_map<(d0, d1, d2) -> (d1, d2)>",
+            "#map2 = affine_map<(d0, d1, d2) -> (d0, d1)>",
             "module {",
             "func.func @main(%arg0: tensor<128x128xi8>, %arg1: tensor<128x128xi8>) -> tensor<128x128xi8> {",
             "%c0_i32 = arith.constant 0 : i32",
             "%0 = tensor.empty() : tensor<128x128xi32>",
             "%1 = linalg.fill ins(%c0_i32 : i32) outs(%0 : tensor<128x128xi32>) -> tensor<128x128xi32>",
-            "%2 = linalg.matmul_transpose_b {cast = #linalg.type_fn<cast_signed>} ins(%arg0, %arg1 : tensor<128x128xi8>, tensor<128x128xi8>) outs(%1 : tensor<128x128xi32>) -> tensor<128x128xi32>",
+            "%2 = linalg.matmul indexing_maps = [#map, #map1, #map2] "
+            "ins(%arg0, %arg1 : tensor<128x128xi8>, tensor<128x128xi8>) "
+            "outs(%1 : tensor<128x128xi32>) -> tensor<128x128xi32>",
             "%3 = arith.trunci %2 : tensor<128x128xi32> to tensor<128x128xi8>",
             "return %3 : tensor<128x128xi8>",
         ],

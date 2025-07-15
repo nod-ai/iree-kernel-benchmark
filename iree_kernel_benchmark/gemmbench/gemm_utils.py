@@ -197,12 +197,33 @@ def generate_mlir(config: GemmConfig):
                 )
                 filled_tensor = linalg.fill(zero_element, outs=[empty_tensor])
 
+                # Define dimension expressions.
+                d0 = ir.AffineDimExpr.get(0)  # M
+                d1 = ir.AffineDimExpr.get(1)  # N
+                d2 = ir.AffineDimExpr.get(2)  # K
+                # Default maps.
+                map_A = ir.AffineMap.get(3, 0, [d0, d2])
+                map_B = ir.AffineMap.get(3, 0, [d2, d1])
+                map_C = ir.AffineMap.get(3, 0, [d0, d1])
                 if tA == "T":
-                    acc = linalg.matmul_transpose_a(arg0, arg1, outs=[filled_tensor])
+                    map_A = ir.AffineMap.get(3, 0, [d2, d0])
                 elif tB == "T":
-                    acc = linalg.matmul_transpose_b(arg0, arg1, outs=[filled_tensor])
-                else:
-                    acc = linalg.matmul(arg0, arg1, outs=[filled_tensor])
+                    map_B = ir.AffineMap.get(3, 0, [d1, d2])
+
+                indexing_maps = ir.ArrayAttr.get(
+                    [
+                        ir.AffineMapAttr.get(map_A),
+                        ir.AffineMapAttr.get(map_B),
+                        ir.AffineMapAttr.get(map_C),
+                    ]
+                )
+
+                acc = linalg.matmul(
+                    arg0,
+                    arg1,
+                    outs=[filled_tensor],
+                    indexing_maps=indexing_maps,
+                )
 
                 if acc_element_type == result_element_type:
                     return acc
