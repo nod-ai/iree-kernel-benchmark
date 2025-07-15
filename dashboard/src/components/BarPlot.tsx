@@ -11,6 +11,7 @@ import {
 } from "chart.js";
 import type { Kernel } from "../types";
 import { BACKEND_COLORS } from "./RooflinePlot";
+import { KERNEL_DIMS } from "../utils/utils";
 
 Chart.register(
   BarController,
@@ -34,9 +35,31 @@ export function BarComparisonPlot({ kernels }: BarComparisonPlotProps) {
     if (!canvasRef.current) return;
     if (chartRef.current) chartRef.current.destroy();
 
+    const hashKernel = (kernel: Kernel) =>
+      `${kernel.kernelType}_` +
+      KERNEL_DIMS[kernel.kernelType]
+        .map((dimName) => `${dimName}${(kernel as any)[dimName]}`)
+        .join("_");
+
+    const backendShapes: Record<string, Set<string>> = {};
+    for (const kernel of kernels) {
+      const kernelHash = hashKernel(kernel);
+      if (!backendShapes[kernel.backend])
+        backendShapes[kernel.backend] = new Set<string>();
+      backendShapes[kernel.backend].add(kernelHash);
+    }
+
+    const commonShapes =
+      kernels.length > 0
+        ? Object.values(backendShapes).reduce(
+            (prev, curr) => new Set([...prev].filter((hash) => curr.has(hash)))
+          )
+        : new Set<string>();
+
     const backendGroups: Record<string, number[]> = {};
 
     for (const kernel of kernels) {
+      if (!commonShapes.has(hashKernel(kernel))) continue;
       if (!backendGroups[kernel.backend]) backendGroups[kernel.backend] = [];
       backendGroups[kernel.backend].push(kernel.meanMicroseconds);
     }

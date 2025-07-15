@@ -44,6 +44,7 @@ export async function loadResultCsv(
               M: row["M"],
               N: row["N"],
               K: row["K"],
+              transpose: row["tA"] + row["tB"],
             };
             results.push(kernel);
           } else if (kernelType === "attention") {

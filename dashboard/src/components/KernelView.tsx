@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Kernel } from "../types";
-import { toTitleCase } from "../utils/utils";
+import { KERNEL_DIMS, toTitleCase } from "../utils/utils";
 
 interface ShapeSelectorProps {
   selectedKernel: any;
@@ -88,12 +88,6 @@ export default function KernelView({
   setSelected,
   sameShapeKernels,
 }: KernelViewProps) {
-  const kernelTypeDims = {
-    gemm: ["M", "N", "K", "dtype"],
-    attention: ["B", "M", "N", "K1", "K2", "dtype"],
-    conv: ["B", "H", "W", "C", "P", "Q", "F", "S", "dtype"],
-  };
-
   return (
     <div className="mt-8 border-t pt-6 space-y-4">
       <h2 className="text-xl font-semibold">Selected Kernel Details</h2>
@@ -101,7 +95,7 @@ export default function KernelView({
       <div className="flex flex-wrap gap-4 items-center">
         <div>Type: {toTitleCase(selectedKernel.kernelType)}</div>
         <ShapeSelector
-          dimensions={kernelTypeDims[selectedKernel.kernelType]}
+          dimensions={KERNEL_DIMS[selectedKernel.kernelType]}
           kernels={kernels.filter(
             (k) => k.kernelType === selectedKernel.kernelType
           )}

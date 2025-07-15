@@ -12,11 +12,13 @@ export interface KernelBase {
   tflops: number;
 }
 
+export type GemmTransposeType = "NN" | "NT" | "TN" | "TT";
 export interface GemmKernel extends KernelBase {
   kernelType: "gemm";
   M: number;
   N: number;
   K: number;
+  transpose: GemmTransposeType;
 }
 
 export interface AttentionKernel extends KernelBase {

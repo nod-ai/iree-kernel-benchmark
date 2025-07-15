@@ -22,32 +22,19 @@ export default function Dashboard() {
 
   useEffect(() => {
     async function fetchData() {
-      const ireeKernels = await loadResultCsv(
-        "iree",
-        "attention",
-        "/results/attention_iree.csv"
+      const dataConfigs = [
+        ["iree", "attention", "/results/attention_iree.csv"],
+        ["wave", "attention", "/results/attention_wave.csv"],
+        ["iree", "conv", "/results/conv_iree.csv"],
+        ["wave", "conv", "/results/conv_wave.csv"],
+        ["iree", "gemm", "/results/gemm_iree.csv"],
+        ["wave", "gemm", "/results/gemm_wave.csv"],
+      ];
+      const kernelRequests = dataConfigs.map(
+        async ([backend, kernelType, csvPath]) =>
+          await loadResultCsv(backend, kernelType as KernelType, csvPath)
       );
-      const waveKernels = await loadResultCsv(
-        "wave",
-        "attention",
-        "/results/attention_wave.csv"
-      );
-      const ireeConvKernels = await loadResultCsv(
-        "iree",
-        "conv",
-        "/results/conv_iree.csv"
-      );
-      const waveConvKernels = await loadResultCsv(
-        "wave",
-        "conv",
-        "/results/conv_wave.csv"
-      );
-      // console.log(waveConvKernels);
-      const kernels = ireeKernels.concat(
-        waveKernels,
-        ireeConvKernels,
-        waveConvKernels
-      );
+      const kernels = (await Promise.all(kernelRequests)).flat();
       setKernels(kernels);
     }
     fetchData();
@@ -84,7 +71,13 @@ export default function Dashboard() {
       if (k.kernelType !== selectedKernel.kernelType) return false;
       if (k.kernelType === "gemm") {
         const gk = selectedKernel as GemmKernel;
-        return k.M === gk.M && k.N === gk.N && k.K === gk.K;
+        return (
+          k.M === gk.M &&
+          k.N === gk.N &&
+          k.K === gk.K &&
+          k.transpose === gk.transpose &&
+          k.dtype === gk.dtype
+        );
       } else if (k.kernelType === "attention") {
         const ak = selectedKernel as AttentionKernel;
         return (
@@ -92,7 +85,8 @@ export default function Dashboard() {
           k.M === ak.M &&
           k.N === ak.N &&
           k.K1 === ak.K1 &&
-          k.K2 === ak.K2
+          k.K2 === ak.K2 &&
+          k.dtype === ak.dtype
         );
       } else if (k.kernelType === "conv") {
         const ck = selectedKernel as ConvKernel;
@@ -104,7 +98,8 @@ export default function Dashboard() {
           k.P === ck.P &&
           k.Q === ck.Q &&
           k.F === ck.F &&
-          k.S === ck.S
+          k.S === ck.S &&
+          k.dtype === ck.dtype
         );
       }
     });
