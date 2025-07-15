@@ -78,8 +78,10 @@ def cai_attn(dtype: str) -> list[AttentionAttributes]:
         )
     return configs
 
-def get_attention_configs() -> list[tuple[str, AttentionAttributes]]:
-    configs: list[tuple[str, AttentionAttributes]] = []
+type ConfigList = list[tuple[str, AttentionAttributes]]
+
+def get_attention_configs() -> ConfigList:
+    configs: ConfigList = []
     llm_configs = llm_sweep("f16")
     # llm_configs += llm_sweep("f8E4M3FNUZ")
     sdxl_configs = sdxl_unet_sweep("f16")
@@ -96,7 +98,7 @@ def get_attention_configs() -> list[tuple[str, AttentionAttributes]]:
 
     return configs
 
-def get_attention_configs_gqa() -> list[tuple[str, AttentionAttributes]]:
+def get_attention_configs_gqa() -> ConfigList:
     cai_configs = cai_attn("bf16")
 
     configs = [("cai", x) for x in cai_configs]

@@ -13,7 +13,7 @@ from .attention_config import *
 from .wave_attention import compile_attention_wave_vanilla
 from .wave_bshd_attention import compile_attention_wave_bshd
 from .iree_attention import compile_attention_iree
-from .problems import get_attention_configs, get_attention_configs_gqa
+from .problems import get_attention_configs, get_attention_configs_gqa, ConfigList
 
 type Backend = Literal["iree", "wave", "wavegqa"]
 
@@ -55,90 +55,17 @@ def compile_attention(
     
     return (tag, config, mlir_file, vmfb_file)
 
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Config file updater.")
-    parser.add_argument(
-        "--log-level",
-        default="ERROR",
-        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-        type=str.upper,
-        help="Set the logging level",
-    )
-    parser.add_argument(
-        "--roofline",
-        help="Comma seperated csv file list to generate roofline plot with",
-        default=None,
-    )
-    parser.add_argument(
-        "--device",
-        help="The IREE device to execute benchmarks on",
-        type=str,
-        default="hip",
-    )
-    parser.add_argument("--plot", help="location to save plot", default=None)
-    parser.add_argument(
-        "--batch", help="roofline on certain batch", type=int, default=None
-    )
-    parser.add_argument("--dtype", help="roofline on certain dtype", default=None)
-    parser.add_argument("--model", help="roofline on certain model", default=None)
-    parser.add_argument(
-        "--backend",
-        choices=["iree", "wave", "wavegqa"],
-        default="iree",
-        help="Backend to run kernels",
-    )
-    parser.add_argument(
-        "--dump_dir",
-        type=str,
-        default=None,
-        help="Directory to which executable files will be dumped.",
-    )
-    parser.add_argument(
-        "--iterations",
-        type=int,
-        default=3,
-        help="Number of benchmark iterations.",
-    )
-
-    args = parser.parse_args()
-    logging.basicConfig(level=args.log_level)
-
-    if args.roofline:
-        roofline(args.roofline, args.plot, args.batch, args.dtype, args.model)
-        sys.exit()
-    
-    backend_name = args.backend
-
-    # mfma_configs = [
-    #     (MMAType.F32_32x32x16_K8_F16, MMAType.F32_32x32x8_F16),
-    #     (MMAType.F32_16x16x32_K8_F16, MMAType.F32_16x16x16_F16),
-    #     (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
-    #     (MMAType.F32_32x32x8_F16, MMAType.F32_32x32x8_F16),
-    # ]
-
-    mfma_config = (MMAType.F32_32x32x16_K8_F16, MMAType.F32_32x32x16_K8_F16)
-
-    if backend_name == "wavegqa":
-        configs = get_attention_configs_gqa()
-    else:
-        configs = get_attention_configs()
-    print(f"Generated {len(configs)} attention configs.")
-
+def compile_attention_kernels(backend_name: str,
+                              configs: ConfigList,
+                              kernel_dir: Path,
+                              vmfb_dir: Path,
+                              dump_dir: Path,
+                              mfma_config: tuple[MMAType, MMAType]) -> dict:
     num_cpus = max(1, cpu_count() - 20)
     print(f"Using {num_cpus} CPUs for parallel processing.")
 
     manager = Manager()
     vmfb_dict = manager.dict()
-
-
-    repo_root = Path(__file__).parent.parent
-    kernel_dir = repo_root / "attention" / backend_name / "mlir"
-    vmfb_dir = repo_root / "attention" / backend_name / "vmfb"
-    dump_dir = args.dump_dir
-    device = args.device
-    kernel_dir.mkdir(parents=True, exist_ok=True)
-    vmfb_dir.mkdir(parents=True, exist_ok=True)
 
     compile_args = itertools.starmap(
         lambda tag, config: (tag, config, kernel_dir, vmfb_dir, backend_name, [], dump_dir, mfma_config), configs
@@ -161,10 +88,14 @@ if __name__ == "__main__":
 
     print("Compilation process completed.")
 
+    return vmfb_dict
+    
+def benchmark_attention_kernels(backend_name: str,
+                                vmfb_dict: dict,
+                                output_csv: Path,
+                                num_iterations: int = 3) -> list[tuple]:
     results = []
     index = 0
-
-    output_csv = f"results/gqa/attention_{backend_name}.csv"
 
     csv_dir = os.path.dirname(output_csv)
     if not os.path.exists(csv_dir):
@@ -189,7 +120,7 @@ if __name__ == "__main__":
             f"--input={query_shape}",
             f"--input={key_shape}",
             f"--input={value_shape}",
-            f"--benchmark_repetitions={args.iterations}",
+            f"--benchmark_repetitions={num_iterations}",
         ]
 
         if backend_name.startswith("wave"):
@@ -253,7 +184,7 @@ if __name__ == "__main__":
                 )
             )
         index += 1
-
+    
     if backend_name == "wavegqa":
         fieldnames = [
             "index",
@@ -291,3 +222,101 @@ if __name__ == "__main__":
 
     write_results_to_csv(results, output_csv, fieldnames)
     print(f"Results written to {output_csv}")
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Config file updater.")
+    parser.add_argument(
+        "--log-level",
+        default="ERROR",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        type=str.upper,
+        help="Set the logging level",
+    )
+    parser.add_argument(
+        "--roofline",
+        help="Comma seperated csv file list to generate roofline plot with",
+        default=None,
+    )
+    parser.add_argument(
+        "--device",
+        help="The IREE device to execute benchmarks on",
+        type=str,
+        default="hip",
+    )
+    parser.add_argument("--plot", help="location to save plot", default=None)
+    parser.add_argument(
+        "--batch", help="roofline on certain batch", type=int, default=None
+    )
+    parser.add_argument("--dtype", help="roofline on certain dtype", default=None)
+    parser.add_argument("--model", help="roofline on certain model", default=None)
+    parser.add_argument(
+        "--backend",
+        choices=["iree", "wave", "wavegqa"],
+        default="iree",
+        help="Backend to run kernels",
+    )
+    parser.add_argument(
+        "--dump_dir",
+        type=str,
+        default=None,
+        help="Directory to which executable files will be dumped.",
+    )
+    parser.add_argument(
+        "--iterations",
+        type=int,
+        default=3,
+        help="Number of benchmark iterations.",
+    )
+    parser.add_argument(
+        "--tune",
+        type=bool,
+        default=False,
+        help="Uses heuristic approach to optimize mfma variant, tiling, and waves"
+    )
+    parser.add_argument(
+        "--title",
+        type=str,
+        default=None,
+        help="Title of run for save path"
+    )
+
+    args = parser.parse_args()
+    logging.basicConfig(level=args.log_level)
+
+    if args.roofline:
+        roofline(args.roofline, args.plot, args.batch, args.dtype, args.model)
+        sys.exit()
+    
+    backend_name = args.backend
+
+    # mfma_configs = [
+    #     (MMAType.F32_32x32x16_K8_F16, MMAType.F32_32x32x8_F16),
+    #     (MMAType.F32_16x16x32_K8_F16, MMAType.F32_16x16x16_F16),
+    #     (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
+    #     (MMAType.F32_32x32x8_F16, MMAType.F32_32x32x8_F16),
+    # ]
+
+    mfma_config = (MMAType.F32_32x32x16_K8_F16, MMAType.F32_32x32x16_K8_F16)
+
+    if backend_name == "wavegqa":
+        configs = get_attention_configs_gqa()
+    else:
+        configs = get_attention_configs()
+    print(f"Generated {len(configs)} attention configs.")
+
+    repo_root = Path(__file__).parent.parent
+    kernel_dir = repo_root / "attention" / backend_name / "mlir"
+    vmfb_dir = repo_root / "attention" / backend_name / "vmfb"
+    dump_dir = Path(args.dump_dir) if args.dump_dir else None
+    device = args.device
+    kernel_dir.mkdir(parents=True, exist_ok=True)
+    vmfb_dir.mkdir(parents=True, exist_ok=True)
+
+    vmfb_dict = compile_attention_kernels(
+        backend_name, configs, kernel_dir, vmfb_dir, dump_dir, mfma_config)
+
+    output_csv_base = f"attention_{backend_name}" + (f"_{args.title}" if args.title else "")
+    output_csv_path = Path(f"results/attention/{output_csv_base}.csv")
+
+    benchmark_attention_kernels(
+        backend_name, vmfb_dict, output_csv_path, args.iterations)
