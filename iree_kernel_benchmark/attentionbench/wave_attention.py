@@ -1,6 +1,6 @@
 from ..utils import *
 from .attention_config import AttentionAttributes, AttentionConfigBMNK
-from .attention_utils import TuningSpec
+from .attention_utils import TuningSpec, redirect_stderr_to_file
 from pathlib import Path
 from typing import Optional
 import math
@@ -14,7 +14,6 @@ from iree.turbine.kernel.wave.utils.general_utils import (
     get_default_scheduling_params,
 )
 from iree.turbine.kernel.wave.scheduling.schedule_enums import SchedulingType
-from contextlib import contextmanager
 
 def get_custom_vanilla_attention_kernel(
     shape: AttentionAttributes,
@@ -222,16 +221,6 @@ def get_custom_vanilla_attention_kernel(
         base_attention = base_attention_transposed_v
 
     return base_attention, hyperparams, dynamic_symbols
-
-@contextmanager
-def redirect_stderr_to_file(filepath):
-    original_stderr = sys.stderr
-    with open(filepath, 'w') as f:
-        sys.stderr = f
-        try:
-            yield
-        finally:
-            sys.stderr = original_stderr
 
 def compile_attention_wave_vanilla(
     shape: AttentionAttributes, 

@@ -64,8 +64,19 @@ def cai_attn(dtype: str) -> list[AttentionAttributes]:
     configs = []
     for M in [12288, 16384, 4145, 8192, 8698, 425, 8641, 8589, 4504]:
         configs.append(
-            get_attention_attrs_bmnk(1, M, 1, 1, M)
+            AttentionAttributes(
+                num_seqs=1,
+                num_query_heads=32,
+                num_kv_heads=1,
+                head_size=256,
+                head_size_kv=256,
+                batch_size=1,
+                query_seq_len=M,
+                kv_seq_len=M,
+                dtype=dtype,
+            )
         )
+    return configs
 
 def get_attention_configs() -> list[tuple[str, AttentionAttributes]]:
     configs: list[tuple[str, AttentionAttributes]] = []
@@ -82,5 +93,12 @@ def get_attention_configs() -> list[tuple[str, AttentionAttributes]]:
     configs += [("sdxl_unet", x) for x in sdxl_configs]
     configs += [("bert", x) for x in bert_configs]
     configs += [("llama3_405b", x) for x in llama3_configs]
+
+    return configs
+
+def get_attention_configs_gqa() -> list[tuple[str, AttentionAttributes]]:
+    cai_configs = cai_attn("bf16")
+
+    configs = [("cai", x) for x in cai_configs]
 
     return configs

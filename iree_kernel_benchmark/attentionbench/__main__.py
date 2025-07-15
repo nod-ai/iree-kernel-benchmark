@@ -11,10 +11,11 @@ from ..utils import *
 from .attention_utils import *
 from .attention_config import *
 from .wave_attention import compile_attention_wave_vanilla
+from .wave_bshd_attention import compile_attention_wave_bshd
 from .iree_attention import compile_attention_iree
-from .problems import get_attention_configs
+from .problems import get_attention_configs, get_attention_configs_gqa
 
-type Backend = Literal["iree", "wave"]
+type Backend = Literal["iree", "wave", "wavegqa"]
 
 def compile_attention(
     tag: str, 
@@ -49,6 +50,8 @@ def compile_attention(
         mlir_file, vmfb_file = compile_attention_iree(config, spec, mlir_file, vmfb_file, dump_dir, extra_compiler_args)
     elif backend == "wave":
         mlir_file, vmfb_file = compile_attention_wave_vanilla(config, spec, mlir_file, vmfb_file, dump_dir, mfma_variant)
+    elif backend == "wavegqa":
+        mlir_file, vmfb_file = compile_attention_wave_bshd(config, spec, mlir_file, vmfb_file, dump_dir, mfma_variant)
     
     return (tag, config, mlir_file, vmfb_file)
 
@@ -81,7 +84,7 @@ if __name__ == "__main__":
     parser.add_argument("--model", help="roofline on certain model", default=None)
     parser.add_argument(
         "--backend",
-        choices=["iree", "wave"],
+        choices=["iree", "wave", "wavegqa"],
         default="iree",
         help="Backend to run kernels",
     )
@@ -105,6 +108,8 @@ if __name__ == "__main__":
         roofline(args.roofline, args.plot, args.batch, args.dtype, args.model)
         sys.exit()
     
+    backend_name = args.backend
+
     # mfma_configs = [
     #     (MMAType.F32_32x32x16_K8_F16, MMAType.F32_32x32x8_F16),
     #     (MMAType.F32_16x16x32_K8_F16, MMAType.F32_16x16x16_F16),
@@ -114,7 +119,10 @@ if __name__ == "__main__":
 
     mfma_config = (MMAType.F32_32x32x16_K8_F16, MMAType.F32_32x32x16_K8_F16)
 
-    configs = get_attention_configs()
+    if backend_name == "wavegqa":
+        configs = get_attention_configs_gqa()
+    else:
+        configs = get_attention_configs()
     print(f"Generated {len(configs)} attention configs.")
 
     num_cpus = max(1, cpu_count() - 20)
@@ -123,7 +131,6 @@ if __name__ == "__main__":
     manager = Manager()
     vmfb_dict = manager.dict()
 
-    backend_name = args.backend
 
     repo_root = Path(__file__).parent.parent
     kernel_dir = repo_root / "attention" / backend_name / "mlir"
@@ -157,8 +164,8 @@ if __name__ == "__main__":
     results = []
     index = 0
 
-    csv_base_name = 'tiling/test_refactor'
-    output_csv = f"results/{csv_base_name}_wave.csv" if backend_name == "wave" else f"results/{csv_base_name}_iree.csv"
+    output_csv = f"results/gqa/attention_{backend_name}.csv"
+
     csv_dir = os.path.dirname(output_csv)
     if not os.path.exists(csv_dir):
         os.makedirs(csv_dir)
@@ -166,7 +173,7 @@ if __name__ == "__main__":
     for vmfb_filename, value in tqdm(vmfb_dict.items(), desc="Benchmarking Attention Kernels"):
         tag = value[0]
         attn_attrs : AttentionAttributes = value[1]
-        config : AttentionConfigBMNK = attn_attrs.to_bmnk1k2()
+        config : AttentionConfigBase = attn_attrs.to_bshd() if backend_name == "wavegqa" else attn_attrs.to_bmnk1k2()
         name = config.get_name()
 
         query_shape = config.get_query_shape()
@@ -185,7 +192,7 @@ if __name__ == "__main__":
             f"--benchmark_repetitions={args.iterations}",
         ]
 
-        if backend_name == "wave":
+        if backend_name.startswith("wave"):
             out_shape : str = config.get_output_shape()
             out_shape = 'x'.join(out_shape.split('x')[:-1] + ['f32'])
             exec_args.append(f"--input={out_shape}")
@@ -205,40 +212,82 @@ if __name__ == "__main__":
         arithmetic_intensity = flops / byte_count
         tflops_per_second = (flops / 1e12) / (benchmark_gemm_mean_time_us / 1e6)
 
-        results.append(
-            (
-                index,
-                tag,
-                name,
-                config.B,
-                config.M,
-                config.N,
-                config.K1,
-                config.K2,
-                config.dtype,
-                round(benchmark_gemm_mean_time_us, 4),
-                round(arithmetic_intensity, 4),
-                round(tflops_per_second, 4),
-                ok,
+        if backend_name == "wavegqa":
+            config_bshd = attn_attrs.to_bshd()
+            results.append(
+                (
+                    index,
+                    tag,
+                    name,
+                    config_bshd.B,
+                    config_bshd.H,
+                    config_bshd.H_KV,
+                    config_bshd.N_Q,
+                    config_bshd.D_KV,
+                    config_bshd.D_Q,
+                    config_bshd.N_KV,
+                    config.dtype,
+                    round(benchmark_gemm_mean_time_us, 4),
+                    round(arithmetic_intensity, 4),
+                    round(tflops_per_second, 4),
+                    ok,
+                )
             )
-        )
+        else:
+            config_bmnk = attn_attrs.to_bmnk1k2()
+            results.append(
+                (
+                    index,
+                    tag,
+                    name,
+                    config_bmnk.B,
+                    config_bmnk.M,
+                    config_bmnk.N,
+                    config_bmnk.K1,
+                    config_bmnk.K2,
+                    config_bmnk.dtype,
+                    round(benchmark_gemm_mean_time_us, 4),
+                    round(arithmetic_intensity, 4),
+                    round(tflops_per_second, 4),
+                    ok,
+                )
+            )
         index += 1
 
-    fieldnames = [
-        "index",
-        "tag",
-        "name",
-        "B",
-        "M",
-        "N",
-        "K1",
-        "K2",
-        "dtype",
-        "mean_microseconds",
-        "arithmetic_intensity",
-        "tflops",
-        "ok",
-    ]
+    if backend_name == "wavegqa":
+        fieldnames = [
+            "index",
+            "tag",
+            "name",
+            "B",
+            "H",
+            "H_KV",
+            "N_Q",
+            "D_KV",
+            "D_Q",
+            "N_KV",
+            "dtype",
+            "mean_microseconds",
+            "arithmetic_intensity",
+            "tflops",
+            "ok",
+        ]
+    else:
+        fieldnames = [
+            "index",
+            "tag",
+            "name",
+            "B",
+            "M",
+            "N",
+            "K1",
+            "K2",
+            "dtype",
+            "mean_microseconds",
+            "arithmetic_intensity",
+            "tflops",
+            "ok",
+        ]
 
     write_results_to_csv(results, output_csv, fieldnames)
     print(f"Results written to {output_csv}")

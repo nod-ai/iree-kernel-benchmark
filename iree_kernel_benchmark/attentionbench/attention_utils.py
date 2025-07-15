@@ -19,6 +19,16 @@ from iree.turbine.kernel.wave.scheduling.schedule_enums import SchedulingType
 from typing import Optional
 from contextlib import contextmanager
 
+@contextmanager
+def redirect_stderr_to_file(filepath):
+    original_stderr = sys.stderr
+    with open(filepath, 'w') as f:
+        sys.stderr = f
+        try:
+            yield
+        finally:
+            sys.stderr = original_stderr
+
 class IntrinsicType(Enum):
     """
     Formatting for different target intrinsics:

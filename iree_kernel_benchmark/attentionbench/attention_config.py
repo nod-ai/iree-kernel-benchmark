@@ -110,35 +110,30 @@ class AttentionConfigBMNK(AttentionConfigBase):
 
 @dataclass
 class AttentionConfigBSHD:
-    """BSHD format: B=batch, S=seq_len, H=num_heads, D=head_dim"""
-    B: int
-    S: int
-    H: int
-    D: int
+    """BSHD format: B=num_seqs, H=num_query_heads, H_KV=num_kv_heads, N_Q=query_seq_len, D_KV=head_size_kv, D_Q=head_size, N_KV=kv_seq_len"""
+    B: int      # num_seqs
+    H: int      # num_query_heads
+    H_KV: int   # num_kv_heads
+    N_Q: int    # query_seq_len
+    D_KV: int   # head_size_kv
+    D_Q: int    # head_size
+    N_KV: int   # kv_seq_len
     dtype: str
-    H_KV: int = None
-    
-    def __post_init__(self):
-        if self.H_KV is None:
-            self.H_KV = self.H
 
     def get_name(self) -> str:
-        if self.H_KV == self.H:
-            return f"attention_bshd_{self.B}x{self.S}x{self.H}x{self.D}x{self.dtype}"
-        else:
-            return f"attention_bshd_{self.B}x{self.S}x{self.H}x{self.D}_kv{self.H_KV}x{self.dtype}"
+        return f"attention_bshd_{self.B}x{self.H}x{self.H_KV}x{self.N_Q}x{self.D_KV}x{self.D_Q}x{self.N_KV}x{self.dtype}"
 
     def get_query_shape(self) -> str:
-        return f"{self.B}x{self.S}x{self.H}x{self.D}x{self.dtype}"
+        return f"{self.B}x{self.N_Q}x{self.H}x{self.D_Q}x{self.dtype}"
 
     def get_key_shape(self) -> str:
-        return f"{self.B}x{self.S}x{self.H_KV}x{self.D}x{self.dtype}"
+        return f"{self.B}x{self.N_KV}x{self.H_KV}x{self.D_Q}x{self.dtype}"
 
     def get_value_shape(self) -> str:
-        return f"{self.B}x{self.S}x{self.H_KV}x{self.D}x{self.dtype}"
+        return f"{self.B}x{self.N_KV}x{self.H_KV}x{self.D_KV}x{self.dtype}"
 
     def get_output_shape(self) -> str:
-        return f"{self.B}x{self.S}x{self.H}x{self.D}x{self.dtype}"
+        return f"{self.B}x{self.N_Q}x{self.H}x{self.D_KV}x{self.dtype}"
 
     def get_byte_count(self) -> int:
         dtype_bits_map = {
@@ -151,17 +146,23 @@ class AttentionConfigBSHD:
         }
         bytes_per_element = dtype_bits_map[self.dtype] // 8
         element_count = (
-            (self.B * self.S * self.H * self.D)
-            + (self.B * self.S * self.H_KV * self.D)
-            + (self.B * self.S * self.H_KV * self.D)
-            + (self.B * self.S * self.H * self.D)
+            (self.B * self.N_Q * self.H * self.D_Q)      # Query
+            + (self.B * self.N_KV * self.H_KV * self.D_Q)  # Key
+            + (self.B * self.N_KV * self.H_KV * self.D_KV) # Value
+            + (self.B * self.N_Q * self.H * self.D_KV)      # Output
         )
         byte_count = element_count * bytes_per_element
         return byte_count
 
     def get_flops(self) -> int:
-        qk_matmul_flops = 2 * self.B * self.S * self.S * self.H * self.D
-        pv_matmul_flops = 2 * self.B * self.S * self.S * self.H * self.D
+        # QK matmul: (B, N_Q, H, D_Q) x (B, N_KV, H_KV, D_Q) -> (B, H, N_Q, N_KV)
+        # Assuming H_KV is broadcast to H for computation
+        qk_matmul_flops = 2 * self.B * self.H * self.N_Q * self.N_KV * self.D_Q
+        
+        # PV matmul: (B, H, N_Q, N_KV) x (B, N_KV, H_KV, D_KV) -> (B, N_Q, H, D_KV)
+        # Assuming H_KV is broadcast to H for computation
+        pv_matmul_flops = 2 * self.B * self.H * self.N_Q * self.N_KV * self.D_KV
+        
         total_flops = qk_matmul_flops + pv_matmul_flops
         return total_flops
 
@@ -210,23 +211,20 @@ class AttentionAttributes:
 
     def to_bshd(self) -> AttentionConfigBSHD:
         """Convert to BSHD format"""
-        if self.batch_size is None:
-            raise ValueError("batch_size is required for BSHD conversion")
-
-        seq_len = self._get_query_seq_len()
+        if self.num_seqs is None:
+            raise ValueError("num_seqs is required for BSHD conversion")
         
-        if self.head_size != self.head_size_kv:
-            raise ValueError(
-                f"BSHD format requires head_size == head_size_kv, "
-                f"but got {self.head_size} != {self.head_size_kv}"
-            )
+        query_seq_len = self._get_query_seq_len()
+        kv_seq_len = self._get_kv_seq_len()
         
         return AttentionConfigBSHD(
-            B=self.batch_size,
-            S=seq_len,
+            B=self.num_seqs,
             H=self.num_query_heads,
-            D=self.head_size,
             H_KV=self.num_kv_heads,
+            N_Q=query_seq_len,
+            D_KV=self.head_size_kv,
+            D_Q=self.head_size,
+            N_KV=kv_seq_len,
             dtype=self.dtype
         )
 
@@ -307,72 +305,10 @@ def bshd_to_attention_attributes(config_bshd: AttentionConfigBSHD) -> AttentionA
     return AttentionAttributes(
         num_query_heads=config_bshd.H,
         num_kv_heads=config_bshd.H_KV,
-        head_size=config_bshd.D,
-        head_size_kv=config_bshd.D,
-        batch_size=config_bshd.B,
-        query_seq_len=config_bshd.S,
-        kv_seq_len=config_bshd.S,
+        head_size=config_bshd.D_Q,
+        head_size_kv=config_bshd.D_KV,
+        num_seqs=config_bshd.B,
+        query_seq_len=config_bshd.N_Q,
+        kv_seq_len=config_bshd.N_KV,
         dtype=config_bshd.dtype
     )
-
-if __name__ == "__main__":
-    print("=== Testing AttentionAttributes ===")
-    
-    vanilla_attrs = AttentionAttributes(
-        num_query_heads=16,
-        num_kv_heads=4,
-        head_size=64,
-        head_size_kv=64,
-        batch_size=2,
-        query_seq_len=1024,
-        kv_seq_len=1024,
-        dtype="f16"
-    )
-    
-    print(f"Vanilla attention type: {vanilla_attrs.get_attention_type()}")
-    
-    vanilla_bmnk = vanilla_attrs.to_bmnk1k2()
-    vanilla_bshd = vanilla_attrs.to_bshd()
-    
-    print(f"BMNK1K2: {vanilla_bmnk.get_name()}")
-    print(f"BSHD: {vanilla_bshd.get_name()}")
-    
-    prefill_attrs = AttentionAttributes(
-        num_query_heads=32,
-        num_kv_heads=8,
-        head_size=128,
-        head_size_kv=128,
-        batch_size=1,
-        context_len=2048,
-        max_seq_len=4096,
-        dtype="bf16"
-    )
-    
-    print(f"\nPrefill attention type: {prefill_attrs.get_attention_type()}")
-    
-    prefill_bmnk = prefill_attrs.to_bmnk1k2()
-    prefill_bshd = prefill_attrs.to_bshd()
-    
-    print(f"BMNK1K2: {prefill_bmnk.get_name()}")
-    print(f"BSHD: {prefill_bshd.get_name()}")
-    
-    decode_attrs = AttentionAttributes(
-        num_query_heads=16,
-        num_kv_heads=16,
-        head_size=64,
-        head_size_kv=64,
-        batch_size=4,
-        block_size=256,
-        query_seq_len=1,
-        kv_seq_len=1024,
-        dtype="f32"
-    )
-    
-    print(f"\nDecode attention type: {decode_attrs.get_attention_type()}")
-    
-    decode_bmnk = decode_attrs.to_bmnk1k2()
-    
-    print(f"BMNK1K2: {decode_bmnk.get_name()}")
-    print(f"Query shape: {decode_bmnk.get_query_shape()}")
-    print(f"Key shape: {decode_bmnk.get_key_shape()}")
-    print(f"Value shape: {decode_bmnk.get_value_shape()}")
