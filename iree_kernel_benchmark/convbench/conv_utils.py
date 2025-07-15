@@ -233,11 +233,8 @@ def compile_conv_config(
         f"--iree-hal-dump-executable-files-to={files_path}",
     ] + extra_compiler_args
 
-    print(" ".join(exec_args))
-
     ret_value, stdout, stderr = run_iree_command(exec_args)
     if ret_value == 0:
-        print(f"Successfully compiled {mlir_file} to {vmfb_file}")
         if stderr:
             with open(dump_file, "w") as f:
                 f.write(stderr.decode("utf-8"))

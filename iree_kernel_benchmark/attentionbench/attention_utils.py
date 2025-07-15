@@ -142,7 +142,7 @@ def get_pv_intrinsic(intrinsic: IntrinsicType):
 @dataclass
 class TuningSpec:
     wg_tiles: list[int]
-    reduction_tiles: list[int]
+    reduction_tiles: list[int] 
     M_warp: int
     N_warp: int
     intrinsic: str

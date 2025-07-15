@@ -20,14 +20,6 @@ from iree.turbine.kernel.wave.utils.general_utils import (
 from iree.turbine.kernel.wave.scheduling.schedule_enums import SchedulingType
 from typing import Optional
 
-@dataclass
-class TuningSpec:
-    workgroup_tiles: list[int]
-    reduction_tiles: list[int]
-    M_waves: int
-    N_waves: int
-    intrinsic: MMAType
-
 DTYPE_TO_WAVE = {
     'bf16': tkl.bf16,
     'f8e5m2': tkl.f8e5m2,
@@ -148,18 +140,15 @@ def get_gqa_bshd_attention_kernel(
     constraints += [tkw.WaveConstraint(N_Q, BLOCK_N_Q / 4)]
     constraints += [tkw.WaveConstraint(D_KV, BLOCK_D_KV / 1)]
 
-    # if (
-    #     mfma_variant[1] == MMAType.F32_16x16x16_F16
-    #     or mfma_variant[0] == MMAType.F32_16x16x32_F8
-    # ):
-    #     Mvec = 16
-    #     Nvec = 16
-    # if (
-    #     mfma_variant[1] == MMAType.F32_32x32x8_F16
-    #     or mfma_variant[0] == MMAType.F32_32x32x16_F8
-    # ):
-    Mvec = 32
-    Nvec = 32
+    if (
+        '16x16' in mfma_variant[1].name
+        or '16x16' in mfma_variant[0].name
+    ):
+        Mvec = 16
+        Nvec = 16
+    else:
+        Mvec = 32
+        Nvec = 32
 
     constraints += [
         tkw.HardwareConstraint(
@@ -272,11 +261,11 @@ def get_gqa_bshd_attention_kernel(
 
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
-        BLOCK_B: 1,
-        BLOCK_H: 1,
-        BLOCK_N_Q: 128,
-        BLOCK_D_KV: 128,
-        BLOCK_N_KV: 32,
+        BLOCK_B: tuning_spec.wg_tiles[0], # 1,
+        BLOCK_H: tuning_spec.wg_tiles[1], # 1,
+        BLOCK_N_Q: tuning_spec.wg_tiles[2], # 128,
+        BLOCK_D_KV: tuning_spec.wg_tiles[3], # 128,
+        BLOCK_N_KV: tuning_spec.wg_tiles[4], # 32,
         B: shape.num_seqs,
         H: shape.num_query_heads,
         H_KV: shape.num_kv_heads,
