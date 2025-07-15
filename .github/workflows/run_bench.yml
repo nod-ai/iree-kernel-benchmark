@@ -30,53 +30,63 @@ jobs:
           pip install --pre --no-cache-dir --find-links https://iree.dev/pip-release-links.html iree-base-compiler iree-base-runtime --upgrade
           pip install -r requirements.txt
           pip install iree-turbine@git+https://github.com/iree-org/iree-turbine.git@main
-
-      - name: Convolutions
+      
+      - name: Attention - Wave
         run: |
           source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.convbench
-
-      - name: TK Convolutions
+          python -m iree_kernel_benchmark.attentionbench --backend=wave --iterations=5
+      
+      - name: Attention - Wave GQA
         run: |
           source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.convbench --tk
-
-      - name: Attention
+          python -m iree_kernel_benchmark.attentionbench --backend=wavegqa --iterations=5
+      
+      - name: Attention - IREE
         run: |
           source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.attentionbench
+          python -m iree_kernel_benchmark.attentionbench --backend=iree --iterations=5
 
-      - name: TK GEMM FP16
+      - name: GEMM - Wave
         run: |
           source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.gemmbench --tk --dtypes f16
-
-      - name: GEMM FP16
+          python -m iree_kernel_benchmark.gemmbench --tk --iterations=5
+      
+      - name: GEMM - IREE
         run: |
           source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.gemmbench --dtypes f16
-
-      - name: GEMM FP8 (f8E4M3FNUZ)
+          python -m iree_kernel_benchmark.gemmbench --iterations=5
+      
+      - name: Convolutions - Wave
         run: |
           source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.gemmbench --dtypes f8E4M3FNUZ
-
-      - name: GEMM I8
+          python -m iree_kernel_benchmark.convbench --tk --iterations=5
+      
+      - name: Convolutions - IREE
         run: |
           source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.gemmbench --dtypes i8
+          python -m iree_kernel_benchmark.convbench --iterations=5
 
-      - name: Roofline Plots
-        run: |
-          source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.convbench --roofline results/iree_conv.csv --plot results/iree_conv_i8.png --dtype i8
-          python -m iree_kernel_benchmark.convbench --roofline results/iree_conv.csv --plot results/iree_conv_f16.png --dtype f16
-          python -m iree_kernel_benchmark.convbench --roofline results/iree_conv_tk.csv --plot results/iree_conv_tk_f16.png --dtype f16
-          python -m iree_kernel_benchmark.convbench --roofline results/iree_attention.csv --plot results/iree_attention_fp16.png --dtype f16
-          python -m iree_kernel_benchmark.convbench --roofline results/iree_attention.csv --plot results/iree_attention_fp8.png --dtype f8E4M3FNUZ
-          python -m iree_kernel_benchmark.convbench --roofline results/iree_gemm.csv --plot results/iree_gemm.png
-          python -m iree_kernel_benchmark.convbench --roofline results/iree_gemm_tk.csv --plot results/iree_gemm_tk.png
-          python -m iree_kernel_benchmark.convbench --roofline results/iree_gemm.csv,results/iree_gemm_tk.csv,results/iree_attention.csv,results/iree_conv.csv,results/iree_conv_tk.csv --plot results/combined.png
+      # - name: GEMM FP8 (f8E4M3FNUZ)
+      #   run: |
+      #     source bench_venv/bin/activate
+      #     python -m iree_kernel_benchmark.gemmbench --dtypes f8E4M3FNUZ
+
+      # - name: GEMM I8
+      #   run: |
+      #     source bench_venv/bin/activate
+      #     python -m iree_kernel_benchmark.gemmbench --dtypes i8
+
+      # - name: Roofline Plots
+      #   run: |
+      #     source bench_venv/bin/activate
+      #     python -m iree_kernel_benchmark.convbench --roofline results/iree_conv.csv --plot results/iree_conv_i8.png --dtype i8
+      #     python -m iree_kernel_benchmark.convbench --roofline results/iree_conv.csv --plot results/iree_conv_f16.png --dtype f16
+      #     python -m iree_kernel_benchmark.convbench --roofline results/iree_conv_tk.csv --plot results/iree_conv_tk_f16.png --dtype f16
+      #     python -m iree_kernel_benchmark.convbench --roofline results/iree_attention.csv --plot results/iree_attention_fp16.png --dtype f16
+      #     python -m iree_kernel_benchmark.convbench --roofline results/iree_attention.csv --plot results/iree_attention_fp8.png --dtype f8E4M3FNUZ
+      #     python -m iree_kernel_benchmark.convbench --roofline results/iree_gemm.csv --plot results/iree_gemm.png
+      #     python -m iree_kernel_benchmark.convbench --roofline results/iree_gemm_tk.csv --plot results/iree_gemm_tk.png
+      #     python -m iree_kernel_benchmark.convbench --roofline results/iree_gemm.csv,results/iree_gemm_tk.csv,results/iree_attention.csv,results/iree_conv.csv,results/iree_conv_tk.csv --plot results/combined.png
 
       - name: Upload benchmark results
         uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1

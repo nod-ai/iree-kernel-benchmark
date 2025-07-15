@@ -40,8 +40,12 @@ def compile_attention(
     vmfb_file = vmfb_dir / f"{name}.vmfb"
     
     if not spec:
+        if backend == "wavegqa":
+            wg_tiles = [1, 1, 128, 128, 32]
+        else:
+            wg_tiles = [1, 128, 0, 0, 0]
         spec = TuningSpec(
-            [1, 128, 0, 0, 0],
+            wg_tiles,
             [0, 0, 0, 0, 32],
             4,
             1,

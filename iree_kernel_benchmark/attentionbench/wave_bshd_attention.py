@@ -284,7 +284,7 @@ def compile_attention_wave_bshd(
     spec: TuningSpec,
     mlir_file: Path,
     vmfb_file: Path,
-    dump_dir: Path,
+    dump_dir: Optional[Path],
     mfma_variant: tuple[MMAType] = (MMAType.F32_32x32x16_K8_F16, MMAType.F32_32x32x8_F16)
 ) -> tuple[Path, Optional[Path]]:
 
@@ -297,9 +297,6 @@ def compile_attention_wave_bshd(
 
     config = shape.to_bshd()
 
-    if dump_dir:
-        phase_dump = dump_dir / 'wave' / config.get_name()
-
     compile_options = WaveCompileOptions(
         subs=hyperparams,
         schedule=SchedulingType.NONE,
@@ -308,11 +305,14 @@ def compile_attention_wave_bshd(
         create_vmfb_file=vmfb_file,
         backend="rocm",
         target="gfx942",
-        print_ir_after_all=True,
-        dump_phases=phase_dump if dump_dir else None
+        print_ir_after_all=dump_dir is not None,
     )
-    dump_file = dump_dir / 'wave' / (config.get_name() + '.debug.mlir')
-    with redirect_stderr_to_file(dump_file):
+
+    if dump_dir:
+        dump_file = dump_dir / 'wave' / (config.get_name() + '.debug.mlir')
+        with redirect_stderr_to_file(dump_file):
+            result = wave_compile(compile_options, base_attention)
+    else:
         result = wave_compile(compile_options, base_attention)
 
     with open(mlir_file, 'w') as mlir_out:
