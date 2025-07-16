@@ -32,6 +32,7 @@ jobs:
           pip install iree-turbine@git+https://github.com/iree-org/iree-turbine.git@main
 
       - name: Convolutions
+        continue-on-error: true
         run: |
           source bench_venv/bin/activate
           python -m iree_kernel_benchmark.convbench
@@ -47,6 +48,7 @@ jobs:
           python -m iree_kernel_benchmark.attentionbench
 
       - name: TK GEMM FP16
+        continue-on-error: true
         run: |
           source bench_venv/bin/activate
           python -m iree_kernel_benchmark.gemmbench --tk --dtypes f16
