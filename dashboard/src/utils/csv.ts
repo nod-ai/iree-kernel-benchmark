@@ -31,7 +31,6 @@ export async function loadResultCsv(
             kernelType,
             name: row["name"],
             tag: row["tag"],
-            dtype: row["dtype"],
             meanMicroseconds: row["mean_microseconds"],
             arithmeticIntensity: row["arithmetic_intensity"],
             tflops: row["tflops"],
@@ -41,6 +40,7 @@ export async function loadResultCsv(
             const kernel: GemmKernel = {
               ...common,
               kernelType: "gemm",
+              dtype: row["dtype"],
               M: row["M"],
               N: row["N"],
               K: row["K"],
@@ -51,6 +51,7 @@ export async function loadResultCsv(
             const kernel: AttentionKernel = {
               ...common,
               kernelType: "attention",
+              dtype: row["dtype"],
               B: row["B"],
               M: row["M"],
               N: row["N"],
@@ -62,6 +63,7 @@ export async function loadResultCsv(
             const kernel: ConvKernel = {
               ...common,
               kernelType: "conv",
+              dtype: row["input_dtype"],
               B: row["B"],
               H: row["H"],
               W: row["W"],

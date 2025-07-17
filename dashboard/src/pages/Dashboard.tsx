@@ -23,12 +23,13 @@ export default function Dashboard() {
   useEffect(() => {
     async function fetchData() {
       const dataConfigs = [
-        ["iree", "attention", "/results/attention_iree.csv"],
-        ["wave", "attention", "/results/attention_wave.csv"],
-        ["iree", "conv", "/results/conv_iree.csv"],
-        ["wave", "conv", "/results/conv_wave.csv"],
-        ["iree", "gemm", "/results/gemm_iree.csv"],
-        ["wave", "gemm", "/results/gemm_wave.csv"],
+        ["iree", "attention", "/results/attention/attention_iree.csv"],
+        ["wave", "attention", "/results/attention/attention_wave.csv"],
+        ["wavegqa", "attention", "/results/attention/attention_wavegqa.csv"],
+        ["iree", "conv", "/results/conv/conv_iree.csv"],
+        ["wave", "conv", "/results/conv/conv_wave.csv"],
+        ["iree", "gemm", "/results/gemm/gemm_iree.csv"],
+        ["wave", "gemm", "/results/gemm/gemm_wave.csv"],
       ];
       const kernelRequests = dataConfigs.map(
         async ([backend, kernelType, csvPath]) =>
@@ -59,6 +60,11 @@ export default function Dashboard() {
         kernelType === k.kernelType
     );
   }, [kernels, kernelType, selectedBackends, selectedDtypes, selectedTags]);
+
+  const filteredWaveKernels = useMemo(
+    () => filteredKernels.filter((k) => k.backend.startsWith("wave")),
+    [filteredKernels]
+  );
 
   const selectedKernel = useMemo(
     () => kernels.find((k) => k.id === selectedKernelId),
@@ -138,6 +144,11 @@ export default function Dashboard() {
           <BarComparisonPlot
             kernels={selectedKernelId ? sameShapeKernels : filteredKernels}
           />
+          {!selectedKernel && filteredWaveKernels.length > 0 && (
+            <button className="px-4 mt-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+              Tune {filteredWaveKernels.length} Wave Kernels
+            </button>
+          )}
         </div>
       </div>
 
