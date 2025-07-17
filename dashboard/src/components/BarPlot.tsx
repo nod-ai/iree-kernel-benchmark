@@ -10,7 +10,7 @@ import {
   Title,
 } from "chart.js";
 import type { Kernel } from "../types";
-import { BACKEND_COLORS } from "./RooflinePlot";
+import { BACKEND_COLORS, getColor } from "../utils/color";
 import { KERNEL_DIMS } from "../utils/utils";
 
 Chart.register(
@@ -78,9 +78,7 @@ export function BarComparisonPlot({ kernels }: BarComparisonPlotProps) {
           {
             label: "Avg Mean Time (μs)",
             data,
-            backgroundColor: labels.map(
-              (label) => BACKEND_COLORS[label] || "#888"
-            ),
+            backgroundColor: labels.map((label) => getColor(label)),
           },
         ],
       },

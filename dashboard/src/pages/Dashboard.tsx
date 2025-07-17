@@ -26,6 +26,11 @@ export default function Dashboard() {
         ["iree", "attention", "/results/attention/attention_iree.csv"],
         ["wave", "attention", "/results/attention/attention_wave.csv"],
         ["wavegqa", "attention", "/results/attention/attention_wavegqa.csv"],
+        [
+          "wavegqanew",
+          "attention",
+          "/results/attention/attention_wavegqanew.csv",
+        ],
         ["iree", "conv", "/results/conv/conv_iree.csv"],
         ["wave", "conv", "/results/conv/conv_wave.csv"],
         ["iree", "gemm", "/results/gemm/gemm_iree.csv"],
