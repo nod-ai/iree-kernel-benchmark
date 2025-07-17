@@ -6,47 +6,37 @@ from abc import ABC, abstractmethod
 
 @dataclass
 class AttentionConfigBase(ABC):
-    """Base class for attention configurations with common interface"""
-
     dtype: str
 
     @abstractmethod
     def get_name(self) -> str:
-        """Get a descriptive name for this configuration"""
         pass
 
     @abstractmethod
     def get_query_shape(self) -> str:
-        """Get the shape string for query tensor"""
         pass
 
     @abstractmethod
     def get_key_shape(self) -> str:
-        """Get the shape string for key tensor"""
         pass
 
     @abstractmethod
     def get_value_shape(self) -> str:
-        """Get the shape string for value tensor"""
         pass
 
     @abstractmethod
     def get_output_shape(self) -> str:
-        """Get the shape string for output tensor"""
         pass
 
     @abstractmethod
     def get_byte_count(self) -> int:
-        """Get total byte count for all tensors"""
         pass
 
     @abstractmethod
     def get_flops(self) -> int:
-        """Get FLOP count for attention computation"""
         pass
 
     def _get_bytes_per_element(self) -> int:
-        """Helper method to get bytes per element for the dtype"""
         dtype_bits_map = {
             "f32": 32,
             "f16": 16,
@@ -60,8 +50,6 @@ class AttentionConfigBase(ABC):
 
 @dataclass
 class AttentionConfigBMNK(AttentionConfigBase):
-    """BMNK1K2 format: B=batch, M=query_seq, N=kv_embed_dim, K1=query_embed_dim, K2=kv_seq"""
-
     B: int
     M: int
     N: int
@@ -104,7 +92,6 @@ class AttentionConfigBMNK(AttentionConfigBase):
         return byte_count
 
     def get_flops(self) -> int:
-        # We measure flops of the two matmuls only
         qk_matmul_flops = 2 * self.B * self.M * self.K2 * self.K1
         pv_matmul_flops = 2 * self.B * self.M * self.N * self.K2
         total_flops = qk_matmul_flops + pv_matmul_flops
@@ -113,8 +100,6 @@ class AttentionConfigBMNK(AttentionConfigBase):
 
 @dataclass
 class AttentionConfigBSHD:
-    """BSHD format: B=num_seqs, H=num_query_heads, H_KV=num_kv_heads, N_Q=query_seq_len, D_KV=head_size_kv, D_Q=head_size, N_KV=kv_seq_len"""
-
     B: int  # num_seqs
     H: int  # num_query_heads
     H_KV: int  # num_kv_heads
@@ -198,11 +183,6 @@ class AttentionAttributes:
     block_size: Optional[int] = None
 
     def to_bmnk1k2(self) -> AttentionConfigBMNK:
-        """Convert to BMNK1K2 format
-
-        Attempts to infer sequence lengths from available attributes.
-        Priority order: query_seq_len/kv_seq_len > context_len > max_seq_len > total_seq_len
-        """
         if self.batch_size is None:
             raise ValueError("batch_size is required for BMNK1K2 conversion")
 
@@ -216,94 +196,24 @@ class AttentionAttributes:
         )
 
     def to_bshd(self) -> AttentionConfigBSHD:
-        """Convert to BSHD format"""
         if self.num_seqs is None:
             raise ValueError("num_seqs is required for BSHD conversion")
-
-        query_seq_len = self._get_query_seq_len()
-        kv_seq_len = self._get_kv_seq_len()
 
         return AttentionConfigBSHD(
             B=self.num_seqs,
             H=self.num_query_heads,
             H_KV=self.num_kv_heads,
-            N_Q=query_seq_len,
+            N_Q=self.query_seq_len,
             D_KV=self.head_size_kv,
             D_Q=self.head_size,
-            N_KV=kv_seq_len,
+            N_KV=self.kv_seq_len,
             dtype=self.dtype,
         )
-
-    def _get_query_seq_len(self) -> int:
-        """Get query sequence length from available attributes"""
-        if self.query_seq_len is not None:
-            return self.query_seq_len
-        elif self.context_len is not None:
-            return self.context_len
-        elif self.max_seq_len is not None:
-            return self.max_seq_len
-        elif self.total_seq_len is not None:
-            return self.total_seq_len
-        elif self.fixed_seq_len_prefix is not None:
-            return self.fixed_seq_len_prefix
-        elif self.fixed_seq_len_extend is not None:
-            return self.fixed_seq_len_extend
-        else:
-            raise ValueError(
-                "Cannot determine query sequence length. Please provide one of: "
-                "query_seq_len, context_len, max_seq_len, total_seq_len, "
-                "fixed_seq_len_prefix, or fixed_seq_len_extend"
-            )
-
-    def _get_kv_seq_len(self) -> int:
-        """Get KV sequence length from available attributes"""
-        if self.kv_seq_len is not None:
-            return self.kv_seq_len
-        elif self.query_seq_len is not None:
-            return self.query_seq_len
-        elif self.context_len is not None:
-            return self.context_len
-        elif self.max_seq_len is not None:
-            return self.max_seq_len
-        elif self.total_seq_len is not None:
-            return self.total_seq_len
-        elif self.fixed_seq_len_prefix is not None:
-            return self.fixed_seq_len_prefix
-        elif self.fixed_seq_len_extend is not None:
-            return self.fixed_seq_len_extend
-        else:
-            raise ValueError(
-                "Cannot determine KV sequence length. Please provide one of: "
-                "kv_seq_len, query_seq_len, context_len, max_seq_len, total_seq_len, "
-                "fixed_seq_len_prefix, or fixed_seq_len_extend"
-            )
-
-    def get_attention_type(self) -> str:
-        """Infer the attention type based on available attributes"""
-        if self.block_size is not None:
-            return "decode"
-        elif any(
-            [
-                self.num_seqs,
-                self.max_seq_len,
-                self.total_seq_len,
-                self.context_len,
-                self.fixed_seq_len_prefix,
-                self.fixed_seq_len_extend,
-            ]
-        ):
-            return "prefill"
-        elif self.query_seq_len is not None or self.kv_seq_len is not None:
-            return "vanilla"
-        else:
-            return "unknown"
 
 
 def bmnk1k2_to_attention_attributes(
     config_bmnk: AttentionConfigBMNK,
 ) -> AttentionAttributes:
-    """Convert BMNK1K2 format back to AttentionAttributes"""
-
     return AttentionAttributes(
         num_query_heads=config_bmnk.B,
         num_kv_heads=config_bmnk.B,
@@ -319,8 +229,6 @@ def bmnk1k2_to_attention_attributes(
 def bshd_to_attention_attributes(
     config_bshd: AttentionConfigBSHD,
 ) -> AttentionAttributes:
-    """Convert BSHD format back to AttentionAttributes"""
-
     return AttentionAttributes(
         num_query_heads=config_bshd.H,
         num_kv_heads=config_bshd.H_KV,

@@ -71,28 +71,6 @@ jobs:
           source bench_venv/bin/activate
           python -m iree_kernel_benchmark.convbench --iterations=5
 
-      # - name: GEMM FP8 (f8E4M3FNUZ)
-      #   run: |
-      #     source bench_venv/bin/activate
-      #     python -m iree_kernel_benchmark.gemmbench --dtypes f8E4M3FNUZ
-
-      # - name: GEMM I8
-      #   run: |
-      #     source bench_venv/bin/activate
-      #     python -m iree_kernel_benchmark.gemmbench --dtypes i8
-
-      # - name: Roofline Plots
-      #   run: |
-      #     source bench_venv/bin/activate
-      #     python -m iree_kernel_benchmark.convbench --roofline results/iree_conv.csv --plot results/iree_conv_i8.png --dtype i8
-      #     python -m iree_kernel_benchmark.convbench --roofline results/iree_conv.csv --plot results/iree_conv_f16.png --dtype f16
-      #     python -m iree_kernel_benchmark.convbench --roofline results/iree_conv_tk.csv --plot results/iree_conv_tk_f16.png --dtype f16
-      #     python -m iree_kernel_benchmark.convbench --roofline results/iree_attention.csv --plot results/iree_attention_fp16.png --dtype f16
-      #     python -m iree_kernel_benchmark.convbench --roofline results/iree_attention.csv --plot results/iree_attention_fp8.png --dtype f8E4M3FNUZ
-      #     python -m iree_kernel_benchmark.convbench --roofline results/iree_gemm.csv --plot results/iree_gemm.png
-      #     python -m iree_kernel_benchmark.convbench --roofline results/iree_gemm_tk.csv --plot results/iree_gemm_tk.png
-      #     python -m iree_kernel_benchmark.convbench --roofline results/iree_gemm.csv,results/iree_gemm_tk.csv,results/iree_attention.csv,results/iree_conv.csv,results/iree_conv_tk.csv --plot results/combined.png
-
       - name: Upload benchmark results
         uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
         with:

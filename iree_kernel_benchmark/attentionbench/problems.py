@@ -86,16 +86,18 @@ def cai_attn(dtype: str) -> list[AttentionAttributes]:
 type ConfigList = list[tuple[str, AttentionAttributes]]
 
 
-def get_attention_configs() -> ConfigList:
+def get_attention_configs(use_fp8=True) -> ConfigList:
     configs: ConfigList = []
     llm_configs = llm_sweep("f16")
-    # llm_configs += llm_sweep("f8E4M3FNUZ")
     sdxl_configs = sdxl_unet_sweep("f16")
-    # sdxl_configs += sdxl_unet_sweep("f8E4M3FNUZ")
     bert_configs = bert_attn_sweep("f16")
-    # bert_configs += bert_attn_sweep("f8E4M3FNUZ")
     llama3_configs = llama3_405b_attn_sweep("f16")
-    # llama3_configs += llama3_405b_attn_sweep("f8E4M3FNUZ")
+
+    if use_fp8:
+        llm_configs += llm_sweep("f8E4M3FNUZ")
+        sdxl_configs += sdxl_unet_sweep("f8E4M3FNUZ")
+        bert_configs += bert_attn_sweep("f8E4M3FNUZ")
+        llama3_configs += llama3_405b_attn_sweep("f8E4M3FNUZ")
 
     configs += [("llm", x) for x in llm_configs]
     configs += [("sdxl_unet", x) for x in sdxl_configs]

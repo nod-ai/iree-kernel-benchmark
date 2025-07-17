@@ -4,7 +4,9 @@ from multiprocessing import Pool, cpu_count, Manager
 import logging
 import itertools
 from typing import Literal
+from dataclasses import asdict
 from pathlib import Path
+import json
 import pandas as pd
 import optuna
 import argparse
@@ -83,34 +85,43 @@ def compile_attention_kernels(
     mfma_config: tuple[MMAType, MMAType],
     tuning_spec: TuningSpec = None,
 ) -> dict:
-    num_cpus = max(1, cpu_count() - 20)
-    print(f"Using {num_cpus} CPUs for parallel processing.")
+    vmfb_dict = {}
 
-    manager = Manager()
-    vmfb_dict = manager.dict()
-
-    compile_args = itertools.starmap(
-        lambda tag, config: (
-            tag,
-            config,
-            kernel_dir,
-            vmfb_dir,
-            backend_name,
-            [],
-            dump_dir,
-            mfma_config,
-            tuning_spec,
-        ),
-        configs,
-    )
-    with Pool(num_cpus) as pool:
-        compilation_results = list(
-            tqdm(
-                pool.istarmap(compile_attention, compile_args),
-                total=len(configs),
-                desc="Compiling Attention Kernels",
-            )
+    def compile_args_generator():
+        return itertools.starmap(
+            lambda tag, config: (
+                tag,
+                config,
+                kernel_dir,
+                vmfb_dir,
+                backend_name,
+                [],
+                dump_dir,
+                mfma_config,
+                tuning_spec,
+            ),
+            configs,
         )
+
+    if len(configs) < 5:
+        compilation_results = [
+            compile_attention(*args) for args in compile_args_generator()
+        ]
+    else:
+        num_cpus = max(1, cpu_count() - 20)
+        print(f"Using {num_cpus} CPUs for parallel processing.")
+        manager = Manager()
+        shared_vmfb_dict = manager.dict()
+
+        with Pool(num_cpus) as pool:
+            compilation_results = list(
+                tqdm(
+                    pool.istarmap(compile_attention, compile_args_generator()),
+                    total=len(configs),
+                    desc="Compiling Attention Kernels",
+                )
+            )
+        vmfb_dict = shared_vmfb_dict
 
     error_count = 0
     for tag, config, mlir_file, vmfb_file in compilation_results:
@@ -118,28 +129,35 @@ def compile_attention_kernels(
             vmfb_dict[vmfb_file] = (tag, config)
         else:
             error_count += 1
-    print(
-        f"{len(configs) - error_count} Success, {error_count} Failed out of {len(configs)} configs"
-    )
 
-    print("Compilation process completed.")
+    if len(configs) > 5:
+        print(
+            f"{len(configs) - error_count} Success, {error_count} Failed out of {len(configs)} configs"
+        )
+        print("Compilation process completed.")
 
-    return vmfb_dict
+    return dict(vmfb_dict)
 
 
 def benchmark_attention_kernels(
-    backend_name: str, vmfb_dict: dict, output_csv: Path, num_iterations: int = 3
+    backend_name: str,
+    vmfb_dict: dict,
+    output_csv: Path,
+    num_iterations: int = 3,
+    debug=True,
 ) -> pd.DataFrame:
     results = []
     index = 0
 
     csv_dir = os.path.dirname(output_csv)
-    if not os.path.exists(csv_dir):
+    if csv_dir and not os.path.exists(csv_dir):
         os.makedirs(csv_dir)
 
-    for vmfb_filename, value in tqdm(
-        vmfb_dict.items(), desc="Benchmarking Attention Kernels"
-    ):
+    bench_items = vmfb_dict.items()
+    if debug:
+        bench_items = tqdm(vmfb_dict.items(), desc="Benchmarking Attention Kernels")
+
+    for vmfb_filename, value in bench_items:
         tag = value[0]
         attn_attrs: AttentionAttributes = value[1]
         config: AttentionConfigBase = (
@@ -263,9 +281,124 @@ def benchmark_attention_kernels(
         ]
 
     write_results_to_csv(results, output_csv, fieldnames)
-    print(f"Results written to {output_csv}")
+    if debug:
+        print(f"Results written to {output_csv}")
 
     return pd.read_csv(output_csv)
+
+
+def tune_attention_kernels(
+    configs: ConfigList,
+    kernel_dir: Path,
+    vmfb_dir: Path,
+    dump_dir: Path,
+):
+    mfma_configs = [
+        (MMAType.F32_32x32x16_K8_F16, MMAType.F32_32x32x8_F16),
+        (MMAType.F32_16x16x32_K8_F16, MMAType.F32_16x16x16_F16),
+        (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
+        (MMAType.F32_32x32x8_F16, MMAType.F32_32x32x8_F16),
+    ]
+    tiling_constraints = [
+        TuningConstraint(name="BLOCK_B", min=1, max=1, step=1),
+        TuningConstraint(name="BLOCK_H", min=1, max=2, step=1),
+        TuningConstraint(name="BLOCK_N_Q", min=16, max=128, step=16),
+        TuningConstraint(name="BLOCK_D_KV", min=16, max=128, step=16),
+        TuningConstraint(name="BLOCK_N_KV", min=16, max=64, step=16),
+    ]
+    print([constraint.get_range() for constraint in tiling_constraints])
+
+    tuning_results = {}
+    tuning_dir = Path("results/tuning")
+    os.makedirs(tuning_dir, exist_ok=True)
+
+    def tune_config(config):
+        tuning_result: tuple[float, TuningSpec, tuple[MMAType]] = (
+            math.inf,
+            None,
+            mfma_configs[0],
+        )
+
+        config_tag, kernel = config
+        config_name = kernel.to_bshd().get_name()
+
+        def objective(trial: optuna.Trial) -> float:
+            nonlocal tuning_result
+
+            block_sizes = [
+                trial.suggest_int(
+                    constraint.name,
+                    constraint.min,
+                    constraint.max,
+                    step=constraint.step,
+                )
+                for constraint in tiling_constraints
+            ]
+            tuning_spec = TuningSpec(
+                wg_tiles=block_sizes,
+                reduction_tiles=[0 for _ in range(len(block_sizes))],
+                M_warp=0,
+                N_warp=0,
+                intrinsic="none",
+                waves_per_eu=2,
+                denorm_flush=False,
+            )
+
+            mfma_config = mfma_configs[
+                trial.suggest_categorical("MFMA_INDEX", list(range(len(mfma_configs))))
+            ]
+
+            try:
+                vmfb_dict = compile_attention_kernels(
+                    backend_name,
+                    [config],
+                    kernel_dir,
+                    vmfb_dir,
+                    dump_dir,
+                    mfma_config,
+                    tuning_spec,
+                )
+            except:
+                print("Failed to compile, skipping")
+                return math.inf
+
+            output_csv_path = Path(f"temp.csv")
+
+            try:
+                result_df = benchmark_attention_kernels(
+                    backend_name,
+                    vmfb_dict,
+                    output_csv_path,
+                    args.iterations,
+                    debug=False,
+                )
+            except:
+                print("Failed runtime, skipping")
+                return math.inf
+
+            runtime = result_df["mean_microseconds"].mean()
+            if runtime < tuning_result[0]:
+                tuning_result = (runtime, tuning_spec, mfma_config)
+
+            return runtime
+
+        study = optuna.create_study(direction="minimize")
+        study.optimize(objective, n_trials=50, show_progress_bar=True)
+
+        best_runtime, best_spec, best_mfma = tuning_result
+        print("Optimal spec", best_spec)
+
+        if best_spec and best_mfma:
+            tuning_results[config_name] = {
+                "spec": asdict(best_spec),
+                "mfma": [mfma.name for mfma in best_mfma],
+                "mean_microseconds": best_runtime,
+            }
+            with open(tuning_dir / "results.json", "w") as file:
+                json.dump(tuning_results, file, indent=4)
+
+    for config in configs:
+        tune_config(config)
 
 
 @dataclass
@@ -340,7 +473,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--tune",
         action="store_true",
-        help="Uses heuristic approach to optimize mfma variant, tiling, and waves",
+        help="Uses heuristic approach to optimize mfma variant, tiling, and waves.",
     )
     parser.add_argument(
         "--title", type=str, default=None, help="Title of run for save path"
@@ -359,8 +492,10 @@ if __name__ == "__main__":
 
     if backend_name == "wavegqa":
         configs = get_attention_configs_gqa()
+    elif backend_name == "iree":
+        configs = get_attention_configs(use_fp8=True)
     else:
-        configs = get_attention_configs()
+        configs = get_attention_configs(use_fp8=False)
     print(f"Generated {len(configs)} attention configs.")
 
     repo_root = Path(__file__).parent.parent
@@ -372,68 +507,7 @@ if __name__ == "__main__":
     vmfb_dir.mkdir(parents=True, exist_ok=True)
 
     if args.tune:
-        mfma_configs = [
-            (MMAType.F32_32x32x16_K8_F16, MMAType.F32_32x32x8_F16),
-            (MMAType.F32_16x16x32_K8_F16, MMAType.F32_16x16x16_F16),
-            (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
-            (MMAType.F32_32x32x8_F16, MMAType.F32_32x32x8_F16),
-        ]
-        tiling_constraints = [
-            TuningConstraint(name="BLOCK_B", min=1, max=1, step=1),
-            TuningConstraint(name="BLOCK_H", min=1, max=32, step=2, exponential=True),
-            TuningConstraint(name="BLOCK_N_Q", min=32, max=1024, step=2),
-            TuningConstraint(name="BLOCK_D_KV", min=32, max=1024, step=2),
-            TuningConstraint(name="BLOCK_N_KV", min=32, max=1024, step=2),
-        ]
-
-        for config in configs:
-
-            def objective(trial: optuna.Trial) -> float:
-                block_sizes = [
-                    trial.suggest_categorical(
-                        constraint.name, tiling_constraints[i].get_range()
-                    )
-                    for i, constraint in enumerate(tiling_constraints)
-                ]
-                tuning_spec = TuningSpec(
-                    wg_tiles=block_sizes,
-                    reduction_tiles=[0 for _ in range(len(block_sizes))],
-                    M_warp=0,
-                    N_warp=0,
-                    intrinsic="none",
-                    waves_per_eu=2,
-                    denorm_flush=False,
-                )
-
-                vmfb_dict = compile_attention_kernels(
-                    backend_name,
-                    [config],
-                    kernel_dir,
-                    vmfb_dir,
-                    dump_dir,
-                    mfma_config,
-                    tuning_spec,
-                )
-
-                output_csv_path = Path(f"temp.csv")
-
-                result_df = benchmark_attention_kernels(
-                    backend_name, vmfb_dict, output_csv_path, args.iterations
-                )
-
-                return result_df["mean_microseconds"].mean()
-
-            study = optuna.create_study(direction="minimize")
-            study.optimize(objective, n_trials=100)
-
-        # vmfb_dict = compile_attention_kernels(
-        #     backend_name, configs, kernel_dir, vmfb_dir, dump_dir, mfma_config)
-
-        # output_csv_base = f"attention_{backend_name}" + (f"_{args.title}" if args.title else "")
-        # output_csv_path = Path(f"results/attention/{output_csv_base}.csv")
-
-        # benchmark_attention_kernels(
-        #     backend_name, vmfb_dict, output_csv_path, args.iterations)
+        tune_attention_kernels(configs, kernel_dir, vmfb_dir, dump_dir)
 
     else:
         vmfb_dict = compile_attention_kernels(

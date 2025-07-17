@@ -94,57 +94,6 @@ def get_pv_intrinsic(intrinsic: IntrinsicType):
             return intrinsic
 
 
-# @dataclass
-# class AttentionConfig:
-#     B: int
-#     M: int
-#     N: int
-#     K1: int
-#     K2: int
-#     dtype: str
-
-#     def get_name(self) -> str:
-#         return f"attention_{self.B}x{self.M}x{self.N}x{self.K1}x{self.K2}x{self.dtype}"
-
-#     def get_query_shape(self) -> str:
-#         return f"{self.B}x{self.M}x{self.K1}x{self.dtype}"
-
-#     def get_key_shape(self) -> str:
-#         return f"{self.B}x{self.K2}x{self.K1}x{self.dtype}"
-
-#     def get_value_shape(self) -> str:
-#         return f"{self.B}x{self.K2}x{self.N}x{self.dtype}"
-
-#     def get_output_shape(self) -> str:
-#         return f"{self.B}x{self.M}x{self.N}x{self.dtype}"
-
-#     def get_byte_count(self) -> int:
-#         dtype_bits_map = {
-#             "f32": 32,
-#             "f16": 16,
-#             "bf16": 16,
-#             "f8E4M3FNUZ": 8,
-#             "i8": 8,
-#             "i32": 32,
-#         }
-#         bytes_per_element = dtype_bits_map[self.dtype] // 8
-#         element_count = (
-#             (self.B * self.M * self.K1)
-#             + (self.B * self.K2 * self.K1)
-#             + (self.B * self.K2 * self.N)
-#             + (self.B * self.M * self.N)
-#         )
-#         byte_count = element_count * bytes_per_element
-#         return byte_count
-
-#     def get_flops(self) -> int:
-#         # We measure flops of the two matmuls only
-#         qk_matmul_flops = 2 * self.B * self.M * self.K2 * self.K1
-#         pv_matmul_flops = 2 * self.B * self.M * self.N * self.K2
-#         total_flops = qk_matmul_flops + pv_matmul_flops
-#         return total_flops
-
-
 @dataclass
 class TuningSpec:
     wg_tiles: list[int]
