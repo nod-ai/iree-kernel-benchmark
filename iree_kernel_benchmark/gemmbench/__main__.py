@@ -145,12 +145,7 @@ if __name__ == "__main__":
     tk = args.tk
     configs = []
     for dtype in requested_dtypes:
-        configs += (
-            # get_tk_gemm_configs(dtype, args.raw_accumulators)
-            # if tk
-            # else get_gemm_configs(dtype, args.raw_accumulators)
-            get_gemm_configs(dtype, args.raw_accumulators)
-        )
+        configs += get_gemm_configs(dtype, args.raw_accumulators)
     configs = get_matching_configs(
         configs,
         requested_variants,
@@ -307,7 +302,4 @@ if __name__ == "__main__":
     write_results_to_csv(results, output_csv, fieldnames)
     print(f"Results written to {output_csv}")
 
-    # if compile_error_count != 0 or run_error_count != 0:
-    #     exit(1)
-    # else:
     exit(0)

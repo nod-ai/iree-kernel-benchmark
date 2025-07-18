@@ -45,6 +45,12 @@ def compile_attention(
     mlir_file = kernel_dir / f"{name}.mlir"
     vmfb_file = vmfb_dir / f"{name}.vmfb"
 
+    if not mfma_variant:
+        mfma_variant = (
+            MMAType.F32_32x32x16_K8_F16,
+            MMAType.F32_32x32x8_F16,
+        )
+
     if not spec:
         if backend == "wavegqa":
             wg_tiles = [1, 1, 128, 128, 32]
@@ -82,8 +88,8 @@ def compile_attention_kernels(
     kernel_dir: Path,
     vmfb_dir: Path,
     dump_dir: Path,
-    mfma_config: tuple[MMAType, MMAType],
-    tuning_spec: TuningSpec = None,
+    mfma_configs: dict[str, tuple[MMAType, MMAType]] = {},
+    tuning_specs: dict[str, TuningSpec] = {},
 ) -> dict:
     vmfb_dict = {}
 
@@ -97,8 +103,16 @@ def compile_attention_kernels(
                 backend_name,
                 [],
                 dump_dir,
-                mfma_config,
-                tuning_spec,
+                (
+                    mfma_configs.get(config.to_bshd().get_name())
+                    if backend_name == "wavegqa"
+                    else None
+                ),
+                (
+                    tuning_specs.get(config.to_bshd().get_name())
+                    if backend_name == "wavegqa"
+                    else None
+                ),
             ),
             configs,
         )
@@ -306,7 +320,6 @@ def tune_attention_kernels(
         TuningConstraint(name="BLOCK_D_KV", min=16, max=128, step=16),
         TuningConstraint(name="BLOCK_N_KV", min=16, max=64, step=16),
     ]
-    print([constraint.get_range() for constraint in tiling_constraints])
 
     tuning_results = {}
     tuning_dir = Path("results/tuning")
@@ -356,7 +369,7 @@ def tune_attention_kernels(
                     vmfb_dir,
                     dump_dir,
                     mfma_config,
-                    tuning_spec,
+                    {config_name: tuning_spec},
                 )
             except:
                 print("Failed to compile, skipping")
@@ -383,7 +396,7 @@ def tune_attention_kernels(
             return runtime
 
         study = optuna.create_study(direction="minimize")
-        study.optimize(objective, n_trials=50, show_progress_bar=True)
+        study.optimize(objective, n_trials=100, show_progress_bar=True)
 
         best_runtime, best_spec, best_mfma = tuning_result
         print("Optimal spec", best_spec)
@@ -476,6 +489,12 @@ if __name__ == "__main__":
         help="Uses heuristic approach to optimize mfma variant, tiling, and waves.",
     )
     parser.add_argument(
+        "--use_tuned",
+        type=str,
+        default=None,
+        help="Path to json file with tuned results.",
+    )
+    parser.add_argument(
         "--title", type=str, default=None, help="Title of run for save path"
     )
 
@@ -510,8 +529,35 @@ if __name__ == "__main__":
         tune_attention_kernels(configs, kernel_dir, vmfb_dir, dump_dir)
 
     else:
+        specs: dict[str, TuningSpec] = {}
+        mfma_configs: dict[str, tuple[MMAType, MMAType]] = {}
+
+        def to_mma(str_config: list[str]) -> tuple[MMAType, MMAType]:
+            return (
+                MMAType[str_config[0]],
+                MMAType[str_config[1]],
+            )
+
+        if args.use_tuned:
+            with open(args.use_tuned, "r") as file:
+                tuned_data: dict[str, dict] = json.load(file)
+                specs = {
+                    kernel_name: TuningSpec(**tune_result["spec"])
+                    for kernel_name, tune_result in tuned_data.items()
+                }
+                mfma_configs = {
+                    kernel_name: to_mma(tune_result["mfma"])
+                    for kernel_name, tune_result in tuned_data.items()
+                }
+
         vmfb_dict = compile_attention_kernels(
-            backend_name, configs, kernel_dir, vmfb_dir, dump_dir, mfma_config
+            backend_name,
+            configs,
+            kernel_dir,
+            vmfb_dir,
+            dump_dir,
+            mfma_configs,
+            tuning_specs=specs,
         )
 
         output_csv_base = f"attention_{backend_name}" + (

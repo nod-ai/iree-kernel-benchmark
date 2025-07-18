@@ -18,7 +18,7 @@ from iree.turbine.kernel.wave.scheduling.schedule_enums import SchedulingType
 
 def get_custom_vanilla_attention_kernel(
     shape: AttentionAttributes,
-    mfma_variant: MMAType,
+    mfma_variant: tuple[MMAType, MMAType],
     tuning_spec: TuningSpec,
     dynamic_dims: bool = False,
     is_causal: bool = False,
@@ -86,12 +86,12 @@ def get_custom_vanilla_attention_kernel(
     if N_waves > 1:
         constraints.append(tkw.WaveConstraint(N, BLOCK_N // N_waves))
 
-    # if mfma_variant[1] == MMAType.F32_16x16x16_F16:
-    #     Mvec = 16
-    #     Nvec = 16
-    # if mfma_variant[1] == MMAType.F32_32x32x8_F16:
-    Mvec = 32
-    Nvec = 32
+    if "16x16" in mfma_variant[1].name or "16x16" in mfma_variant[0].name:
+        Mvec = 16
+        Nvec = 16
+    else:
+        Mvec = 32
+        Nvec = 32
 
     constraints += [
         tkw.HardwareConstraint(
