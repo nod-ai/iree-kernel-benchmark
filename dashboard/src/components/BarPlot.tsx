@@ -10,7 +10,7 @@ import {
   Title,
 } from "chart.js";
 import type { Kernel } from "../types";
-import { BACKEND_COLORS, getColor } from "../utils/color";
+import { getBackendColor } from "../utils/color";
 import { KERNEL_DIMS } from "../utils/utils";
 
 Chart.register(
@@ -78,7 +78,9 @@ export function BarComparisonPlot({ kernels }: BarComparisonPlotProps) {
           {
             label: "Avg Mean Time (μs)",
             data,
-            backgroundColor: labels.map((label) => getColor(label)),
+            backgroundColor: labels.map((label) =>
+              getBackendColor(label).string()
+            ),
           },
         ],
       },

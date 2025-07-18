@@ -13,7 +13,7 @@ import {
 } from "chart.js";
 import zoomPlugin from "chartjs-plugin-zoom";
 import type { Kernel } from "../types";
-import { getColor } from "../utils/color";
+import { getBackendColor } from "../utils/color";
 
 Chart.register(
   ScatterController,
@@ -62,10 +62,10 @@ export default function RooflinePlot({
     const datasets = Object.entries(grouped).map(([backend, points]) => ({
       label: backend,
       data: points.filter((point) => point.id !== selectedKernel?.id),
-      borderColor: getColor(backend),
+      borderColor: getBackendColor(backend).string(),
       backgroundColor: selectedKernel
         ? "rgba(200, 200, 200, 0.3)"
-        : getColor(backend),
+        : getBackendColor(backend).string(),
       showLine: false,
       pointRadius: 5,
     }));
@@ -81,8 +81,8 @@ export default function RooflinePlot({
             name: selectedKernel.name,
           },
         ],
-        borderColor: getColor(selectedKernel.backend),
-        backgroundColor: getColor(selectedKernel.backend),
+        borderColor: getBackendColor(selectedKernel.backend).string(),
+        backgroundColor: getBackendColor(selectedKernel.backend).string(),
         showLine: false,
         pointRadius: 5,
       });

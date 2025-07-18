@@ -1,4 +1,4 @@
-import Color from "color";
+import Color, { type ColorInstance } from "color";
 import iwanthue from "iwanthue";
 
 const palette = iwanthue(100, {
@@ -10,11 +10,8 @@ let paletteIndex = 0;
 
 const backendColors: Record<string, string> = {};
 
-export function getColor(backend: string) {
+export function getBackendColor(backend: string): ColorInstance {
   if (!backendColors[backend]) backendColors[backend] = palette[paletteIndex++];
-  return backendColors[backend];
-}
-
-export function lighten(color: string, factor: number = 0.8): string {
-  return Color(color).lighten(factor).rgb().string();
+  const colorStr = backendColors[backend];
+  return Color(colorStr);
 }

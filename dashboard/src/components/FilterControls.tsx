@@ -1,6 +1,6 @@
 import { twMerge } from "tailwind-merge";
 import type { Kernel, KernelType } from "../types";
-import { getColor, lighten } from "../utils/color";
+import { getBackendColor } from "../utils/color";
 import { KERNEL_DIMS } from "../utils/utils";
 
 interface SelectProps {
@@ -68,9 +68,9 @@ function MultiSelectFilter({
           style={{
             backgroundColor:
               selectedOptions.includes(option) && distinctColors
-                ? lighten(getColor(option), 0.4)
+                ? getBackendColor(option).lighten(0.4).string()
                 : selectedOptions.includes(option)
-                  ? "#bfdbfe" // Tailwind's blue-200
+                  ? "#bfdbfe" // blue-200
                   : "#ffffff",
           }}
           onClick={() => handleToggle(option, selectedOptions, onInput)}
