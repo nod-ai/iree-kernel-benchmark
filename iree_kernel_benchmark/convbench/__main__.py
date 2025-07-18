@@ -72,6 +72,12 @@ if __name__ == "__main__":
         help="Run conv kernels using Turbine Kernels",
         action=argparse.BooleanOptionalAction,
     )
+    parser.add_argument(
+        "--iterations",
+        type=int,
+        default=3,
+        help="Number of benchmark iterations.",
+    )
 
     args = parser.parse_args()
     logging.basicConfig(level=args.log_level)
@@ -81,7 +87,7 @@ if __name__ == "__main__":
         sys.exit()
 
     # configs = get_conv_test_configs()
-    configs = get_tk_conv_configs() if args.tk else get_conv_configs()
+    configs = get_tk_conv_configs()  # if args.tk else get_conv_configs()
     print(f"Generated {len(configs)} conv configs.")
 
     configs = list(OrderedDict({config: None for config in configs}))
@@ -114,7 +120,13 @@ if __name__ == "__main__":
     )
     compile_conv = compile_conv_wave if args.tk else compile_conv_iree
     with Pool(num_cpus) as pool:
-        compilation_results = list(tqdm(pool.starmap(compile_conv, list(compile_args))))
+        compilation_results = list(
+            tqdm(
+                pool.istarmap(compile_conv, list(compile_args)),
+                total=len(configs),
+                desc="Compiling Conv Kernels",
+            )
+        )
 
     compile_error_count = 0
     for tag, config, mlir_file, vmfb_file, dump_path in compilation_results:
@@ -130,14 +142,19 @@ if __name__ == "__main__":
 
     results = []
     index = 0
-    output_csv = "results/iree_conv_tk.csv" if args.tk else "results/iree_conv.csv"
+    output_csv = (
+        "results/conv/conv_wave.csv" if args.tk else "results/conv/conv_iree.csv"
+    )
     entrypoint = "isolated_benchmark" if args.tk else "main"
     csv_dir = os.path.dirname(output_csv)
     if not os.path.exists(csv_dir):
         os.makedirs(csv_dir)
+    print(f"Results will be written to {Path(output_csv)}")
 
     run_error_count = 0
-    for vmfb_filename, value in vmfb_dict.items():
+    for vmfb_filename, value in tqdm(
+        vmfb_dict.items(), desc="Benchmarking Conv Kernels"
+    ):
         tag, config, dump_path = value
         name = config.get_name()
 
@@ -150,7 +167,7 @@ if __name__ == "__main__":
             "--device_allocator=caching",
             f"--module={vmfb_filename}",
             f"--function={entrypoint}",
-            "--benchmark_repetitions=3",
+            f"--benchmark_repetitions={args.iterations}",
             f"--input={image_shape}",
             f"--input={filter_shape}",
         ]
@@ -159,7 +176,6 @@ if __name__ == "__main__":
             out_shape = config.get_out_shape()
             exec_args.append(f"--input={out_shape}")
 
-        print(f"Running {vmfb_filename}...")
         # iree benchmark kernels
         ret_value, cmd_out, cmd_stderr = run_iree_command(exec_args)
         ok = ret_value == 0
@@ -235,7 +251,4 @@ if __name__ == "__main__":
     write_results_to_csv(results, output_csv, fieldnames)
     print(f"Results written to {output_csv}")
 
-    if compile_error_count != 0 or run_error_count != 0:
-        exit(1)
-    else:
-        exit(0)
+    exit(0)

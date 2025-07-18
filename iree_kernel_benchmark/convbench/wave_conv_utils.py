@@ -78,7 +78,6 @@ def _convert_dtype(dtype: str):
 
 
 def _compile_conv(config: ConvConfig, mlir_file: Path, vmfb_file: Path):
-    print("Compile TKW kernel", config.OP)
     op_type, layout = _decode_op(config.OP)
 
     in_h = config.H * config.S + config.P - 1
@@ -112,5 +111,3 @@ def _compile_conv(config: ConvConfig, mlir_file: Path, vmfb_file: Path):
     result = wave_compile(options, conv)
     with open(mlir_file, "w") as f:
         f.write(result.asm)
-
-    print(f"Successfully compiled to {vmfb_file}")

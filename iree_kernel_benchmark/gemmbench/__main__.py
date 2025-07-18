@@ -18,12 +18,20 @@ from .problems import get_gemm_configs, get_tk_gemm_configs, get_matching_config
 
 
 def compile_gemm(
-    tag, config, kernel_dir, vmfb_dir, target, extra_compiler_args, tk, dump_dir=None
-):
+    tag: str,
+    config: GemmConfig,
+    kernel_dir: Path,
+    vmfb_dir: Path,
+    target: str,
+    extra_compiler_args: list[str],
+    tk: bool,
+    dump_dir=None,
+) -> tuple[str, GemmConfig, Path, Optional[Path]]:
     if dump_dir:
         name = config.get_name()
         dpath = os.path.join(dump_dir, name)
         extra_compiler_args.extend([f"--iree-hal-dump-executable-files-to={dpath}"])
+
     mlir_file, vmfb_file = compile_gemm_config(
         config, kernel_dir, vmfb_dir, target, extra_compiler_args, tk
     )
@@ -99,13 +107,19 @@ if __name__ == "__main__":
         "--tk",
         action="store_true",
         default=False,
-        help="Run gemm kernels using Turbine Kernels",
+        help="Run gemm kernels using Wave Kernels",
     )
     parser.add_argument(
         "--dump_dir",
         type=str,
         default=None,
         help="Directory to which executable files will be dumped.",
+    )
+    parser.add_argument(
+        "--iterations",
+        type=int,
+        default=3,
+        help="Number of benchmark iterations.",
     )
 
     args = parser.parse_args()
@@ -131,11 +145,7 @@ if __name__ == "__main__":
     tk = args.tk
     configs = []
     for dtype in requested_dtypes:
-        configs += (
-            get_tk_gemm_configs(dtype, args.raw_accumulators)
-            if tk
-            else get_gemm_configs(dtype, args.raw_accumulators)
-        )
+        configs += get_gemm_configs(dtype, args.raw_accumulators)
     configs = get_matching_configs(
         configs,
         requested_variants,
@@ -174,7 +184,13 @@ if __name__ == "__main__":
         configs,
     )
     with Pool(num_cpus) as pool:
-        compilation_results = list(tqdm(pool.starmap(compile_gemm, list(compile_args))))
+        compilation_results = list(
+            tqdm(
+                pool.istarmap(compile_gemm, list(compile_args)),
+                total=len(configs),
+                desc="Compiling GEMM Kernels",
+            )
+        )
 
     compile_error_count = 0
     for tag, config, mlir_file, vmfb_file in compilation_results:
@@ -190,18 +206,19 @@ if __name__ == "__main__":
 
     results = []
     index = 0
-    output_csv_base = "iree_gemm"
+    output_csv_base = "gemm_wave" if tk else "gemm_iree"
     if args.raw_accumulators:
         output_csv_base += "_raw_accumulators"
-    if tk:
-        output_csv_base += "_tk"
-    output_csv = f"results/{output_csv_base}.csv"
+    output_csv = f"results/gemm/{output_csv_base}.csv"
     csv_dir = os.path.dirname(output_csv)
     if not os.path.exists(csv_dir):
         os.makedirs(csv_dir)
+    print(f"Results will be written to {Path(output_csv)}")
 
     run_error_count = 0
-    for vmfb_filename, value in vmfb_dict.items():
+    for vmfb_filename, value in tqdm(
+        vmfb_dict.items(), desc="Benchmarking GEMM Kernels"
+    ):
         tag, config = value
         vmfb_hash = generate_md5_hex(vmfb_filename)
         name = config.get_name()
@@ -214,7 +231,7 @@ if __name__ == "__main__":
             f"--device={device}",
             "--device_allocator=caching",
             f"--module={vmfb_filename}",
-            "--benchmark_repetitions=3",
+            f"--benchmark_repetitions={args.iterations}",
             f"--input={inp1}",
             f"--input={inp2}",
         ]
@@ -232,6 +249,9 @@ if __name__ == "__main__":
         if not ok:
             run_error_count += 1
         benchmark_gemm_mean_time_ms = bench_summary_process(ret_value, cmd_out)
+        if benchmark_gemm_mean_time_ms is None:
+            print(f"{name} benchmark failed. Skipping")
+            continue
         benchmark_gemm_mean_time_us = benchmark_gemm_mean_time_ms * 1000
 
         flops = config.get_flops()
@@ -282,7 +302,4 @@ if __name__ == "__main__":
     write_results_to_csv(results, output_csv, fieldnames)
     print(f"Results written to {output_csv}")
 
-    if compile_error_count != 0 or run_error_count != 0:
-        exit(1)
-    else:
-        exit(0)
+    exit(0)

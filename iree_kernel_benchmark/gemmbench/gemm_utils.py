@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 try:
+    from iree.turbine.kernel.wave.constraints import MMAType
     import iree.turbine.kernel as tk
     import iree.turbine.kernel.lang as tkl
     import iree.turbine.kernel.wave as tkw
@@ -399,7 +400,7 @@ def compile_gemm_config(
         try:
             mlir_content = generate_tk_mlir(config, vmfb_file)
         except Exception as e:
-            traceback.print_exc()
+            # traceback.print_exc()
             error_file = vmfb_dir / (config.get_name() + "_error.txt")
             print(
                 f"Failed to compile {config.get_name()}. Error dumped in {error_file}"
@@ -439,11 +440,8 @@ def compile_gemm_config(
             "--iree-llvmgpu-enable-prefetch=true",
         ]
 
-    print(" ".join(exec_args))
-
     ret_value, stdout, stderr = run_iree_command(exec_args)
     if ret_value == 0:
-        print(f"Successfully compiled {mlir_file} to {vmfb_file}")
         if stderr:
             with open(dump_file, "w") as f:
                 f.write(stderr.decode("utf-8"))
