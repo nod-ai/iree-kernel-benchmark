@@ -1,27 +1,20 @@
-export const BACKEND_COLORS: Record<string, string> = {
-  wave: "#1f77b4",
-  iree: "#ff7f0e",
-  hipblaslt: "#2ca02c",
-  wavegqa: "#982ca0ff",
-};
+import Color from "color";
+import iwanthue from "iwanthue";
 
-function hashStringToColor(str: string): string {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = str.charCodeAt(i) + ((hash << 5) - hash);
-  }
+const palette = iwanthue(100, {
+  clustering: "k-means",
+  seed: "without",
+  quality: 50,
+});
+let paletteIndex = 0;
 
-  // Generate RGB values from the hash
-  const r = (hash >> 16) & 0xff;
-  const g = (hash >> 8) & 0xff;
-  const b = hash & 0xff;
-
-  // Darken the color to ensure contrast against white
-  const darken = (value: number) => Math.floor(value * 0.6);
-
-  return `rgb(${darken(r)}, ${darken(g)}, ${darken(b)})`;
-}
+const backendColors: Record<string, string> = {};
 
 export function getColor(backend: string) {
-  return BACKEND_COLORS[backend] || hashStringToColor(backend);
+  if (!backendColors[backend]) backendColors[backend] = palette[paletteIndex++];
+  return backendColors[backend];
+}
+
+export function lighten(color: string, factor: number = 0.8): string {
+  return Color(color).lighten(factor).rgb().string();
 }

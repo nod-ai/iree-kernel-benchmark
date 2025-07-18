@@ -1,10 +1,9 @@
-import { useState } from "react";
 import type { Kernel } from "../types";
 import { KERNEL_DIMS, toTitleCase } from "../utils/utils";
 
 interface ShapeSelectorProps {
-  selectedKernel: any;
-  kernels: any[];
+  selectedKernel: Kernel;
+  kernels: Kernel[];
   setSelected: (kernelId: string | null) => void;
   dimensions: string[];
 }
@@ -17,7 +16,7 @@ function ShapeSelector({
 }: ShapeSelectorProps) {
   const selection = dimensions.map((dimension) => ({
     name: dimension,
-    value: selectedKernel[dimension],
+    value: selectedKernel.shape[dimension],
   }));
 
   const uniqueElements = (array: any[]) => {
@@ -32,7 +31,7 @@ function ShapeSelector({
         return filteredKernels;
       }
       filteredKernels = filteredKernels.filter(
-        (kernel) => kernel[dim.name] === dim.value
+        (kernel) => kernel.shape[dim.name] === dim.value
       );
     }
 
@@ -41,14 +40,18 @@ function ShapeSelector({
 
   const filterDim = (dimName: string) => {
     return uniqueElements(
-      filterKernels(dimName).map((kernel) => kernel[dimName])
+      filterKernels(dimName).map((kernel) =>
+        dimName === "dtype" ? kernel.dtype : kernel.shape[dimName]
+      )
     );
   };
 
-  const setDim = (dimName: string, dimValue: number) => {
+  const setDim = (dimName: string, dimValue: any) => {
     let filteredKernels = filterKernels(dimName);
-    filteredKernels = filteredKernels.filter(
-      (kernel) => kernel[dimName] === dimValue
+    filteredKernels = filteredKernels.filter((kernel) =>
+      dimName === "dtype"
+        ? kernel.dtype === dimValue
+        : kernel.shape[dimName] === parseInt(dimValue)
     );
     if (filteredKernels.length > 0) setSelected(filteredKernels[0].id);
     else setSelected(null);
@@ -60,9 +63,9 @@ function ShapeSelector({
         <div>
           {dim.name}:
           <select
-            value={selectedKernel[dim.name]}
+            value={selectedKernel.shape[dim.name]}
             onInput={(e) => {
-              setDim(dim.name, parseInt(e.currentTarget.value));
+              setDim(dim.name, e.currentTarget.value);
             }}
           >
             {filterDim(dim.name).map((dimValue) => (

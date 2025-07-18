@@ -2,15 +2,12 @@ import RooflinePlot from "../components/RooflinePlot";
 import { BarComparisonPlot } from "../components/BarPlot";
 import FilterControls from "../components/FilterControls";
 import { useEffect, useMemo, useState } from "react";
-import type {
-  AttentionKernel,
-  ConvKernel,
-  GemmKernel,
-  Kernel,
-  KernelType,
-} from "../types";
-import { loadResultCsv } from "../utils/csv";
+import type { Kernel, KernelType } from "../types";
+import { fetchData, loadResultCsv } from "../utils/csv";
 import KernelView from "../components/KernelView";
+import Navbar from "../components/Navbar";
+import PageContainer from "../components/PageContainer";
+import { KERNEL_DIMS } from "../utils/utils";
 
 export default function Dashboard() {
   const [kernels, setKernels] = useState<Kernel[]>([]);
@@ -21,29 +18,7 @@ export default function Dashboard() {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
 
   useEffect(() => {
-    async function fetchData() {
-      const dataConfigs = [
-        ["iree", "attention", "/results/attention/attention_iree.csv"],
-        ["wave", "attention", "/results/attention/attention_wave.csv"],
-        ["wavegqa", "attention", "/results/attention/attention_wavegqa.csv"],
-        [
-          "wavegqanew",
-          "attention",
-          "/results/attention/attention_wavegqanew.csv",
-        ],
-        ["iree", "conv", "/results/conv/conv_iree.csv"],
-        ["wave", "conv", "/results/conv/conv_wave.csv"],
-        ["iree", "gemm", "/results/gemm/gemm_iree.csv"],
-        ["wave", "gemm", "/results/gemm/gemm_wave.csv"],
-      ];
-      const kernelRequests = dataConfigs.map(
-        async ([backend, kernelType, csvPath]) =>
-          await loadResultCsv(backend, kernelType as KernelType, csvPath)
-      );
-      const kernels = (await Promise.all(kernelRequests)).flat();
-      setKernels(kernels);
-    }
-    fetchData();
+    fetchData().then(setKernels);
   }, []);
 
   useEffect(() => {
@@ -80,45 +55,14 @@ export default function Dashboard() {
     if (!selectedKernel) return [];
     return kernels.filter((k) => {
       if (k.kernelType !== selectedKernel.kernelType) return false;
-      if (k.kernelType === "gemm") {
-        const gk = selectedKernel as GemmKernel;
-        return (
-          k.M === gk.M &&
-          k.N === gk.N &&
-          k.K === gk.K &&
-          k.transpose === gk.transpose &&
-          k.dtype === gk.dtype
-        );
-      } else if (k.kernelType === "attention") {
-        const ak = selectedKernel as AttentionKernel;
-        return (
-          k.B === ak.B &&
-          k.M === ak.M &&
-          k.N === ak.N &&
-          k.K1 === ak.K1 &&
-          k.K2 === ak.K2 &&
-          k.dtype === ak.dtype
-        );
-      } else if (k.kernelType === "conv") {
-        const ck = selectedKernel as ConvKernel;
-        return (
-          k.B === ck.B &&
-          k.H === ck.H &&
-          k.W === ck.W &&
-          k.C === ck.C &&
-          k.P === ck.P &&
-          k.Q === ck.Q &&
-          k.F === ck.F &&
-          k.S === ck.S &&
-          k.dtype === ck.dtype
-        );
-      }
+      return KERNEL_DIMS[k.kernelType].every(
+        (dimName) => k.shape[dimName] === selectedKernel.shape[dimName]
+      );
     });
   }, [kernels, selectedKernel]);
 
   return (
-    <div className="p-6 space-y-8">
-      <h1 className="text-2xl font-bold">Benchmarking Dashboard</h1>
+    <PageContainer activePage="dashboard">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <FilterControls
           kernels={kernels}
@@ -165,6 +109,6 @@ export default function Dashboard() {
           setSelected={setSelectedKernelId}
         />
       )}
-    </div>
+    </PageContainer>
   );
 }

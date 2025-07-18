@@ -2,7 +2,7 @@
 
 export type KernelType = "gemm" | "attention" | "conv";
 
-export interface KernelBase {
+export interface Kernel {
   id: string;
   backend: string;
   kernelType: KernelType;
@@ -12,39 +12,8 @@ export interface KernelBase {
   meanMicroseconds: number;
   arithmeticIntensity: number;
   tflops: number;
+  shape: Record<string, any>;
 }
-
-export type GemmTransposeType = "NN" | "NT" | "TN" | "TT";
-export interface GemmKernel extends KernelBase {
-  kernelType: "gemm";
-  M: number;
-  N: number;
-  K: number;
-  transpose: GemmTransposeType;
-}
-
-export interface AttentionKernel extends KernelBase {
-  kernelType: "attention";
-  B: number;
-  M: number;
-  N: number;
-  K1: number;
-  K2: number;
-}
-
-export interface ConvKernel extends KernelBase {
-  kernelType: "conv";
-  B: number;
-  H: number;
-  W: number;
-  C: number;
-  P: number;
-  Q: number;
-  F: number;
-  S: number;
-}
-
-export type Kernel = GemmKernel | AttentionKernel | ConvKernel;
 
 /* Source Control */
 export interface ChangeAuthor {
