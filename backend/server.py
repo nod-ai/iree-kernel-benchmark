@@ -4,11 +4,13 @@ from flask import Flask, jsonify
 from flask_cors import CORS
 from dataclass_wizard import fromdict
 
-from storage.directory import DirectoryClient
-import storage.types as dbtypes
-from storage.db import DatabaseClient
+from storage import get_azure_clients
+from storage.artifacts import fetch_latest_artifact
 from storage.conversion import convert_prs_from_github
 import json
+
+
+directory_client, db_client = get_azure_clients()
 
 app = Flask(__name__)
 CORS(app)
@@ -38,11 +40,9 @@ def get_pull_requests():
     modifications = convert_prs_from_github(github_prs)
     return jsonify(modifications)
 
-@app.route('/dashboard')
+@app.route('/artifact')
 def get_latest_artifact():
-    repo = get_repo('nod-ai/iree-kernel-benchmark')
-    latest_artifact = repo.get_artifacts().get_page(0)[0]
-    
+    return jsonify(fetch_latest_artifact(directory_client, db_client))
 
 if __name__ == '__main__':
     app.run(port=3000)

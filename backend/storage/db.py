@@ -112,3 +112,14 @@ class DatabaseClient:
                 modifications.append(fromdict(RepoPullRequest, entity_dict))
             else:
                 modifications.append(fromdict(RepoMerge, entity_dict))
+    
+    
+    def clear_all_runs(self):
+        entities = self._run_tb.list_entities()
+        for entity in entities:
+            self._run_tb.delete_entity(partition_key=entity["PartitionKey"], row_key=entity["RowKey"])
+
+    def clear_all_repos(self):
+        entities = self._repo_tb.list_entities()
+        for entity in entities:
+            self._repo_tb.delete_entity(partition_key=entity["PartitionKey"], row_key=entity["RowKey"])
