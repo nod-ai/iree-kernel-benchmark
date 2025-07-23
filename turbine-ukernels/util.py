@@ -6,6 +6,7 @@ import iree.turbine.aot as aot
 from iree.compiler import compile_file, OutputFormat
 from iree.runtime import VmModule
 from iree.turbine.runtime import Launchable, Device
+from iree.turbine.runtime.device import get_device_from_torch
 
 from tempfile import TemporaryDirectory
 from torch.autograd import DeviceType
@@ -117,8 +118,7 @@ class IREEModule(Run):
 
     @staticmethod
     def compile(
-        backend: str,
-        chip: str,
+        device: torch.device,
         module: nn.Module,
         arguments: Sequence[Any],
         intermediate_folder: Optional[str] = None,
@@ -152,8 +152,8 @@ class IREEModule(Run):
             print(exported.mlir_module, flush=True)
 
         # Compile the module.
-        ireecc_args = [
-            f"--iree-hip-target={chip}",
+        iree_device = get_device_from_torch(device)
+        ireecc_args = list(iree_device.compile_target_flags) + [
             "--iree-opt-level=O3",
             "--iree-opt-strip-assertions=true",
         ]
@@ -161,9 +161,15 @@ class IREEModule(Run):
             ireecc_args += [
                 "--iree-preprocessing-pass-pipeline=builtin.module(util.func(iree-preprocessing-make-single-dispatch))"
             ]
+        driver_to_backend = {
+            "hip": "rocm",
+            "cuda": "cuda",
+            "local-task": "llvm-cpu",
+            "local-sync": "llvm-cpu",
+        }
         vmfb_bytes = _compile_exported(
             exported,
-            target_backends=[backend],
+            target_backends=[driver_to_backend[iree_device.driver_id]],
             optimize=True,
             extra_args=ireecc_args,
             output_format=OutputFormat.FLATBUFFER_BINARY,
@@ -175,16 +181,14 @@ class IREEModule(Run):
 
     @staticmethod
     def from_torch(
-        backend: str,
-        chip: str,
+        device: torch.device,
         module: nn.Module,
         arguments: Sequence[Any],
         **kwargs,
     ):
         """Create a IREE module runner from a torch module."""
         vmfb_bytes = IREEModule.compile(
-            backend=backend,
-            chip=chip,
+            device=device,
             module=module,
             arguments=arguments,
             **kwargs,

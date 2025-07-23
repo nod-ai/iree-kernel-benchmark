@@ -5,6 +5,8 @@ import torch.nn as nn
 from dataclasses import dataclass
 from util import TorchModule, IREEModule, rel_error, torch_types
 
+torch.set_default_device("cuda")
+
 
 @dataclass
 class Dim:
@@ -13,8 +15,6 @@ class Dim:
 
 
 def attention(
-    backend: str,
-    chip: str,
     b: Dim,
     m: Dim,
     n: Dim,
@@ -45,11 +45,12 @@ def attention(
         flush=True,
     )
 
+    device = torch.get_default_device()
     model = Attention()
 
-    q = torch.randn(batch + (b.size, m.size, k1.size), dtype=dtype).cuda()
-    k = torch.randn(batch + (b.size, k2.size, k1.size), dtype=dtype).cuda()
-    v = torch.randn(batch + (b.size, k2.size, n.size), dtype=dtype).cuda()
+    q = torch.randn(batch + (b.size, m.size, k1.size), dtype=dtype).to(device)
+    k = torch.randn(batch + (b.size, k2.size, k1.size), dtype=dtype).to(device)
+    v = torch.randn(batch + (b.size, k2.size, n.size), dtype=dtype).to(device)
     dynamic_shapes = {"q": {}, "k": {}, "v": {}}
 
     if b.dynamic:
@@ -75,7 +76,7 @@ def attention(
     print("\n" + ("=" * 40), flush=True)
     print("Compiling IREE...", flush=True)
     iree_run = IREEModule.from_torch(
-        backend, chip, model, (q, k, v), dynamic_shapes=dynamic_shapes
+        device, model, (q, k, v), dynamic_shapes=dynamic_shapes
     )
     print("Done compiling", flush=True)
 
@@ -100,10 +101,6 @@ def attention(
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--backend", type=str, default="rocm", help="IREE's compilation backend"
-    )
-    parser.add_argument("--chip", "-c", type=str, required=True, help="the target chip")
     parser.add_argument(
         "--batch-size",
         "-B",
@@ -148,8 +145,6 @@ def main():
     )
     args = parser.parse_args()
     attention(
-        args.backend,
-        args.chip,
         b=Dim(args.b, "b" in args.dynamic_dims),
         m=Dim(args.m, "m" in args.dynamic_dims),
         n=Dim(args.n, "n" in args.dynamic_dims),
