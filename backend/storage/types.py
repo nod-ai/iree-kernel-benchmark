@@ -2,17 +2,27 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
 
+# @dataclass
+# class RunResultEntry:
+#     triggerId: str
+#     blobName: str
+#     runType: str
+#     timestamp: datetime
+
 @dataclass
-class RunResultEntry:
-    triggerId: str
+class BenchmarkRun:
+    _id: str
+    headSha: str
+    status: str
+    conclusion: str
+    steps: list[dict]
     blobName: str
-    runType: str
-    timestamp: datetime
+    kernels: list[dict]
 
 @dataclass
 class RunArtifact:
     kernels: list[dict]
-    mapping: RunResultEntry
+    mapping: BenchmarkRun
 
 @dataclass
 class ChangeAuthor:
@@ -22,6 +32,7 @@ class ChangeAuthor:
 @dataclass
 class RepoModification:
     _id: str
+    headSha: str
     url: str
     type: str
     timestamp: datetime

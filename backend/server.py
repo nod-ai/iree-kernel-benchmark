@@ -5,7 +5,7 @@ from flask_cors import CORS
 from dataclass_wizard import fromdict, asdict
 
 from storage import get_azure_clients
-from storage.artifacts import fetch_latest_artifact
+from storage.artifacts import fetch_latest_artifact, load_artifact_kernels
 from storage.conversion import convert_prs_from_github
 import json
 
@@ -29,10 +29,19 @@ def get_pull_requests():
     modifications = db_client.find_all_modifications()
     return jsonify([asdict(modification) for modification in modifications])
 
+@app.route('/runs')
+def get_all_runs():
+    runs = db_client.find_all_runs()
+    return jsonify([asdict(run) for run in runs])
+
 @app.route('/artifact')
 def get_latest_artifact():
-    artifact = fetch_latest_artifact(directory_client, db_client)
-    return jsonify(artifact.kernels)
+    print('hi')
+    # artifact = fetch_latest_artifact(directory_client, db_client)
+    # return jsonify(artifact.kernels)
+    return jsonify(
+        load_artifact_kernels(directory_client, '2025-07-23T17:30:22.817728+00:00/benchmark-results')
+    )
 
 if __name__ == '__main__':
     app.run(port=3000)

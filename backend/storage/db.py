@@ -6,51 +6,55 @@ import uuid
 import json
 from datetime import datetime, timezone
 
+def flatten_dict(old_obj: dict, indent=4):
+    new_obj = {}
+    for key, value in old_obj.items():
+        if isinstance(value, (dict, list)):
+            value = json.dumps(value, indent=indent)
+        new_obj[key] = value
+    return new_obj
+
 class DatabaseClient:
     def __init__(self, connection_string: str):
         self._service_client = TableServiceClient.from_connection_string(connection_string)
         self._run_tb = self._service_client.create_table_if_not_exists("runresults")
         self._repo_tb = self._service_client.create_table_if_not_exists("repomodifications")
 
-    def insert_run(self, entry: RunResultEntry) -> str:
-        entry_id = str(uuid.uuid4())
-        entity = asdict(entry)
-        entity.update({
-            "timestamp": int(entry.timestamp.timestamp()),
+    def insert_run(self, run: BenchmarkRun) -> str:
+        run_obj = flatten_dict(asdict(run))
+        run_obj.update({
             "PartitionKey": "run",
-            "RowKey": entry_id,
+            "RowKey": run._id,
         })
-        self._run_tb.create_entity(entity)
-        return entry_id
+        self._run_tb.create_entity(run_obj)
+        return run._id
+    
+    def update_run(self, run_id: str, **kwargs):
+        entity = self._run_tb.get_entity(partition_key="run", row_key=run_id)
+        entity.update(kwargs)
+        entity = flatten_dict(entity)
+        self._run_tb.update_entity(entity)
 
-    def delete_run(self, entry_id: str):
-        self._run_tb.delete_entity(partition_key="run", row_key=entry_id)
+    def delete_run(self, run_id: str):
+        self._run_tb.delete_entity(partition_key="run", row_key=run_id)
 
-    def find_run_by_id(self, entry_id: str) -> Optional[dict]:
-        entities = self._run_tb.query_entities(f'RowKey eq {entry_id}')
-        if len(entities) > 0:
-            return entities[0]
-        return None
+    def find_run_by_id(self, run_id: str) -> dict:
+        return self._run_tb.get_entity(partition_key="run", row_key=run_id)
 
-    def query_runs(self, query: str) -> list[RunResultEntry]:
+    def query_runs(self, query: str) -> list[BenchmarkRun]:
         entities = list(self._run_tb.query_entities(query))
         runs = []
         for entity in entities:
-            entity['timestamp'] = datetime.fromtimestamp(entity['timestamp'], tz=timezone.utc)
-            runs.append(fromdict(RunResultEntry, entity))
+            runs.append(fromdict(BenchmarkRun, entity))
         return runs
 
-    def find_all_runs(self) -> list[RunResultEntry]:
+    def find_all_runs(self) -> list[BenchmarkRun]:
         entities = list(self._run_tb.list_entities())
-        sorted_entities = sorted(entities, key=lambda x: x["timestamp"], reverse=True)
-
         runs = []
-        for entity in sorted_entities:
-            entity['timestamp'] = datetime.fromtimestamp(entity['timestamp'], tz=timezone.utc)
-            runs.append(fromdict(RunResultEntry, entity))
-        
+        for entity in entities:
+            entity['steps'] = json.loads(entity['steps'])
+            runs.append(fromdict(BenchmarkRun, entity))
         return runs
-
     
     def insert_pull_request(self, pr: RepoPullRequest) -> str:
         entity = {
@@ -82,7 +86,7 @@ class DatabaseClient:
                     entity[key] = json.dumps(value)
             else:
                 entity[key] = value
-        self._repo_tb.update_entity(entity, mode="MERGE")
+        self._repo_tb.update_entity(entity)
 
     def delete_pull_request(self, prId: str) -> str:
         self._repo_tb.delete_entity(partition_key="pull", row_key=prId)
@@ -110,7 +114,7 @@ class DatabaseClient:
                 entity[key] = json.dumps(asdict(value) if key == "author" else value)
             else:
                 entity[key] = value
-        self._repo_tb.update_entity(entity, mode="MERGE")
+        self._repo_tb.update_entity(entity)
 
     def delete_merge(self, mergeId: str) -> str:
         self._repo_tb.delete_entity(partition_key="merge", row_key=mergeId)

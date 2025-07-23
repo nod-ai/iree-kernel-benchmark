@@ -3,6 +3,7 @@ import json
 import os
 import jwt
 from pathlib import Path
+from typing import Literal
 import requests
 from dotenv import load_dotenv
 
@@ -10,7 +11,8 @@ load_dotenv()
 
 PEM_FILE = Path(os.getenv("PEM_FILE"))
 CLIENT_ID = os.getenv("CLIENT_ID")
-INSTALLATION_ID = int(os.getenv("INSTALLATION_ID"))
+WAVE_INSTALLATION_ID = int(os.getenv("WAVE_INSTALLATION_ID"))
+BENCH_INSTALLATION_ID = int(os.getenv("BENCH_INSTALLATION_ID"))
 JWT_CACHE_FILE = os.getenv("JWT_CACHE_FILE")
 ACCESS_TOKEN_CACHE_FILE = os.getenv("ACCESS_TOKEN_CACHE_FILE")
 
@@ -40,28 +42,31 @@ def get_jwt():
 
     payload = {
         'iat': current_time,
-        'exp': current_time + 600,
+        'exp': current_time + 400,
         'iss': CLIENT_ID
     }
 
     encoded_jwt = jwt.encode(payload, signing_key, algorithm='RS256')
     cache = {
         "token": encoded_jwt,
-        "expires_at": current_time + 600
+        "expires_at": current_time + 400
     }
     save_cache(JWT_CACHE_FILE, cache)
 
     return encoded_jwt
 
-def get_access_token():
+def get_access_token(installation: Literal['WAVE', 'BENCH'] = 'WAVE'):
     current_time = int(time.time())
-    cache = load_cache(ACCESS_TOKEN_CACHE_FILE)
+    cache_file = f'{installation}_{ACCESS_TOKEN_CACHE_FILE}'
+
+    cache = load_cache(cache_file)
 
     if cache.get("token") and cache.get("expires_at", 0) > current_time:
         return cache["token"]
 
     jwt_token = get_jwt()
-    url = f"https://api.github.com/app/installations/{INSTALLATION_ID}/access_tokens"
+    installation_id = WAVE_INSTALLATION_ID if installation == 'WAVE' else BENCH_INSTALLATION_ID
+    url = f"https://api.github.com/app/installations/{installation_id}/access_tokens"
     headers = {
         "Accept": "application/vnd.github+json",
         "Authorization": f"Bearer {jwt_token}",
@@ -78,7 +83,7 @@ def get_access_token():
             "token": response_data["token"],
             "expires_at": expires_at_epoch
         }
-        save_cache(ACCESS_TOKEN_CACHE_FILE, cache)
+        save_cache(cache_file, cache)
         return response_data["token"]
     else:
         raise Exception(f"Failed to get access token: {response_data}")

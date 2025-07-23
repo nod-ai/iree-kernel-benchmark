@@ -2,7 +2,7 @@ from .directory import DirectoryClient
 from .db import DatabaseClient
 from .types import *
 from auth import get_access_token
-from github import Repository
+from github import Repository, Artifact
 from uuid import uuid4
 from pathlib import Path
 import os
@@ -88,50 +88,67 @@ def parse_kernels_from_path(artifact_path: str | Path) -> list[dict]:
 
     return results
 
-def download_artifact_kernels(repo: Repository.Repository, limit=10) -> List[List[Dict]]:
+def download_artifact_kernels(artifact: Artifact.Artifact) -> List[Dict]:
+    kernels = []
+
+    download_url = artifact.archive_download_url
+    headers = dict(artifact.raw_headers)
+    headers['Authorization'] = f'Bearer {get_access_token()}'
+
+    response = requests.get(download_url, headers=headers)
+    
+    if response.status_code != 200:
+        print('failed to download', artifact.id, download_url, response.json())
+        return []
+
+    artifact_id = uuid4()
+    base_path = Path(f"./tmp/{artifact_id}")
+    zip_path = base_path / "results.zip"
+    extract_path = base_path / "benchmark-results"
+
+    os.makedirs(os.path.dirname(zip_path), exist_ok=True)
+    os.makedirs(extract_path, exist_ok=True)
+
+    with open(zip_path, 'wb') as f:
+        f.write(response.content)
+    
+    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+        zip_ref.extractall(extract_path)
+    
+    try:
+        kernels = parse_kernels_from_path(extract_path)
+    except:
+        print(f'Failed to load artifact {artifact.url}')
+    
+    # shutil.rmtree(base_path)
+    return kernels
+
+def download_all_artifact_kernels(repo: Repository.Repository, limit=10) -> List[List[Dict]]:
     results = []
 
     artifacts = repo.get_artifacts()
     for artifact in artifacts:
-        download_url = artifact.archive_download_url
-        headers = dict(artifact.raw_headers)
-        headers['Authorization'] = f'Bearer {get_access_token()}'
+        artifact_kernels = download_artifact_kernels(artifact)
+        results.extend(artifact_kernels)
 
-        response = requests.get(download_url, headers=headers)
-        
-        if response.status_code != 200:
-            continue
-
-        artifact_id = uuid4()
-        base_path = Path(f"./tmp/{artifact_id}")
-        zip_path = base_path / "results.zip"
-        extract_path = base_path / "benchmark-results"
-
-        os.makedirs(os.path.dirname(zip_path), exist_ok=True)
-        os.makedirs(extract_path, exist_ok=True)
-
-        with open(zip_path, 'wb') as f:
-            f.write(response.content)
-        
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall(extract_path)
-        
-        try:
-            kernels = parse_kernels_from_path(extract_path)
-            results.append(kernels)
-        except:
-            print(f'Failed to load artifact {artifact.url}')
-        
-        shutil.rmtree(base_path)
         if len(results) >= limit:
             return results
     
     return results
 
+def download_artifact_kernels_by_run_id(repo: Repository.Repository, run_id) -> List[Dict]:
+    run = repo.get_workflow_run(int(run_id))
+    artifacts = run.get_artifacts()
+    for artifact in artifacts:
+        return download_artifact_kernels(artifact)
+    return []
+
 def load_artifact_kernels(client: DirectoryClient, directory_name: str) -> list[dict]:
     artifact_id = str(uuid4())
     local_path = Path(f'./tmp/{artifact_id}')
     client.download(directory_name, str(local_path))
+
+    print('awoefij')
 
     artifact_path = local_path / 'benchmark-results'
     results = parse_kernels_from_path(artifact_path)

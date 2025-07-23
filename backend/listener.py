@@ -1,8 +1,16 @@
+from webhook import WorkflowClient
 from wsgiref.simple_server import make_server
 from pyramid.config import Configurator
 from pyramid.view import view_config, view_defaults
 from pyramid.response import Response
-from github import Github
+import json
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+connection_string = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+container_name = 'benchmarkcache'
+workflow_client = WorkflowClient(connection_string, container_name)
 
 ENDPOINT = "webhook"
 
@@ -29,6 +37,16 @@ class PayloadView:
         """Handles pull request events."""
         print("Pull Request action:", self.payload['action'])
         print("Number of commits in PR:", self.payload['pull_request']['commits'])
+        return Response("success")
+
+    @view_config(header="X-Github-Event:workflow_run")
+    def payload_workflow_run(self):
+        workflow_client.handle_workflow_run_payload(self.payload)
+        return Response("success")
+    
+    @view_config(header="X-Github-Event:workflow_job")
+    def payload_workflow_job(self):
+        workflow_client.handle_workflow_job_payload(self.payload)
         return Response("success")
 
     @view_config(header="X-Github-Event:ping")
