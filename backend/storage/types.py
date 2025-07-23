@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Optional
 
 @dataclass
@@ -6,7 +7,12 @@ class RunResultEntry:
     triggerId: str
     blobName: str
     runType: str
-    timestamp: int
+    timestamp: datetime
+
+@dataclass
+class RunArtifact:
+    kernels: list[dict]
+    mapping: RunResultEntry
 
 @dataclass
 class ChangeAuthor:
@@ -18,7 +24,7 @@ class RepoModification:
     _id: str
     url: str
     type: str
-    timestamp: int
+    timestamp: datetime
     author: ChangeAuthor
     changeStats: dict[str, float]
 
@@ -27,7 +33,7 @@ class RepoCommit:
     _id: str
     title: str
     author: ChangeAuthor
-    timestamp: int
+    timestamp: datetime
     description: Optional[str]
 
 @dataclass

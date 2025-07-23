@@ -4,6 +4,7 @@ from dataclass_wizard import fromdict, asdict
 from typing import Literal, Optional
 import uuid
 import json
+from datetime import datetime, timezone
 
 class DatabaseClient:
     def __init__(self, connection_string: str):
@@ -15,6 +16,7 @@ class DatabaseClient:
         entry_id = str(uuid.uuid4())
         entity = asdict(entry)
         entity.update({
+            "timestamp": int(entry.timestamp.timestamp()),
             "PartitionKey": "run",
             "RowKey": entry_id,
         })
@@ -25,26 +27,39 @@ class DatabaseClient:
         self._run_tb.delete_entity(partition_key="run", row_key=entry_id)
 
     def find_run_by_id(self, entry_id: str) -> Optional[dict]:
-        # Search all partitions (inefficient, but required if only RowKey is known)
-        entities = self._run_tb.list_entities()
-        for entity in entities:
-            if entity["RowKey"] == entry_id:
-                return entity
+        entities = self._run_tb.query_entities(f'RowKey eq {entry_id}')
+        if len(entities) > 0:
+            return entities[0]
         return None
 
-    def find_run_by_trigger_id(self, trigger_id: str) -> list[dict]:
-        return list(self._run_tb.query_entities(f"triggerId eq '{trigger_id}'"))
+    def query_runs(self, query: str) -> list[RunResultEntry]:
+        entities = list(self._run_tb.query_entities(query))
+        runs = []
+        for entity in entities:
+            entity['timestamp'] = datetime.fromtimestamp(entity['timestamp'], tz=timezone.utc)
+            runs.append(fromdict(RunResultEntry, entity))
+        return runs
 
-    def find_all_runs(self) -> list[dict]:
+    def find_all_runs(self) -> list[RunResultEntry]:
         entities = list(self._run_tb.list_entities())
-        return sorted(entities, key=lambda x: x["timestamp"], reverse=True)
+        sorted_entities = sorted(entities, key=lambda x: x["timestamp"], reverse=True)
+
+        runs = []
+        for entity in sorted_entities:
+            entity['timestamp'] = datetime.fromtimestamp(entity['timestamp'], tz=timezone.utc)
+            runs.append(fromdict(RunResultEntry, entity))
+        
+        return runs
+
     
     def insert_pull_request(self, pr: RepoPullRequest) -> str:
         entity = {
             "PartitionKey": "pull",
             "RowKey": pr._id,
+            "_id": pr._id,
+            "url": pr.url,
             "type": pr.type,
-            "timestamp": pr.timestamp,
+            "timestamp": int(pr.timestamp.timestamp()),
             "author": json.dumps(asdict(pr.author)),
             "changeStats": json.dumps(pr.changeStats),
             "title": pr.title,
@@ -77,8 +92,10 @@ class DatabaseClient:
         entity = {
             "PartitionKey": "merge",
             "RowKey": pr._id,
+            "_id": pr._id,
+            "url": pr.url,
             "type": pr.type,
-            "timestamp": pr.timestamp,
+            "timestamp": int(pr.timestamp.timestamp()),
             "author": json.dumps(asdict(pr.author)),
             "changeStats": json.dumps(pr.changeStats),
             "prId": pr.prId
@@ -98,21 +115,27 @@ class DatabaseClient:
     def delete_merge(self, mergeId: str) -> str:
         self._repo_tb.delete_entity(partition_key="merge", row_key=mergeId)
         return mergeId
+    
+    def query_modifications(self, query: str) -> list[dict]:
+        return list(self._repo_tb.query_entities(query))
 
     def find_all_modifications(self) -> list[RepoModification]:
         entities = list(self._repo_tb.list_entities())
         entities_sorted = sorted(entities, key=lambda x: x["timestamp"], reverse=True)
+
         modifications = []
         for entity in entities_sorted:
             entity_dict = entity.copy()
             entity_dict['author'] = json.loads(entity_dict['author'])
             entity_dict['changeStats'] = json.loads(entity_dict['changeStats'])
+            entity_dict['timestamp'] = datetime.fromtimestamp(entity_dict['timestamp'], tz=timezone.utc)
             if entity_dict['type'] == 'pr':
                 entity_dict['commits'] = json.loads(entity_dict['commits'])
                 modifications.append(fromdict(RepoPullRequest, entity_dict))
             else:
                 modifications.append(fromdict(RepoMerge, entity_dict))
-    
+        
+        return modifications
     
     def clear_all_runs(self):
         entities = self._run_tb.list_entities()
