@@ -42,7 +42,8 @@ export default function Dashboard() {
   }, [kernels, kernelType, selectedBackends, selectedDtypes, selectedTags]);
 
   const filteredWaveKernels = useMemo(
-    () => filteredKernels.filter((k) => k.backend.startsWith("wave")),
+    () =>
+      filteredKernels.filter((k) => k.backend.toLowerCase().startsWith("wave")),
     [filteredKernels]
   );
 

@@ -32,7 +32,7 @@ class DatabaseClient:
 
     def insert_run(self, run: BenchmarkRun) -> str:
         run_obj = flatten_entry(run, row_key=run._id, partition="run")
-        self._run_tb.create_entity(run_obj)
+        self._run_tb.upsert_entity(run_obj)
         return run._id
     
     def update_run(self, run_id: str, **kwargs):
@@ -67,7 +67,7 @@ class DatabaseClient:
     
     def insert_pull_request(self, pr: RepoPullRequest) -> str:
         entity = flatten_entry(pr, row_key=pr._id, partition="pull")
-        self._repo_tb.create_entity(entity)
+        self._repo_tb.upsert_entity(entity)
         return pr._id
 
     def update_pull_request(self, prId: str, **kwargs):
@@ -81,7 +81,7 @@ class DatabaseClient:
 
     def insert_merge(self, pr: RepoMerge) -> str:
         entity = flatten_entry(pr, row_key=pr._id, partition="merge")
-        self._repo_tb.create_entity(entity)
+        self._repo_tb.upsert_entity(entity)
         return pr._id
 
     def update_merge(self, mergeId: str, **kwargs):
@@ -95,6 +95,10 @@ class DatabaseClient:
     
     def query_modifications(self, query: str) -> list[dict]:
         return list(self._repo_tb.query_entities(query))
+
+    def find_modification_by_id(self, type: str, mod_id: str) -> RepoPullRequest | RepoMerge:
+        entity = self._repo_tb.get_entity(partition_key=type, row_key=mod_id)
+        return fromdict(RepoMerge, entity) if type == 'merge' else fromdict(RepoPullRequest, entity)
 
     def find_all_modifications(self) -> list[RepoModification]:
         entities = list(self._repo_tb.list_entities())

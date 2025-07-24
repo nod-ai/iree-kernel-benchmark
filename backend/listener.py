@@ -1,4 +1,5 @@
-from webhook import WorkflowClient
+from webhook import WorkflowListener, WaveUpdateListener
+from storage import DatabaseClient, DirectoryClient
 from wsgiref.simple_server import make_server
 from pyramid.config import Configurator
 from pyramid.view import view_config, view_defaults
@@ -10,7 +11,12 @@ import os
 load_dotenv()
 connection_string = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
 container_name = 'benchmarkcache'
-workflow_client = WorkflowClient(connection_string, container_name)
+
+db_client = DatabaseClient(connection_string)
+dir_client = DirectoryClient(connection_string, container_name)
+
+workflow_client = WorkflowListener(db_client, dir_client)
+wave_update_client = WaveUpdateListener(db_client, dir_client)
 
 ENDPOINT = "webhook"
 
@@ -37,6 +43,7 @@ class PayloadView:
         """Handles pull request events."""
         print("Pull Request action:", self.payload['action'])
         print("Number of commits in PR:", self.payload['pull_request']['commits'])
+        wave_update_client.handle_pr_payload(self.payload)
         return Response("success")
 
     @view_config(header="X-Github-Event:workflow_run")

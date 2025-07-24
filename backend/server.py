@@ -36,7 +36,6 @@ def get_all_runs():
 
 @app.route('/artifact')
 def get_latest_artifact():
-    print('hi')
     # artifact = fetch_latest_artifact(directory_client, db_client)
     # return jsonify(artifact.kernels)
     return jsonify(

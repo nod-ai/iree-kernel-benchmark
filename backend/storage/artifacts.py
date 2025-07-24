@@ -177,8 +177,6 @@ def load_artifact_kernels(client: DirectoryClient, directory_name: str) -> list[
     local_path = Path(f'./tmp/{artifact_id}')
     client.download(directory_name, str(local_path))
 
-    print('awoefij')
-
     artifact_path = local_path / 'benchmark-results'
     results = parse_kernels_from_path(artifact_path)
 

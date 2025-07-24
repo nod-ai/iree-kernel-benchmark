@@ -10,13 +10,13 @@ import json
 def jsonify(model) -> str:
     return json.dumps(asdict(model), indent=4)
 
-class WorkflowClient:
-    def __init__(self, connection_string: str, container_name: str):
+class WorkflowListener:
+    def __init__(self, db_client: DatabaseClient, storage_client: DirectoryClient):
         auth = Auth.Token(get_access_token('BENCH'))
         gh = Github(auth=auth)
-        self._repo = gh.get_repo('suryajasper/github-api-test')
-        self._db_client = DatabaseClient(connection_string)
-        self._storage_client = DirectoryClient(connection_string, container_name)
+        self._repo = gh.get_repo('nod-ai/iree-kernel-benchmark')
+        self._db_client = db_client
+        self._storage_client = storage_client
 
     def _handle_workflow_run_requested(self, run_payload: dict):
         run_data = run_payload['workflow_run']
