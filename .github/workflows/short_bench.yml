@@ -22,15 +22,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  benchmark:
+  short_benchmark:
     runs-on: linux-mi300-1gpu-ossci-nod-ai
+
+    env:
+      ITERATIONS: ${{ inputs.iterations || '3' }}
+      MAX_KERNELS: ${{ inputs.max_kernels || '50' }}
+      SELECTED_BACKEND: ${{ inputs.selected_backend || 'all' }}
 
     steps:
       - name: "Checkout Repo"
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: "Setup Python"
-        uses: actions/setup-python@8d9ed9ac5c53483de85588cdf95a591a75ab9f55 # v5.5.0
+        uses: actions/setup-python@8d9ed9ac5c53483de85588cdf95a591a75ab9f55
         with:
           python-version: '3.12'
 
@@ -45,50 +50,50 @@ jobs:
 
       # WAVE BACKEND
       - name: Attention - Wave
-        if: ${{ inputs.selected_backend == 'wave' || inputs.selected_backend == 'all' }}
+        if: env.SELECTED_BACKEND == 'wave' || env.SELECTED_BACKEND == 'all'
         run: |
           source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.attentionbench --backend=wave --iterations=${{ inputs.iterations }} --max_kernels=${{ inputs.max_kernels }}
+          python -m iree_kernel_benchmark.attentionbench --backend=wave --iterations=$ITERATIONS --max_kernels=$MAX_KERNELS
 
       - name: Attention - Wave GQA
-        if: ${{ inputs.selected_backend == 'wave' || inputs.selected_backend == 'all' }}
+        if: env.SELECTED_BACKEND == 'wave' || env.SELECTED_BACKEND == 'all'
         run: |
           source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.attentionbench --backend=wavegqa --iterations=${{ inputs.iterations }} --max_kernels=${{ inputs.max_kernels }}
+          python -m iree_kernel_benchmark.attentionbench --backend=wavegqa --iterations=$ITERATIONS --max_kernels=$MAX_KERNELS
 
       - name: GEMM - Wave
-        if: ${{ inputs.selected_backend == 'wave' || inputs.selected_backend == 'all' }}
+        if: env.SELECTED_BACKEND == 'wave' || env.SELECTED_BACKEND == 'all'
         run: |
           source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.gemmbench --tk --iterations=${{ inputs.iterations }} --max_kernels=${{ inputs.max_kernels }}
+          python -m iree_kernel_benchmark.gemmbench --tk --iterations=$ITERATIONS --max_kernels=$MAX_KERNELS
 
       - name: Convolutions - Wave
-        if: ${{ inputs.selected_backend == 'wave' || inputs.selected_backend == 'all' }}
+        if: env.SELECTED_BACKEND == 'wave' || env.SELECTED_BACKEND == 'all'
         run: |
           source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.convbench --tk --iterations=${{ inputs.iterations }} --max_kernels=${{ inputs.max_kernels }}
+          python -m iree_kernel_benchmark.convbench --tk --iterations=$ITERATIONS --max_kernels=$MAX_KERNELS
 
       # IREE BACKEND
       - name: Attention - IREE
-        if: ${{ inputs.selected_backend == 'iree' || inputs.selected_backend == 'all' }}
+        if: env.SELECTED_BACKEND == 'iree' || env.SELECTED_BACKEND == 'all'
         run: |
           source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.attentionbench --backend=iree --iterations=${{ inputs.iterations }} --max_kernels=${{ inputs.max_kernels }}
+          python -m iree_kernel_benchmark.attentionbench --backend=iree --iterations=$ITERATIONS --max_kernels=$MAX_KERNELS
 
       - name: GEMM - IREE
-        if: ${{ inputs.selected_backend == 'iree' || inputs.selected_backend == 'all' }}
+        if: env.SELECTED_BACKEND == 'iree' || env.SELECTED_BACKEND == 'all'
         run: |
           source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.gemmbench --iterations=${{ inputs.iterations }} --max_kernels=${{ inputs.max_kernels }}
+          python -m iree_kernel_benchmark.gemmbench --iterations=$ITERATIONS --max_kernels=$MAX_KERNELS
 
       - name: Convolutions - IREE
-        if: ${{ inputs.selected_backend == 'iree' || inputs.selected_backend == 'all' }}
+        if: env.SELECTED_BACKEND == 'iree' || env.SELECTED_BACKEND == 'all'
         run: |
           source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.convbench --iterations=${{ inputs.iterations }} --max_kernels=${{ inputs.max_kernels }}
+          python -m iree_kernel_benchmark.convbench --iterations=$ITERATIONS --max_kernels=$MAX_KERNELS
 
       - name: Upload benchmark results
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
+        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1
         with:
           name: benchmark-results
           path: ./results/
