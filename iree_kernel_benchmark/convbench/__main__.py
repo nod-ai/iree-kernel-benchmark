@@ -78,6 +78,12 @@ if __name__ == "__main__":
         default=3,
         help="Number of benchmark iterations.",
     )
+    parser.add_argument(
+        "--max_kernels",
+        type=int,
+        default=None,
+        help="Maximum number of kernels to benchmark.",
+    )
 
     args = parser.parse_args()
     logging.basicConfig(level=args.log_level)
@@ -86,8 +92,8 @@ if __name__ == "__main__":
         roofline(args.roofline, args.plot, args.batch, args.dtype, args.model)
         sys.exit()
 
-    # configs = get_conv_test_configs()
-    configs = get_tk_conv_configs()  # if args.tk else get_conv_configs()
+    configs = get_tk_conv_configs()
+    configs = reduce_configs(configs, args.max_kernels)
     print(f"Generated {len(configs)} conv configs.")
 
     configs = list(OrderedDict({config: None for config in configs}))

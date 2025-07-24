@@ -1,0 +1,123 @@
+name: Short Benchmark
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      iterations:
+        description: 'Number of iterations per benchmark'
+        required: false
+        default: '3'
+      max_kernels:
+        description: 'Maximum number of kernels to benchmark'
+        required: false
+        default: '50'
+      selected_backend:
+        description: 'Which backend to run benchmarks for (wave, iree, or all)'
+        required: false
+        default: 'all'
+      metadata:
+        description: 'Optional: metadata string for tagging the result'
+        required: false
+      pr_branch:
+        description: 'Branch name to check out (e.g., feature/opt-pass)'
+        required: false
+      pr_repository:
+        description: 'Repository to check out from (e.g., iree-org/wave)'
+        required: false
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.number || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  short_benchmark:
+    runs-on: linux-mi300-1gpu-ossci-nod-ai
+
+    env:
+      ITERATIONS: ${{ inputs.iterations || '3' }}
+      MAX_KERNELS: ${{ inputs.max_kernels || '50' }}
+      SELECTED_BACKEND: ${{ inputs.selected_backend || 'all' }}
+
+    steps:
+      - name: Checkout PR branch
+        if: ${{ inputs.pr_branch && inputs.pr_repository }}
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.pr_branch }}
+          repository: ${{ inputs.pr_repository }}
+
+      - name: Checkout default branch
+        if: ${{ !(inputs.pr_branch && inputs.pr_repository) }}
+        uses: actions/checkout@v4
+
+      - name: "Setup Python"
+        uses: actions/setup-python@8d9ed9ac5c53483de85588cdf95a591a75ab9f55
+        with:
+          python-version: '3.12'
+
+      - name: Setup venv
+        run: |
+          python3 -m venv bench_venv
+          source bench_venv/bin/activate
+          pip install --upgrade pip
+          pip install --pre --no-cache-dir --find-links https://iree.dev/pip-release-links.html iree-base-compiler iree-base-runtime --upgrade
+          pip install -r requirements.txt
+          pip install iree-turbine@git+https://github.com/iree-org/iree-turbine.git@main
+
+      # WAVE BACKEND
+      - name: Attention - Wave
+        if: env.SELECTED_BACKEND == 'wave' || env.SELECTED_BACKEND == 'all'
+        run: |
+          source bench_venv/bin/activate
+          python -m iree_kernel_benchmark.attentionbench --backend=wave --iterations=$ITERATIONS --max_kernels=$MAX_KERNELS
+
+      - name: Attention - Wave GQA
+        if: env.SELECTED_BACKEND == 'wave' || env.SELECTED_BACKEND == 'all'
+        run: |
+          source bench_venv/bin/activate
+          python -m iree_kernel_benchmark.attentionbench --backend=wavegqa --iterations=$ITERATIONS --max_kernels=$MAX_KERNELS
+
+      - name: GEMM - Wave
+        if: env.SELECTED_BACKEND == 'wave' || env.SELECTED_BACKEND == 'all'
+        run: |
+          source bench_venv/bin/activate
+          python -m iree_kernel_benchmark.gemmbench --tk --iterations=$ITERATIONS --max_kernels=$MAX_KERNELS
+
+      - name: Convolutions - Wave
+        if: env.SELECTED_BACKEND == 'wave' || env.SELECTED_BACKEND == 'all'
+        run: |
+          source bench_venv/bin/activate
+          python -m iree_kernel_benchmark.convbench --tk --iterations=$ITERATIONS --max_kernels=$MAX_KERNELS
+
+      # IREE BACKEND
+      - name: Attention - IREE
+        if: env.SELECTED_BACKEND == 'iree' || env.SELECTED_BACKEND == 'all'
+        run: |
+          source bench_venv/bin/activate
+          python -m iree_kernel_benchmark.attentionbench --backend=iree --iterations=$ITERATIONS --max_kernels=$MAX_KERNELS
+
+      - name: GEMM - IREE
+        if: env.SELECTED_BACKEND == 'iree' || env.SELECTED_BACKEND == 'all'
+        run: |
+          source bench_venv/bin/activate
+          python -m iree_kernel_benchmark.gemmbench --iterations=$ITERATIONS --max_kernels=$MAX_KERNELS
+
+      - name: Convolutions - IREE
+        if: env.SELECTED_BACKEND == 'iree' || env.SELECTED_BACKEND == 'all'
+        run: |
+          source bench_venv/bin/activate
+          python -m iree_kernel_benchmark.convbench --iterations=$ITERATIONS --max_kernels=$MAX_KERNELS
+
+      - name: Tag result
+        if: ${{ inputs.metadata }}
+        run: |
+          mkdir -p ./results
+          cat <<'EOF' > ./results/metadata.txt
+          "${{ inputs.metadata }}"
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1
+        with:
+          name: benchmark-results
+          path: ./results/

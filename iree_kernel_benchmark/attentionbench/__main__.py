@@ -497,6 +497,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--title", type=str, default=None, help="Title of run for save path"
     )
+    parser.add_argument(
+        "--max_kernels",
+        type=int,
+        default=None,
+        help="Maximum number of kernels to benchmark.",
+    )
 
     args = parser.parse_args()
     logging.basicConfig(level=args.log_level)
@@ -515,6 +521,8 @@ if __name__ == "__main__":
         configs = get_attention_configs(use_fp8=True)
     else:
         configs = get_attention_configs(use_fp8=False)
+
+    configs = reduce_configs(configs, args.max_kernels)
     print(f"Generated {len(configs)} attention configs.")
 
     repo_root = Path(__file__).parent.parent

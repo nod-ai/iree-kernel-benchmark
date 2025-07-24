@@ -4,13 +4,15 @@ import subprocess
 from pathlib import Path
 import csv
 from typing import Sequence
-from collections import namedtuple
+from collections import namedtuple, defaultdict
 import matplotlib.pyplot as plt
 from itertools import cycle
 import numpy as np
 import sys
 import hashlib
 import warnings
+import random
+from typing import Any, List, Tuple
 
 
 def generate_md5_hex(file_path):
@@ -237,3 +239,56 @@ def roofline(results=None, out=None, batch=None, dtype=None, model=None, **kwarg
     plt.close()
 
     print(f"Roofline plot saved as '{out}'")
+
+
+def reduce_configs(
+    configs: List[Tuple[str, Any]], max_kernels: int = None, seed: int = 42
+) -> List[Tuple[str, Any]]:
+    if max_kernels is None or max_kernels >= len(configs):
+        return configs
+
+    random.seed(seed)
+
+    tag_to_configs = defaultdict(list)
+    for tag, attrs in configs:
+        tag_to_configs[tag].append((tag, attrs))
+
+    tags = list(tag_to_configs.keys())
+    total_tags = len(tags)
+
+    target_per_tag = max_kernels // total_tags
+    selected_configs = []
+    remaining_budget = max_kernels
+    overflow_tags = []
+
+    for tag in tags:
+        configs_for_tag = tag_to_configs[tag]
+        if len(configs_for_tag) <= target_per_tag:
+            selected_configs.extend(configs_for_tag)
+            remaining_budget -= len(configs_for_tag)
+        else:
+            overflow_tags.append(tag)
+
+    while remaining_budget > 0 and overflow_tags:
+        per_tag_extra = max(1, remaining_budget // len(overflow_tags))
+        next_round_overflow = []
+
+        for tag in overflow_tags:
+            configs_for_tag = tag_to_configs[tag]
+            already_selected = sum(1 for c in selected_configs if c[0] == tag)
+            remaining_for_tag = len(configs_for_tag) - already_selected
+            to_take = min(per_tag_extra, remaining_for_tag)
+            if to_take > 0:
+                selected_configs.extend(
+                    random.sample(
+                        [cfg for cfg in configs_for_tag if cfg not in selected_configs],
+                        to_take,
+                    )
+                )
+                remaining_budget -= to_take
+            if remaining_for_tag > to_take:
+                next_round_overflow.append(tag)
+
+        overflow_tags = next_round_overflow
+
+    return selected_configs
