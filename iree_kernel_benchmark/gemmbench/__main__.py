@@ -121,6 +121,12 @@ if __name__ == "__main__":
         default=3,
         help="Number of benchmark iterations.",
     )
+    parser.add_argument(
+        "--max_kernels",
+        type=int,
+        default=None,
+        help="Maximum number of kernels to benchmark.",
+    )
 
     args = parser.parse_args()
     # Handle default values here, since list args are not compatible with defaulted lists.
@@ -152,6 +158,7 @@ if __name__ == "__main__":
         args.tag_regex,
         args.config_regex,
     )
+    configs = reduce_configs(configs, args.max_kernels)
     print(f"Generated {len(configs)} gemm configs.")
 
     num_cpus = max(1, max(cpu_count() // 2, 1))
