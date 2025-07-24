@@ -2,6 +2,7 @@ from .types import *
 from datetime import datetime
 import random
 from dataclass_wizard import asdict
+from tqdm import tqdm
 
 def random_stats() -> dict[str, float]:
     KERNEL_TYPES = ["gemm", "attention", "convolution"]
@@ -15,7 +16,7 @@ def random_stats() -> dict[str, float]:
 def convert_prs_from_github(pr_json: list[dict]) -> list[dict]:
     modifications = []
 
-    for pr_dict in pr_json:
+    for pr_dict in tqdm(pr_json, desc='Parsing PRs from JSON'):
         user_dict = pr_dict.get('user', {})
 
         author = ChangeAuthor(
@@ -24,27 +25,27 @@ def convert_prs_from_github(pr_json: list[dict]) -> list[dict]:
         )
 
         pr = RepoPullRequest(
+            headSha=pr_dict['head']['sha'],
             _id=str(pr_dict.get('id')),
             type='pr',
             timestamp=datetime.fromisoformat(pr_dict.get('created_at')),
             url=pr_dict.get('html_url'),
             author=author,
-            changeStats=random_stats(),
             title=pr_dict.get('title'),
-            description=pr_dict.get('body'),
             status=pr_dict.get('status'),
             commits=[],
+            description=pr_dict.get('body'),
         )
         modifications.append(asdict(pr))
 
         if pr_dict.get('merged'):
             merge = RepoMerge(
+                headSha=pr_dict['head']['sha'],
                 _id=str(pr_dict.get('id')) + '_merge',
                 url=pr_dict.get('html_url'),
                 type='merge',
                 timestamp=datetime.fromisoformat(pr_dict.get('merged_at')),
                 author=author,
-                changeStats=random_stats(),
                 prId=str(pr_dict.get('id'))
             )
             modifications.append(asdict(merge))

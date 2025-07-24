@@ -20,7 +20,7 @@ class DirectoryClient:
     '''
     Upload a single file to a path inside the container
     '''
-    print(f'Uploading {source} to {dest}')
+    # print(f'Uploading {source} to {dest}')
     with open(source, 'rb') as data:
       self.client.upload_blob(name=dest, data=data)
 
@@ -71,7 +71,7 @@ class DirectoryClient:
       dest += '/'
     blob_dest = dest + os.path.basename(source) if dest.endswith('/') else dest
 
-    print(f'Downloading {source} to {blob_dest}')
+    # print(f'Downloading {source} to {blob_dest}')
     os.makedirs(os.path.dirname(blob_dest), exist_ok=True)
     bc = self.client.get_blob_client(blob=source)
     if not dest.endswith('/'):

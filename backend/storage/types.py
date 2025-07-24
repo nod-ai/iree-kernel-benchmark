@@ -9,15 +9,19 @@ from typing import Optional
 #     runType: str
 #     timestamp: datetime
 
+type ChangeStats = dict[str, float]
+
 @dataclass
 class BenchmarkRun:
     _id: str
     headSha: str
     status: str
     conclusion: str
+    numSteps: int
     steps: list[dict]
     blobName: str
-    kernels: list[dict]
+    timestamp: datetime
+    changeStats: ChangeStats
 
 @dataclass
 class RunArtifact:
@@ -37,7 +41,6 @@ class RepoModification:
     type: str
     timestamp: datetime
     author: ChangeAuthor
-    changeStats: dict[str, float]
 
 @dataclass
 class RepoCommit:
@@ -45,14 +48,14 @@ class RepoCommit:
     title: str
     author: ChangeAuthor
     timestamp: datetime
-    description: Optional[str]
+    description: Optional[str] = None
 
 @dataclass
 class RepoPullRequest(RepoModification):
     title: str
-    description: Optional[str]
     status: str
     commits: list[RepoCommit]
+    description: Optional[str] = None
 
 @dataclass
 class RepoMerge(RepoModification):

@@ -88,12 +88,17 @@ def parse_kernels_from_path(artifact_path: str | Path) -> list[dict]:
 
     return results
 
-def download_artifact_kernels(artifact: Artifact.Artifact) -> List[Dict]:
+def download_artifact_kernels(
+        artifact: Artifact.Artifact, 
+        local_path: str = None) -> tuple[List[Dict], Path]:
+    
     kernels = []
+
+    local_path = local_path or f"./tmp/{artifact.id}"
 
     download_url = artifact.archive_download_url
     headers = dict(artifact.raw_headers)
-    headers['Authorization'] = f'Bearer {get_access_token()}'
+    headers['Authorization'] = f'Bearer {get_access_token('BENCH')}'
 
     response = requests.get(download_url, headers=headers)
     
@@ -101,8 +106,7 @@ def download_artifact_kernels(artifact: Artifact.Artifact) -> List[Dict]:
         print('failed to download', artifact.id, download_url, response.json())
         return []
 
-    artifact_id = uuid4()
-    base_path = Path(f"./tmp/{artifact_id}")
+    base_path = Path(local_path)
     zip_path = base_path / "results.zip"
     extract_path = base_path / "benchmark-results"
 
@@ -120,16 +124,39 @@ def download_artifact_kernels(artifact: Artifact.Artifact) -> List[Dict]:
     except:
         print(f'Failed to load artifact {artifact.url}')
     
-    # shutil.rmtree(base_path)
-    return kernels
+    return kernels, base_path
+
+def save_all_artifact_kernels(repo: Repository.Repository, dir_client: DirectoryClient, limit=10) -> tuple[List[List[Dict]], List[str]]:
+    results = []
+    blob_paths = []
+
+    artifacts = repo.get_artifacts()
+    for artifact in artifacts:
+        artifact_kernels, artifact_path = download_artifact_kernels(artifact, f'./tmp/{artifact.id}')
+        results.append(artifact_kernels)
+
+        blobName = str(artifact.id)
+        blob_paths.append(blobName)
+        try:
+            dir_client.upload(f'{artifact_path}/benchmark-results', blobName)
+        except:
+            print(f'Blob already exists for artifact {artifact.id}. Continuing...')
+        
+        shutil.rmtree(artifact_path)
+
+        if len(results) >= limit:
+            return results, blob_paths
+    
+    return results, blob_paths
 
 def download_all_artifact_kernels(repo: Repository.Repository, limit=10) -> List[List[Dict]]:
     results = []
 
     artifacts = repo.get_artifacts()
     for artifact in artifacts:
-        artifact_kernels = download_artifact_kernels(artifact)
-        results.extend(artifact_kernels)
+        artifact_kernels, artifact_path = download_artifact_kernels(artifact)
+        results.append(artifact_kernels)
+        shutil.rmtree(artifact_path)
 
         if len(results) >= limit:
             return results
@@ -140,7 +167,9 @@ def download_artifact_kernels_by_run_id(repo: Repository.Repository, run_id) -> 
     run = repo.get_workflow_run(int(run_id))
     artifacts = run.get_artifacts()
     for artifact in artifacts:
-        return download_artifact_kernels(artifact)
+        artifact_kernels, artifact_path = download_artifact_kernels(artifact)
+        
+        return artifact_kernels
     return []
 
 def load_artifact_kernels(client: DirectoryClient, directory_name: str) -> list[dict]:

@@ -11,8 +11,6 @@ load_dotenv()
 
 PEM_FILE = Path(os.getenv("PEM_FILE"))
 CLIENT_ID = os.getenv("CLIENT_ID")
-WAVE_INSTALLATION_ID = int(os.getenv("WAVE_INSTALLATION_ID"))
-BENCH_INSTALLATION_ID = int(os.getenv("BENCH_INSTALLATION_ID"))
 JWT_CACHE_FILE = os.getenv("JWT_CACHE_FILE")
 ACCESS_TOKEN_CACHE_FILE = os.getenv("ACCESS_TOKEN_CACHE_FILE")
 
@@ -55,7 +53,7 @@ def get_jwt():
 
     return encoded_jwt
 
-def get_access_token(installation: Literal['WAVE', 'BENCH'] = 'WAVE'):
+def get_access_token(installation: Literal['WAVE', 'BENCH', 'TEST'] = 'WAVE'):
     current_time = int(time.time())
     cache_file = f'{installation}_{ACCESS_TOKEN_CACHE_FILE}'
 
@@ -65,7 +63,7 @@ def get_access_token(installation: Literal['WAVE', 'BENCH'] = 'WAVE'):
         return cache["token"]
 
     jwt_token = get_jwt()
-    installation_id = WAVE_INSTALLATION_ID if installation == 'WAVE' else BENCH_INSTALLATION_ID
+    installation_id = int(os.getenv(f'{installation}_INSTALLATION_ID'))
     url = f"https://api.github.com/app/installations/{installation_id}/access_tokens"
     headers = {
         "Accept": "application/vnd.github+json",
