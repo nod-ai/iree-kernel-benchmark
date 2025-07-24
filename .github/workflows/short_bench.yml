@@ -16,6 +16,15 @@ on:
         description: 'Which backend to run benchmarks for (wave, iree, or all)'
         required: false
         default: 'all'
+      metadata:
+        description: 'Optional: metadata string for tagging the result'
+        required: false
+      pr_branch:
+        description: 'Branch name to check out (e.g., feature/opt-pass)'
+        required: false
+      pr_repository:
+        description: 'Repository to check out from (e.g., iree-org/wave)'
+        required: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.number || github.sha }}
@@ -31,8 +40,16 @@ jobs:
       SELECTED_BACKEND: ${{ inputs.selected_backend || 'all' }}
 
     steps:
-      - name: "Checkout Repo"
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Checkout PR branch
+        if: ${{ inputs.pr_branch && inputs.pr_repository }}
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.pr_branch }}
+          repository: ${{ inputs.pr_repository }}
+
+      - name: Checkout default branch
+        if: ${{ !(inputs.pr_branch && inputs.pr_repository) }}
+        uses: actions/checkout@v4
 
       - name: "Setup Python"
         uses: actions/setup-python@8d9ed9ac5c53483de85588cdf95a591a75ab9f55
@@ -91,6 +108,13 @@ jobs:
         run: |
           source bench_venv/bin/activate
           python -m iree_kernel_benchmark.convbench --iterations=$ITERATIONS --max_kernels=$MAX_KERNELS
+
+      - name: Tag result
+        if: ${{ inputs.metadata }}
+        run: |
+          mkdir -p ./results
+          cat <<'EOF' > ./results/metadata.txt
+          "${{ inputs.metadata }}"
 
       - name: Upload benchmark results
         uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1
