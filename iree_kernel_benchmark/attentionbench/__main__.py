@@ -299,8 +299,9 @@ def benchmark_attention_kernels(
         ret_value, cmd_out, cmd_err = run_iree_command(exec_args)
         ok = ret_value == 0
         benchmark_gemm_mean_time_ms = bench_summary_process(ret_value, cmd_out)
+        benchmark_gemm_mean_time_us = benchmark_gemm_mean_time_ms * 1000
 
-        runtimes.append(benchmark_gemm_mean_time_ms)
+        runtimes.append(benchmark_gemm_mean_time_us)
         statuses.append(ok)
         configs.append((tag, attn_attrs))
 

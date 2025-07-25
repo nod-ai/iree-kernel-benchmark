@@ -84,8 +84,8 @@ def compile_attention_wave_bshd(
     base_attention, hyperparams, dynamic_symbols = get_gqa_bshd_attention_kernel(
         shape=shape,
         mfma_variant=mfma_variant,
-        input_dtype=DTYPE_TO_TORCH[shape.dtype],
-        output_dtype=DTYPE_TO_TORCH["f32"],
+        input_dtype=dtype_to_torch(shape.dtype),
+        output_dtype=dtype_to_torch("f32"),
     )
 
     if spec:
