@@ -2,7 +2,7 @@ import argparse
 import torch
 import torch.nn as nn
 
-from iree.turbine.kernel.boo.layer_norm_exports.layer_norm import (
+from iree.turbine.kernel.boo.op_exports.layer_norm import (
     LayerNormSignature,
     Mode,
     LayerNormForward,
