@@ -32,8 +32,8 @@ jobs:
           source bench_venv/bin/activate
           pip install --upgrade pip
           pip install --pre --no-cache-dir --find-links https://iree.dev/pip-release-links.html iree-base-compiler iree-base-runtime --upgrade
+          pip install -r pytorch-rocm-requirements.txt
           pip install -r requirements.txt
-          pip install iree-turbine@git+https://github.com/iree-org/iree-turbine.git@main
           pip install wave-lang
 
       - name: Attention - Wave
