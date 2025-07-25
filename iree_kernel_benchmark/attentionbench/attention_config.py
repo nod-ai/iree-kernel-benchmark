@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Union, Optional
+from typing import Union, Optional, Literal
 import math
 from abc import ABC, abstractmethod
 
@@ -160,6 +160,7 @@ class AttentionConfigBSHD:
 class AttentionAttributes:
     """Unified attributes for all attention types"""
 
+    attention_type: Literal["bmnk", "bshd"]
     num_query_heads: int
     num_kv_heads: int
     head_size: int
@@ -181,6 +182,12 @@ class AttentionAttributes:
     # -----------------------
     # Decode specific
     block_size: Optional[int] = None
+
+    def get_name(self) -> str:
+        if self.attention_type == "bmnk":
+            return self.to_bmnk1k2().get_name()
+        else:
+            return self.to_bshd().get_name()
 
     def to_bmnk1k2(self) -> AttentionConfigBMNK:
         if self.batch_size is None:
@@ -215,6 +222,7 @@ def bmnk1k2_to_attention_attributes(
     config_bmnk: AttentionConfigBMNK,
 ) -> AttentionAttributes:
     return AttentionAttributes(
+        attention_type="bmnk",
         num_query_heads=config_bmnk.B,
         num_kv_heads=config_bmnk.B,
         head_size=config_bmnk.K1,
@@ -230,6 +238,7 @@ def bshd_to_attention_attributes(
     config_bshd: AttentionConfigBSHD,
 ) -> AttentionAttributes:
     return AttentionAttributes(
+        attention_type="bshd",
         num_query_heads=config_bshd.H,
         num_kv_heads=config_bshd.H_KV,
         head_size=config_bshd.D_Q,

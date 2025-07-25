@@ -82,7 +82,7 @@ jobs:
         if: env.SELECTED_BACKEND == 'wave' || env.SELECTED_BACKEND == 'all'
         run: |
           source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.gemmbench --tk --iterations=$ITERATIONS --max_kernels=$MAX_KERNELS
+          python -m iree_kernel_benchmark.gemmbench --backend=wave --iterations=$ITERATIONS --max_kernels=$MAX_KERNELS
 
       - name: Convolutions - Wave
         if: env.SELECTED_BACKEND == 'wave' || env.SELECTED_BACKEND == 'all'
@@ -101,7 +101,7 @@ jobs:
         if: env.SELECTED_BACKEND == 'iree' || env.SELECTED_BACKEND == 'all'
         run: |
           source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.gemmbench --iterations=$ITERATIONS --max_kernels=$MAX_KERNELS
+          python -m iree_kernel_benchmark.gemmbench --backend=iree --iterations=$ITERATIONS --max_kernels=$MAX_KERNELS
 
       - name: Convolutions - IREE
         if: env.SELECTED_BACKEND == 'iree' || env.SELECTED_BACKEND == 'all'

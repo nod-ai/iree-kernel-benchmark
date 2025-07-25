@@ -69,6 +69,7 @@ def cai_attn(dtype: str) -> list[AttentionAttributes]:
     for M in [12288, 16384, 4145, 8192, 8698, 425, 8641, 8589, 4504]:
         configs.append(
             AttentionAttributes(
+                attention_type="bshd",
                 num_seqs=1,
                 num_query_heads=32,
                 num_kv_heads=1,

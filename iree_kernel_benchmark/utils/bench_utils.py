@@ -12,7 +12,9 @@ import sys
 import hashlib
 import warnings
 import random
+import torch
 from typing import Any, List, Tuple
+from contextlib import contextmanager
 
 
 def generate_md5_hex(file_path):
@@ -292,3 +294,14 @@ def reduce_configs(
         overflow_tags = next_round_overflow
 
     return selected_configs
+
+
+@contextmanager
+def redirect_stderr_to_file(filepath):
+    original_stderr = sys.stderr
+    with open(filepath, "w") as f:
+        sys.stderr = f
+        try:
+            yield
+        finally:
+            sys.stderr = original_stderr

@@ -53,12 +53,12 @@ jobs:
       - name: GEMM - Wave
         run: |
           source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.gemmbench --tk --iterations=5
+          python -m iree_kernel_benchmark.gemmbench --backend=wave --iterations=5
 
       - name: GEMM - IREE
         run: |
           source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.gemmbench --iterations=5
+          python -m iree_kernel_benchmark.gemmbench --backend=iree --iterations=5
 
       - name: Convolutions - Wave
         run: |

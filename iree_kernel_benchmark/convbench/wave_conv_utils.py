@@ -6,12 +6,12 @@ from .conv_utils import ConvConfig
 import traceback
 
 try:
-    import iree.turbine.kernel as tk
-    import iree.turbine.kernel.lang as tkl
-    from iree.turbine.kernel.wave.templates.conv import get_igemm_conv2d
-    from iree.turbine.kernel.wave.compile import wave_compile, WaveCompileOptions
-    from iree.turbine.kernel.wave.scheduling.schedule_enums import SchedulingType
-    from iree.turbine.kernel.wave.utils.torch_utils import (
+    import wave_lang.kernel as tk
+    import wave_lang.kernel.lang as tkl
+    from wave_lang.kernel.wave.templates.conv import get_igemm_conv2d
+    from wave_lang.kernel.wave.compile import wave_compile, WaveCompileOptions
+    from wave_lang.kernel.wave.scheduling.schedule_enums import SchedulingType
+    from wave_lang.kernel.wave.utils.torch_utils import (
         device_randn,
         device_randint,
         device_randperm,
