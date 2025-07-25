@@ -121,6 +121,20 @@ jobs:
           source bench_venv/bin/activate
           python -m iree_kernel_benchmark.convbench --iterations=$ITERATIONS --max_kernels=$MAX_KERNELS
 
+      # TORCH BACKEND
+      - name: Attention - Torch
+        if: env.SELECTED_BACKEND == 'torch' || env.SELECTED_BACKEND == 'all'
+        run: |
+          source bench_venv/bin/activate
+          python -m iree_kernel_benchmark.attentionbench --backend=torch --iterations=$ITERATIONS --max_kernels=$MAX_KERNELS
+
+      - name: GEMM - Torch
+        if: env.SELECTED_BACKEND == 'torch' || env.SELECTED_BACKEND == 'all'
+        run: |
+          source bench_venv/bin/activate
+          python -m iree_kernel_benchmark.gemmbench --backend=torch --iterations=$ITERATIONS --max_kernels=$MAX_KERNELS
+
+      # Finish
       - name: Tag result
         if: ${{ inputs.metadata }}
         run: |

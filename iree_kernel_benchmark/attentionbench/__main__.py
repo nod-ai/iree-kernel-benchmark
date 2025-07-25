@@ -11,12 +11,14 @@ import pandas as pd
 import optuna
 import argparse
 import sys
+from iree_kernel_benchmark.gemmbench.gemm_utils import GemmConfig
 from wave_lang.kernel.wave.constraints import MMAType
 from ..utils import *
 from .attention_utils import *
 from .attention_config import *
 from .wave_attention import compile_attention_wave_vanilla, compile_attention_wave_bshd
 from .iree_attention import compile_attention_iree
+from .torch_attention import benchmark_torch_attention
 from .problems import get_attention_configs, get_attention_configs_gqa, ConfigList
 
 type Backend = Literal["iree", "wave", "wavegqa"]
@@ -131,69 +133,34 @@ def compile_attention_kernels(
     return dict(vmfb_dict)
 
 
-def benchmark_attention_kernels(
-    backend_name: str,
-    vmfb_dict: dict,
-    output_csv: Path,
-    num_iterations: int = 3,
-    debug=True,
+def save_results(
+    configs: ConfigList, runtimes_us: List[float], ok: List[bool], output_csv: Path
 ) -> pd.DataFrame:
-    results = []
-    index = 0
 
     csv_dir = os.path.dirname(output_csv)
     if csv_dir and not os.path.exists(csv_dir):
         os.makedirs(csv_dir)
 
-    bench_items = vmfb_dict.items()
-    if debug:
-        bench_items = tqdm(vmfb_dict.items(), desc="Benchmarking Attention Kernels")
+    index = 0
+    results = []
 
-    for vmfb_filename, value in bench_items:
-        tag = value[0]
-        attn_attrs: AttentionAttributes = value[1]
+    for i, (tag, attn_attrs) in enumerate(configs):
+        benchmark_mean_time_us = runtimes_us[i]
+
         config: AttentionConfigBase = (
             attn_attrs.to_bshd()
             if backend_name == "wavegqa"
             else attn_attrs.to_bmnk1k2()
         )
-        name = config.get_name()
-
-        query_shape = config.get_query_shape()
-        key_shape = config.get_key_shape()
-        value_shape = config.get_value_shape()
-
-        exec_args = [
-            "iree-benchmark-module",
-            f"--device={device}",
-            "--device_allocator=caching",
-            f"--module={vmfb_filename}",
-            "--function=main",
-            f"--input={query_shape}",
-            f"--input={key_shape}",
-            f"--input={value_shape}",
-            f"--benchmark_repetitions={num_iterations}",
-        ]
-
-        if backend_name.startswith("wave"):
-            out_shape: str = config.get_output_shape()
-            out_shape = "x".join(out_shape.split("x")[:-1] + ["f32"])
-            exec_args.append(f"--input={out_shape}")
-            exec_args += ["--function=isolated_benchmark"]
-        elif backend_name == "iree":
-            exec_args += ["--function=main"]
-
-        # iree benchmark kernels
-        ret_value, cmd_out, cmd_err = run_iree_command(exec_args)
-        ok = ret_value == 0
-        benchmark_gemm_mean_time_ms = bench_summary_process(ret_value, cmd_out)
-        benchmark_gemm_mean_time_us = benchmark_gemm_mean_time_ms * 1000
 
         flops = config.get_flops()
         byte_count = config.get_byte_count()
 
         arithmetic_intensity = flops / byte_count
-        tflops_per_second = (flops / 1e12) / (benchmark_gemm_mean_time_us / 1e6)
+        if benchmark_mean_time_us == 0:
+            tflops_per_second = 0
+        else:
+            tflops_per_second = (flops / 1e12) / (benchmark_mean_time_us / 1e6)
 
         if backend_name == "wavegqa":
             config_bshd = attn_attrs.to_bshd()
@@ -201,7 +168,7 @@ def benchmark_attention_kernels(
                 (
                     index,
                     tag,
-                    name,
+                    config.get_name(),
                     config_bshd.B,
                     config_bshd.H,
                     config_bshd.H_KV,
@@ -210,10 +177,10 @@ def benchmark_attention_kernels(
                     config_bshd.D_Q,
                     config_bshd.N_KV,
                     config.dtype,
-                    round(benchmark_gemm_mean_time_us, 4),
+                    round(benchmark_mean_time_us, 4),
                     round(arithmetic_intensity, 4),
                     round(tflops_per_second, 4),
-                    ok,
+                    ok[i],
                 )
             )
         else:
@@ -222,17 +189,17 @@ def benchmark_attention_kernels(
                 (
                     index,
                     tag,
-                    name,
+                    config.get_name(),
                     config_bmnk.B,
                     config_bmnk.M,
                     config_bmnk.N,
                     config_bmnk.K1,
                     config_bmnk.K2,
                     config_bmnk.dtype,
-                    round(benchmark_gemm_mean_time_us, 4),
+                    round(benchmark_mean_time_us, 4),
                     round(arithmetic_intensity, 4),
                     round(tflops_per_second, 4),
-                    ok,
+                    ok[i],
                 )
             )
         index += 1
@@ -273,10 +240,90 @@ def benchmark_attention_kernels(
         ]
 
     write_results_to_csv(results, output_csv, fieldnames)
-    if debug:
-        print(f"Results written to {output_csv}")
+    print(f"Results written to {output_csv}")
 
     return pd.read_csv(output_csv)
+
+
+def benchmark_attention_kernels(
+    backend_name: str,
+    device: str,
+    vmfb_dict: dict,
+    output_csv: Path,
+    num_iterations: int = 3,
+    debug=True,
+) -> pd.DataFrame:
+
+    bench_items = vmfb_dict.items()
+    if debug:
+        bench_items = tqdm(vmfb_dict.items(), desc="Benchmarking Attention Kernels")
+
+    runtimes = []
+    statuses = []
+    configs = []
+
+    for vmfb_filename, value in bench_items:
+        tag = value[0]
+        attn_attrs: AttentionAttributes = value[1]
+        config: AttentionConfigBase = (
+            attn_attrs.to_bshd()
+            if backend_name == "wavegqa"
+            else attn_attrs.to_bmnk1k2()
+        )
+
+        query_shape = config.get_query_shape()
+        key_shape = config.get_key_shape()
+        value_shape = config.get_value_shape()
+
+        exec_args = [
+            "iree-benchmark-module",
+            f"--device={device}",
+            "--device_allocator=caching",
+            f"--module={vmfb_filename}",
+            "--function=main",
+            f"--input={query_shape}",
+            f"--input={key_shape}",
+            f"--input={value_shape}",
+            f"--benchmark_repetitions={num_iterations}",
+        ]
+
+        if backend_name.startswith("wave"):
+            out_shape: str = config.get_output_shape()
+            out_shape = "x".join(out_shape.split("x")[:-1] + ["f32"])
+            exec_args.append(f"--input={out_shape}")
+            exec_args += ["--function=isolated_benchmark"]
+        elif backend_name == "iree":
+            exec_args += ["--function=main"]
+
+        # iree benchmark kernels
+        ret_value, cmd_out, cmd_err = run_iree_command(exec_args)
+        ok = ret_value == 0
+        benchmark_gemm_mean_time_ms = bench_summary_process(ret_value, cmd_out)
+
+        runtimes.append(benchmark_gemm_mean_time_ms)
+        statuses.append(ok)
+        configs.append((tag, config))
+
+    save_results(configs, runtimes, statuses, output_csv)
+
+
+def benchmark_extern_attention_kernels(
+    backend: str, configs: ConfigList, output_csv: Path, num_iterations: int = 3
+):
+    runtimes_us = []
+    statuses = []
+
+    for tag, config in tqdm(configs, f"Benchmarking {backend} attention kernels"):
+        if backend == "torch":
+            mean_us = benchmark_torch_attention(config, num_iterations)
+            if mean_us:
+                runtimes_us.append(mean_us)
+                statuses.append(True)
+            else:
+                runtimes_us.append(0)
+                statuses.append(False)
+
+    return save_results(configs, runtimes_us, statuses, output_csv)
 
 
 @dataclass
@@ -449,7 +496,7 @@ if __name__ == "__main__":
     parser.add_argument("--model", help="roofline on certain model", default=None)
     parser.add_argument(
         "--backend",
-        choices=["iree", "wave", "wavegqa"],
+        choices=["iree", "wave", "wavegqa", "torch"],
         default="iree",
         help="Backend to run kernels",
     )
@@ -509,6 +556,15 @@ if __name__ == "__main__":
     )
     print(f"Generated {len(configs)} attention configs.")
 
+    output_csv_base = f"attention_{backend_name}" + (
+        f"_{args.title}" if args.title else ""
+    )
+    output_csv_path = Path(f"results/attention/{output_csv_base}.csv")
+
+    if backend_name not in ["iree", "wave", "wavegqa"]:
+        benchmark_extern_attention_kernels(backend_name, configs, output_csv_path)
+        exit(0)
+
     attention_type = configs[0][1].attention_type
 
     repo_root = Path(__file__).parent.parent
@@ -558,12 +614,6 @@ if __name__ == "__main__":
             tuning_specs=specs,
         )
 
-        output_csv_base = f"attention_{backend_name}" + (
-            f"_{args.title}" if args.title else ""
-        )
-        output_csv_path = Path(f"results/attention/{output_csv_base}.csv")
-        print(f"Results will be written to {output_csv_path}")
-
         benchmark_attention_kernels(
-            backend_name, vmfb_dict, output_csv_path, args.iterations
+            backend_name, device, vmfb_dict, output_csv_path, args.iterations
         )

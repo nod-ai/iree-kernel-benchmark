@@ -51,6 +51,11 @@ jobs:
           source bench_venv/bin/activate
           python -m iree_kernel_benchmark.attentionbench --backend=iree --iterations=5
 
+      - name: Attention - Torch
+        run: |
+          source bench_venv/bin/activate
+          python -m iree_kernel_benchmark.attentionbench --backend=torch --iterations=5
+
       - name: GEMM - Wave
         run: |
           source bench_venv/bin/activate
@@ -60,6 +65,11 @@ jobs:
         run: |
           source bench_venv/bin/activate
           python -m iree_kernel_benchmark.gemmbench --backend=iree --iterations=5
+
+      - name: GEMM - Torch
+        run: |
+          source bench_venv/bin/activate
+          python -m iree_kernel_benchmark.gemmbench --backend=torch --iterations=5
 
       - name: Convolutions - Wave
         run: |

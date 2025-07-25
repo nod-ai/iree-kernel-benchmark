@@ -16,6 +16,7 @@ from ..utils import *
 from .gemm_utils import *
 from .iree_gemm import compile_iree_gemm
 from .wave_gemm import compile_wave_gemm
+from .torch_gemm import benchmark_torch_gemm
 from .problems import get_gemm_configs, get_tk_gemm_configs, get_matching_configs
 
 
@@ -102,6 +103,73 @@ def compile_gemm_kernels(
     return dict(vmfb_dict)
 
 
+def save_results(
+    configs: List[Tuple[str, GemmConfig]],
+    runtimes_us: List[float],
+    ok: List[bool],
+    output_csv: Path,
+):
+
+    csv_dir = os.path.dirname(output_csv)
+    if not os.path.exists(csv_dir):
+        os.makedirs(csv_dir)
+
+    results = []
+    index = 0
+
+    for i, (tag, config) in enumerate(configs):
+        flops = config.get_flops()
+        byte_count = config.get_byte_count()
+
+        benchmark_mean_time_us = runtimes_us[i]
+
+        arithmetic_intensity = flops / byte_count
+        if benchmark_mean_time_us == 0:
+            tflops_per_second = 0
+        else:
+            tflops_per_second = (flops / 1e12) / (benchmark_mean_time_us / 1e6)
+
+        results.append(
+            (
+                index,
+                tag,
+                config.get_name(),
+                config.M,
+                config.N,
+                config.K,
+                config.operand_element_type,
+                config.tA,
+                config.tB,
+                f"D={config.runtime_dim}" if config.runtime_dim is not None else "",
+                round(benchmark_mean_time_us, 4),
+                round(arithmetic_intensity, 4),
+                round(tflops_per_second, 4),
+                ok[i],
+            )
+        )
+        index += 1
+
+    fieldnames = [
+        "index",
+        "tag",
+        "name",
+        "M",
+        "N",
+        "K",
+        "dtype",
+        "tA",
+        "tB",
+        "runtime_dim",
+        "mean_microseconds",
+        "arithmetic_intensity",
+        "tflops",
+        "ok",
+    ]
+
+    write_results_to_csv(results, output_csv, fieldnames)
+    print(f"Results written to {output_csv}")
+
+
 def benchmark_gemm_kernels(
     backend_name: str,
     vmfb_dict: dict[str, tuple[str, GemmConfig]],
@@ -109,20 +177,15 @@ def benchmark_gemm_kernels(
     num_iterations: int = 3,
     debug=True,
 ):
-    results = []
-    index = 0
-
-    csv_dir = os.path.dirname(output_csv)
-    if not os.path.exists(csv_dir):
-        os.makedirs(csv_dir)
-    print(f"Results will be written to {Path(output_csv)}")
+    configs = []
+    runtimes = []
+    statuses = []
 
     run_error_count = 0
     for vmfb_filename, value in tqdm(
         vmfb_dict.items(), desc="Benchmarking GEMM Kernels"
     ):
         tag, config = value
-        vmfb_hash = generate_md5_hex(vmfb_filename)
         name = config.get_name()
 
         inp1 = config.get_inp1()
@@ -155,55 +218,35 @@ def benchmark_gemm_kernels(
         if benchmark_gemm_mean_time_ms is None:
             print(f"{name} benchmark failed. Skipping")
             continue
-        benchmark_gemm_mean_time_us = benchmark_gemm_mean_time_ms * 1000
+        benchmark_mean_time_us = benchmark_gemm_mean_time_ms * 1000
 
-        flops = config.get_flops()
-        byte_count = config.get_byte_count()
+        configs.append((tag, config))
+        runtimes.append(benchmark_mean_time_us)
+        statuses.append(ok)
 
-        arithmetic_intensity = flops / byte_count
-        tflops_per_second = (flops / 1e12) / (benchmark_gemm_mean_time_us / 1e6)
+    save_results(configs, runtimes, statuses, output_csv)
 
-        results.append(
-            (
-                index,
-                tag,
-                name,
-                vmfb_hash,
-                config.M,
-                config.N,
-                config.K,
-                config.operand_element_type,
-                config.tA,
-                config.tB,
-                f"D={config.runtime_dim}" if config.runtime_dim is not None else "",
-                round(benchmark_gemm_mean_time_us, 4),
-                round(arithmetic_intensity, 4),
-                round(tflops_per_second, 4),
-                ok,
-            )
-        )
-        index += 1
 
-    fieldnames = [
-        "index",
-        "tag",
-        "name",
-        "vmfb_hash",
-        "M",
-        "N",
-        "K",
-        "dtype",
-        "tA",
-        "tB",
-        "runtime_dim",
-        "mean_microseconds",
-        "arithmetic_intensity",
-        "tflops",
-        "ok",
-    ]
+def benchmark_extern_gemm_kernels(
+    backend: str,
+    configs: List[Tuple[str, GemmConfig]],
+    output_csv: Path,
+    num_iterations: int = 3,
+):
+    runtimes_us = []
+    statuses = []
 
-    write_results_to_csv(results, output_csv, fieldnames)
-    print(f"Results written to {output_csv}")
+    for tag, config in tqdm(configs, f"Benchmarking {backend} gemm kernels"):
+        if backend == "torch":
+            mean_us = benchmark_torch_gemm(config, num_iterations)
+            if mean_us:
+                runtimes_us.append(mean_us)
+                statuses.append(True)
+            else:
+                runtimes_us.append(0)
+                statuses.append(False)
+
+    return save_results(configs, runtimes_us, statuses, output_csv)
 
 
 if __name__ == "__main__":
@@ -273,7 +316,7 @@ if __name__ == "__main__":
     parser.add_argument("--model", help="roofline on certain model", default=None)
     parser.add_argument(
         "--backend",
-        choices=["iree", "wave", "wavegqa"],
+        choices=["iree", "wave", "wavegqa", "torch"],
         default="iree",
         help="Backend to run kernels",
     )
@@ -330,6 +373,15 @@ if __name__ == "__main__":
     configs = reduce_configs(configs, args.max_kernels)
     print(f"Generated {len(configs)} gemm configs.")
 
+    output_csv_base = f"gemm_{backend_name}"
+    if args.raw_accumulators:
+        output_csv_base += "_raw_accumulators"
+    output_csv_path = Path(f"results/gemm/{output_csv_base}.csv")
+
+    if backend_name not in ["iree", "wave", "wavegqa"]:
+        benchmark_extern_gemm_kernels(backend_name, configs, output_csv_path)
+        exit(0)
+
     repo_root = Path(__file__).parent.parent
     kernel_dir = repo_root / "gemm" / backend_name / "mlir"
     vmfb_dir = repo_root / "gemm" / backend_name / "vmfb"
@@ -349,10 +401,5 @@ if __name__ == "__main__":
         target,
         extra_compiler_args,
     )
-
-    output_csv_base = f"gemm_{backend_name}"
-    if args.raw_accumulators:
-        output_csv_base += "_raw_accumulators"
-    output_csv_path = Path(f"results/gemm/{output_csv_base}.csv")
 
     benchmark_gemm_kernels(backend_name, vmfb_dict, output_csv_path, args.iterations)
