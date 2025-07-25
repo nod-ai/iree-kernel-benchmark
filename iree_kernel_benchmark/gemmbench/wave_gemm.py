@@ -29,7 +29,7 @@ def compile_wave_gemm(
         shape=(config.M, config.N, config.K),
         dynamic_dims=False,
         mfma_variant=mfma_variant,
-        dtype=DTYPE_TO_TORCH[config.operand_element_type],
+        dtype=dtype_to_torch(config.operand_element_type),
     )
 
     if spec:

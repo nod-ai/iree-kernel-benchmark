@@ -2,6 +2,7 @@ import torch
 import wave_lang.kernel.lang as tkl
 from wave_lang.kernel._support.indexing import index_symbol
 
+
 DTYPE_TO_TORCH = {
     "bf16": torch.bfloat16,
     "f8e5m2": torch.float8_e5m2,
@@ -16,6 +17,11 @@ DTYPE_TO_TORCH = {
     "i64": torch.int64,
     "bool": torch.bool,
 }
+
+
+def dtype_to_torch(dtype: str):
+    dtype = dtype.lower().strip().replace("_", "")
+    return DTYPE_TO_TORCH[dtype]
 
 
 class TuningSpec:
