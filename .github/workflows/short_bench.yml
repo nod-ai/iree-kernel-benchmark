@@ -5,25 +5,25 @@ on:
   workflow_dispatch:
     inputs:
       iterations:
-        description: 'Number of iterations per benchmark'
+        description: "Number of iterations per benchmark"
         required: false
-        default: '3'
+        default: "3"
       max_kernels:
-        description: 'Maximum number of kernels to benchmark'
+        description: "Maximum number of kernels to benchmark"
         required: false
-        default: '50'
+        default: "50"
       selected_backend:
-        description: 'Which backend to run benchmarks for (wave, iree, or all)'
+        description: "Which backend to run benchmarks for (wave, iree, or all)"
         required: false
-        default: 'all'
+        default: "all"
       metadata:
-        description: 'Optional: metadata string for tagging the result'
+        description: "Optional: metadata string for tagging the result"
         required: false
       pr_branch:
-        description: 'Branch name to check out (e.g., feature/opt-pass)'
+        description: "Branch name to check out (e.g., feature/opt-pass)"
         required: false
       pr_repository:
-        description: 'Repository to check out from (e.g., iree-org/wave)'
+        description: "Repository to check out from (e.g., iree-org/wave)"
         required: false
 
 concurrency:
@@ -54,9 +54,10 @@ jobs:
       - name: "Setup Python"
         uses: actions/setup-python@8d9ed9ac5c53483de85588cdf95a591a75ab9f55
         with:
-          python-version: '3.12'
+          python-version: "3.12"
 
-      - name: Setup venv
+      - name: Setup default venv
+        if: ${{ !(inputs.pr_branch && inputs.pr_repository) }}
         run: |
           python3 -m venv bench_venv
           source bench_venv/bin/activate
@@ -64,6 +65,7 @@ jobs:
           pip install --pre --no-cache-dir --find-links https://iree.dev/pip-release-links.html iree-base-compiler iree-base-runtime --upgrade
           pip install -r requirements.txt
           pip install iree-turbine@git+https://github.com/iree-org/iree-turbine.git@main
+          pip install wave-lang
 
       # WAVE BACKEND
       - name: Attention - Wave
