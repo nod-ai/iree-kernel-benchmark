@@ -105,6 +105,7 @@ def _compile_conv(config: ConvConfig, mlir_file: Path, vmfb_file: Path):
         create_vmfb_file=vmfb_file,
         schedule=SchedulingType.NONE,
         # inline=False, (TODO: how to do this with new API?)
+        iree_launch_async=False,
         backend="rocm",
         target="gfx942",
     )

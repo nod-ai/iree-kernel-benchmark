@@ -140,6 +140,7 @@ def benchmark_gemm_kernels(
 
         if backend_name == "wave":
             out_shape = config.get_out()
+            out_shape = "x".join(out_shape.split("x")[:-1] + ["f32"])
             exec_args.append(f"--input={out_shape}")
             exec_args += ["--function=isolated_benchmark"]
         else:

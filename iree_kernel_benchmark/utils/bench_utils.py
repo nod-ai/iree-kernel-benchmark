@@ -82,7 +82,7 @@ def decode_output(bench_lines):
 def bench_summary_process(ret_value, output):
     if ret_value == 1:
         # Output should have already been logged earlier.
-        logging.getLogger().error("Running convolution benchmark failed. Exiting.")
+        logging.getLogger().error("Running benchmark failed. Exiting.")
         return
 
     bench_lines = output.decode().split("\n")[3:]

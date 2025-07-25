@@ -53,7 +53,7 @@ jobs:
       - name: GEMM - Wave
         run: |
           source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.gemmbench --backend=wave --iterations=5
+          python -m iree_kernel_benchmark.gemmbench --variants=NT --backend=wave --iterations=5
 
       - name: GEMM - IREE
         run: |
