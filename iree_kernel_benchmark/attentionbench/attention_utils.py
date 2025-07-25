@@ -1,36 +1,8 @@
 from ..utils import *
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Optional
 from enum import Enum
-import math
-
-import iree.turbine.kernel.lang as tkl
-import iree.turbine.kernel.wave as tkw
-from iree.turbine.kernel.wave.templates.vanilla_attention import (
-    get_vanilla_attention_kernel,
-)
-from iree.turbine.kernel.wave.templates.attention_common import AttentionShape
-from iree.turbine.kernel.lang.global_symbols import *
-from iree.turbine.kernel.wave.constraints import MMAType
-from iree.turbine.kernel.wave.compile import wave_compile, WaveCompileOptions
-from iree.turbine.kernel.wave.utils.general_utils import (
-    get_default_scheduling_params,
-)
-from iree.turbine.kernel.wave.scheduling.schedule_enums import SchedulingType
 from typing import Optional
-from contextlib import contextmanager
-
-
-@contextmanager
-def redirect_stderr_to_file(filepath):
-    original_stderr = sys.stderr
-    with open(filepath, "w") as f:
-        sys.stderr = f
-        try:
-            yield
-        finally:
-            sys.stderr = original_stderr
 
 
 class IntrinsicType(Enum):
@@ -95,7 +67,7 @@ def get_pv_intrinsic(intrinsic: IntrinsicType):
 
 
 @dataclass
-class TuningSpec:
+class IREEAttentionTuningSpec:
     wg_tiles: list[int]
     reduction_tiles: list[int]
     M_warp: int
@@ -158,3 +130,20 @@ class TuningSpec:
             + f", promote_operands = [1]"
             + f"}}>"
         )
+
+
+@dataclass
+class AttentionBMNKTuningSpec(TuningSpec):
+    BLOCK_B: int
+    BLOCK_M: int
+    BLOCK_N: int
+    BLOCK_K2: int
+
+
+@dataclass
+class AttentionBSHDTuningSpec(TuningSpec):
+    BLOCK_B: int
+    BLOCK_H: int
+    BLOCK_N_Q: int
+    BLOCK_D_KV: int
+    BLOCK_N_KV: int

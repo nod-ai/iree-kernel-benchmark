@@ -1,15 +1,15 @@
 from ..utils import *
 from .attention_config import AttentionAttributes, AttentionConfigBMNK
-from .attention_utils import TuningSpec, IntrinsicType
+from .attention_utils import IREEAttentionTuningSpec, IntrinsicType
 from pathlib import Path
 from typing import Optional
 
-from iree.turbine.kernel.wave.constraints import MMAType
+from wave_lang.kernel.wave.constraints import MMAType
 from typing import Optional
 
 
 def generate_attention_mlir_iree(
-    config: AttentionConfigBMNK, tuning: Optional[TuningSpec] = None
+    config: AttentionConfigBMNK, tuning: Optional[IREEAttentionTuningSpec] = None
 ):
     shapes = f"""\
 !dtype = {config.dtype}
@@ -56,9 +56,9 @@ func.func @main(%Q : !Q, %K : !K, %V : !V) -> !O {{
 
 def compile_attention_iree(
     shape: AttentionAttributes,
-    spec: TuningSpec,
     mlir_file: Path,
     vmfb_file: Path,
+    spec: Optional[IREEAttentionTuningSpec],
     dump_dir: Path = None,
     extra_compiler_args: list[str] = [],
 ) -> tuple[Path, Optional[Path]]:
@@ -66,6 +66,16 @@ def compile_attention_iree(
 
     # TODO: Use different tuning specs for different configs. This is just a
     # general tuning config that worked well for sdxl shapes.
+    if not spec:
+        spec = IREEAttentionTuningSpec(
+            [1, 128, 0, 0, 0],
+            [0, 0, 0, 0, 32],
+            4,
+            1,
+            IntrinsicType.VMFMA_F32_32x32x16_F16,
+            2,
+            True,
+        )
 
     mlir_content = generate_attention_mlir_iree(config, spec)
 

@@ -20,6 +20,7 @@ jobs:
           pip install --pre --no-cache-dir --find-links https://iree.dev/pip-release-links.html iree-base-compiler iree-base-runtime --upgrade
           pip install -r requirements.txt
           pip install -r dev-requirements.txt
+          pip install wave-lang
 
       - name: Run pytest
         run: |

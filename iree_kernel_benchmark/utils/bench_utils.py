@@ -12,7 +12,9 @@ import sys
 import hashlib
 import warnings
 import random
+import torch
 from typing import Any, List, Tuple
+from contextlib import contextmanager
 
 
 def generate_md5_hex(file_path):
@@ -80,7 +82,7 @@ def decode_output(bench_lines):
 def bench_summary_process(ret_value, output):
     if ret_value == 1:
         # Output should have already been logged earlier.
-        logging.getLogger().error("Running convolution benchmark failed. Exiting.")
+        logging.getLogger().error("Running benchmark failed. Exiting.")
         return
 
     bench_lines = output.decode().split("\n")[3:]
@@ -292,3 +294,14 @@ def reduce_configs(
         overflow_tags = next_round_overflow
 
     return selected_configs
+
+
+@contextmanager
+def redirect_stderr_to_file(filepath):
+    original_stderr = sys.stderr
+    with open(filepath, "w") as f:
+        sys.stderr = f
+        try:
+            yield
+        finally:
+            sys.stderr = original_stderr

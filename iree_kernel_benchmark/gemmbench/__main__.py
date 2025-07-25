@@ -14,28 +14,196 @@ import argparse
 import sys
 from ..utils import *
 from .gemm_utils import *
+from .iree_gemm import compile_iree_gemm
+from .wave_gemm import compile_wave_gemm
 from .problems import get_gemm_configs, get_tk_gemm_configs, get_matching_configs
 
 
 def compile_gemm(
+    backend: str,
     tag: str,
     config: GemmConfig,
     kernel_dir: Path,
     vmfb_dir: Path,
-    target: str,
-    extra_compiler_args: list[str],
-    tk: bool,
-    dump_dir=None,
+    target: Optional[str] = None,
+    extra_compiler_args: list[str] = [],
+    dump_dir: Optional[Path] = None,
 ) -> tuple[str, GemmConfig, Path, Optional[Path]]:
+    name = config.get_name()
     if dump_dir:
-        name = config.get_name()
-        dpath = os.path.join(dump_dir, name)
+        dump_dir = Path(dump_dir)
+        dpath = dump_dir / name
         extra_compiler_args.extend([f"--iree-hal-dump-executable-files-to={dpath}"])
 
-    mlir_file, vmfb_file = compile_gemm_config(
-        config, kernel_dir, vmfb_dir, target, extra_compiler_args, tk
-    )
+    mlir_file = kernel_dir / f"{name}.mlir"
+    vmfb_file = vmfb_dir / f"{name}.vmfb"
+
+    if backend == "iree":
+        mlir_file, vmfb_file = compile_iree_gemm(
+            config, kernel_dir, vmfb_dir, target, extra_compiler_args
+        )
+    else:
+        mlir_file, vmfb_file = compile_wave_gemm(config, mlir_file, vmfb_file, dump_dir)
+
     return (tag, config, mlir_file, vmfb_file)
+
+
+def compile_gemm_kernels(
+    backend_name: str,
+    configs: List[GemmConfig],
+    kernel_dir: Path,
+    vmfb_dir: Path,
+    dump_dir: Optional[Path],
+    target: str = None,
+    extra_compiler_args: list[str] = [],
+) -> dict[str, tuple[str, GemmConfig]]:
+    def compile_args_generator():
+        return itertools.starmap(
+            lambda tag, config: (
+                backend_name,
+                tag,
+                config,
+                kernel_dir,
+                vmfb_dir,
+                target,
+                extra_compiler_args,
+                dump_dir,
+            ),
+            configs,
+        )
+
+    num_cpus = max(1, max(cpu_count() // 2, 1))
+    print(f"Using {num_cpus} CPUs for parallel processing.")
+
+    manager = Manager()
+    shared_vmfb_dict = manager.dict()
+
+    with Pool(num_cpus) as pool:
+        compilation_results = list(
+            tqdm(
+                pool.istarmap(compile_gemm, compile_args_generator()),
+                total=len(configs),
+                desc="Compiling GEMM Kernels",
+            )
+        )
+    vmfb_dict = shared_vmfb_dict
+
+    compile_error_count = 0
+    for tag, config, mlir_file, vmfb_file in compilation_results:
+        if vmfb_file:
+            vmfb_dict[vmfb_file] = (tag, config)
+        else:
+            compile_error_count += 1
+    print(
+        f"{len(configs) - compile_error_count} Success, {compile_error_count} Failed out of {len(configs)} configs"
+    )
+    print("Compilation process completed.")
+
+    return dict(vmfb_dict)
+
+
+def benchmark_gemm_kernels(
+    backend_name: str,
+    vmfb_dict: dict[str, tuple[str, GemmConfig]],
+    output_csv: Path,
+    num_iterations: int = 3,
+    debug=True,
+):
+    results = []
+    index = 0
+
+    csv_dir = os.path.dirname(output_csv)
+    if not os.path.exists(csv_dir):
+        os.makedirs(csv_dir)
+    print(f"Results will be written to {Path(output_csv)}")
+
+    run_error_count = 0
+    for vmfb_filename, value in tqdm(
+        vmfb_dict.items(), desc="Benchmarking GEMM Kernels"
+    ):
+        tag, config = value
+        vmfb_hash = generate_md5_hex(vmfb_filename)
+        name = config.get_name()
+
+        inp1 = config.get_inp1()
+        inp2 = config.get_inp2()
+
+        exec_args = [
+            "iree-benchmark-module",
+            f"--device={device}",
+            "--device_allocator=caching",
+            f"--module={vmfb_filename}",
+            f"--benchmark_repetitions={num_iterations}",
+            f"--input={inp1}",
+            f"--input={inp2}",
+        ]
+
+        if backend_name == "wave":
+            out_shape = config.get_out()
+            out_shape = "x".join(out_shape.split("x")[:-1] + ["f32"])
+            exec_args.append(f"--input={out_shape}")
+            exec_args += ["--function=isolated_benchmark"]
+        else:
+            exec_args += ["--function=main"]
+
+        # iree benchmark kernels
+        ret_value, cmd_out, cmd_err = run_iree_command(exec_args)
+        ok = ret_value == 0
+        if not ok:
+            run_error_count += 1
+        benchmark_gemm_mean_time_ms = bench_summary_process(ret_value, cmd_out)
+        if benchmark_gemm_mean_time_ms is None:
+            print(f"{name} benchmark failed. Skipping")
+            continue
+        benchmark_gemm_mean_time_us = benchmark_gemm_mean_time_ms * 1000
+
+        flops = config.get_flops()
+        byte_count = config.get_byte_count()
+
+        arithmetic_intensity = flops / byte_count
+        tflops_per_second = (flops / 1e12) / (benchmark_gemm_mean_time_us / 1e6)
+
+        results.append(
+            (
+                index,
+                tag,
+                name,
+                vmfb_hash,
+                config.M,
+                config.N,
+                config.K,
+                config.operand_element_type,
+                config.tA,
+                config.tB,
+                f"D={config.runtime_dim}" if config.runtime_dim is not None else "",
+                round(benchmark_gemm_mean_time_us, 4),
+                round(arithmetic_intensity, 4),
+                round(tflops_per_second, 4),
+                ok,
+            )
+        )
+        index += 1
+
+    fieldnames = [
+        "index",
+        "tag",
+        "name",
+        "vmfb_hash",
+        "M",
+        "N",
+        "K",
+        "dtype",
+        "tA",
+        "tB",
+        "runtime_dim",
+        "mean_microseconds",
+        "arithmetic_intensity",
+        "tflops",
+        "ok",
+    ]
+
+    write_results_to_csv(results, output_csv, fieldnames)
+    print(f"Results written to {output_csv}")
 
 
 if __name__ == "__main__":
@@ -104,10 +272,10 @@ if __name__ == "__main__":
     )
     parser.add_argument("--model", help="roofline on certain model", default=None)
     parser.add_argument(
-        "--tk",
-        action="store_true",
-        default=False,
-        help="Run gemm kernels using Wave Kernels",
+        "--backend",
+        choices=["iree", "wave", "wavegqa"],
+        default="iree",
+        help="Backend to run kernels",
     )
     parser.add_argument(
         "--dump_dir",
@@ -148,10 +316,11 @@ if __name__ == "__main__":
             )
         sys.exit()
 
-    tk = args.tk
+    backend_name = args.backend
+
     configs = []
     for dtype in requested_dtypes:
-        configs += get_gemm_configs(dtype, args.raw_accumulators)
+        configs += get_gemm_configs(dtype, backend_name, args.raw_accumulators)
     configs = get_matching_configs(
         configs,
         requested_variants,
@@ -161,152 +330,29 @@ if __name__ == "__main__":
     configs = reduce_configs(configs, args.max_kernels)
     print(f"Generated {len(configs)} gemm configs.")
 
-    num_cpus = max(1, max(cpu_count() // 2, 1))
-    print(f"Using {num_cpus} CPUs for parallel processing.")
-
-    manager = Manager()
-    vmfb_dict = manager.dict()
-
     repo_root = Path(__file__).parent.parent
-    kernel_dir = repo_root / "gemm" / "mlir"
-    vmfb_dir = repo_root / "gemm" / "vmfb"
+    kernel_dir = repo_root / "gemm" / backend_name / "mlir"
+    vmfb_dir = repo_root / "gemm" / backend_name / "vmfb"
+    dump_dir = Path(args.dump_dir) if args.dump_dir else None
     kernel_dir.mkdir(parents=True, exist_ok=True)
     vmfb_dir.mkdir(parents=True, exist_ok=True)
     target = args.target
     extra_compiler_args = ["--" + x for x in list(args.Xiree_compile)]
-    dump_dir = args.dump_dir
     device = "local-task" if args.target == "host_cpu" else args.device
 
-    compile_args = itertools.starmap(
-        lambda tag, config: (
-            tag,
-            config,
-            kernel_dir,
-            vmfb_dir,
-            target,
-            extra_compiler_args,
-            tk,
-            dump_dir,
-        ),
+    vmfb_dict = compile_gemm_kernels(
+        backend_name,
         configs,
-    )
-    with Pool(num_cpus) as pool:
-        compilation_results = list(
-            tqdm(
-                pool.istarmap(compile_gemm, list(compile_args)),
-                total=len(configs),
-                desc="Compiling GEMM Kernels",
-            )
-        )
-
-    compile_error_count = 0
-    for tag, config, mlir_file, vmfb_file in compilation_results:
-        if vmfb_file:
-            vmfb_dict[vmfb_file] = (tag, config)
-        else:
-            compile_error_count += 1
-    print(
-        f"{len(configs) - compile_error_count} Success, {compile_error_count} Failed out of {len(configs)} configs"
+        kernel_dir,
+        vmfb_dir,
+        dump_dir,
+        target,
+        extra_compiler_args,
     )
 
-    print("Compilation process completed.")
-
-    results = []
-    index = 0
-    output_csv_base = "gemm_wave" if tk else "gemm_iree"
+    output_csv_base = f"gemm_{backend_name}"
     if args.raw_accumulators:
         output_csv_base += "_raw_accumulators"
-    output_csv = f"results/gemm/{output_csv_base}.csv"
-    csv_dir = os.path.dirname(output_csv)
-    if not os.path.exists(csv_dir):
-        os.makedirs(csv_dir)
-    print(f"Results will be written to {Path(output_csv)}")
+    output_csv_path = Path(f"results/gemm/{output_csv_base}.csv")
 
-    run_error_count = 0
-    for vmfb_filename, value in tqdm(
-        vmfb_dict.items(), desc="Benchmarking GEMM Kernels"
-    ):
-        tag, config = value
-        vmfb_hash = generate_md5_hex(vmfb_filename)
-        name = config.get_name()
-
-        inp1 = config.get_inp1()
-        inp2 = config.get_inp2()
-
-        exec_args = [
-            "iree-benchmark-module",
-            f"--device={device}",
-            "--device_allocator=caching",
-            f"--module={vmfb_filename}",
-            f"--benchmark_repetitions={args.iterations}",
-            f"--input={inp1}",
-            f"--input={inp2}",
-        ]
-
-        if tk:
-            out_shape = config.get_out()
-            exec_args.append(f"--input={out_shape}")
-            exec_args += ["--function=isolated_benchmark"]
-        else:
-            exec_args += ["--function=main"]
-
-        # iree benchmark kernels
-        ret_value, cmd_out, cmd_err = run_iree_command(exec_args)
-        ok = ret_value == 0
-        if not ok:
-            run_error_count += 1
-        benchmark_gemm_mean_time_ms = bench_summary_process(ret_value, cmd_out)
-        if benchmark_gemm_mean_time_ms is None:
-            print(f"{name} benchmark failed. Skipping")
-            continue
-        benchmark_gemm_mean_time_us = benchmark_gemm_mean_time_ms * 1000
-
-        flops = config.get_flops()
-        byte_count = config.get_byte_count()
-
-        arithmetic_intensity = flops / byte_count
-        tflops_per_second = (flops / 1e12) / (benchmark_gemm_mean_time_us / 1e6)
-
-        results.append(
-            (
-                index,
-                tag,
-                name,
-                vmfb_hash,
-                config.M,
-                config.N,
-                config.K,
-                config.operand_element_type,
-                config.tA,
-                config.tB,
-                f"D={config.runtime_dim}" if config.runtime_dim is not None else "",
-                round(benchmark_gemm_mean_time_us, 4),
-                round(arithmetic_intensity, 4),
-                round(tflops_per_second, 4),
-                ok,
-            )
-        )
-        index += 1
-
-    fieldnames = [
-        "index",
-        "tag",
-        "name",
-        "vmfb_hash",
-        "M",
-        "N",
-        "K",
-        "dtype",
-        "tA",
-        "tB",
-        "runtime_dim",
-        "mean_microseconds",
-        "arithmetic_intensity",
-        "tflops",
-        "ok",
-    ]
-
-    write_results_to_csv(results, output_csv, fieldnames)
-    print(f"Results written to {output_csv}")
-
-    exit(0)
+    benchmark_gemm_kernels(backend_name, vmfb_dict, output_csv_path, args.iterations)

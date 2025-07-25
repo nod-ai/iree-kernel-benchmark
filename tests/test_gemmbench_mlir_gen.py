@@ -1,8 +1,8 @@
 from iree_kernel_benchmark.gemmbench.gemm_utils import (
     GemmConfig,
-    generate_mlir,
     kDynamic,
 )
+from iree_kernel_benchmark.gemmbench.iree_gemm import generate_mlir
 from .utils import match_lines
 from iree.compiler import ir
 import pytest

@@ -11,15 +11,16 @@ import pandas as pd
 import optuna
 import argparse
 import sys
+from wave_lang.kernel.wave.constraints import MMAType
 from ..utils import *
 from .attention_utils import *
 from .attention_config import *
-from .wave_attention import compile_attention_wave_vanilla
-from .wave_bshd_attention import compile_attention_wave_bshd
+from .wave_attention import compile_attention_wave_vanilla, compile_attention_wave_bshd
 from .iree_attention import compile_attention_iree
 from .problems import get_attention_configs, get_attention_configs_gqa, ConfigList
 
 type Backend = Literal["iree", "wave", "wavegqa"]
+type AttentionTuningSpec = AttentionBMNKTuningSpec | AttentionBSHDTuningSpec | IREEAttentionTuningSpec
 
 
 def compile_attention(
@@ -34,9 +35,9 @@ def compile_attention(
         MMAType.F32_32x32x16_K8_F16,
         MMAType.F32_32x32x8_F16,
     ),
-    spec: TuningSpec = None,
+    spec: Optional[AttentionTuningSpec] = None,
 ):
-    name = config.to_bmnk1k2().get_name()
+    name = config.get_name()
     if dump_dir:
         dump_dir = Path(dump_dir)
         dpath = dump_dir / name
@@ -51,32 +52,17 @@ def compile_attention(
             MMAType.F32_32x32x8_F16,
         )
 
-    if not spec:
-        if backend == "wavegqa":
-            wg_tiles = [1, 1, 128, 128, 32]
-        else:
-            wg_tiles = [1, 128, 0, 0, 0]
-        spec = TuningSpec(
-            wg_tiles,
-            [0, 0, 0, 0, 32],
-            4,
-            1,
-            IntrinsicType.VMFMA_F32_32x32x16_F16,
-            2,
-            True,
-        )
-
     if backend == "iree":
         mlir_file, vmfb_file = compile_attention_iree(
-            config, spec, mlir_file, vmfb_file, dump_dir, extra_compiler_args
+            config, mlir_file, vmfb_file, spec, dump_dir, extra_compiler_args
         )
     elif backend == "wave":
         mlir_file, vmfb_file = compile_attention_wave_vanilla(
-            config, spec, mlir_file, vmfb_file, dump_dir, mfma_variant
+            config, mlir_file, vmfb_file, spec, dump_dir, mfma_variant
         )
     elif backend == "wavegqa":
         mlir_file, vmfb_file = compile_attention_wave_bshd(
-            config, spec, mlir_file, vmfb_file, dump_dir, mfma_variant
+            config, mlir_file, vmfb_file, spec, dump_dir, mfma_variant
         )
 
     return (tag, config, mlir_file, vmfb_file)
@@ -89,7 +75,7 @@ def compile_attention_kernels(
     vmfb_dir: Path,
     dump_dir: Path,
     mfma_configs: dict[str, tuple[MMAType, MMAType]] = {},
-    tuning_specs: dict[str, TuningSpec] = {},
+    tuning_specs: dict[str, AttentionTuningSpec] = {},
 ) -> dict:
     vmfb_dict = {}
 
@@ -103,16 +89,8 @@ def compile_attention_kernels(
                 backend_name,
                 [],
                 dump_dir,
-                (
-                    mfma_configs.get(config.to_bshd().get_name())
-                    if backend_name == "wavegqa"
-                    else None
-                ),
-                (
-                    tuning_specs.get(config.to_bshd().get_name())
-                    if backend_name == "wavegqa"
-                    else None
-                ),
+                mfma_configs.get(config.get_name()),
+                tuning_specs.get(config.get_name()),
             ),
             configs,
         )
@@ -301,39 +279,67 @@ def benchmark_attention_kernels(
     return pd.read_csv(output_csv)
 
 
+@dataclass
+class TuningConstraint:
+    name: str
+    min: int
+    max: int
+    step: int
+    exponential: bool = False
+
+    def get_range(self) -> list[int]:
+        range = []
+
+        curr = self.min
+        while curr <= self.max:
+            range.append(curr)
+            if self.exponential:
+                curr *= self.step
+            else:
+                if curr == 1 and self.step > 1:
+                    curr += self.step - 1
+                else:
+                    curr += self.step
+
+        return range
+
+
 def tune_attention_kernels(
     configs: ConfigList,
     kernel_dir: Path,
     vmfb_dir: Path,
     dump_dir: Path,
-):
-    mfma_configs = [
+    mfma_configs: List[Tuple[MMAType, MMAType]] = [
         (MMAType.F32_32x32x16_K8_F16, MMAType.F32_32x32x8_F16),
         (MMAType.F32_16x16x32_K8_F16, MMAType.F32_16x16x16_F16),
         (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
         (MMAType.F32_32x32x8_F16, MMAType.F32_32x32x8_F16),
-    ]
-    tiling_constraints = [
+    ],
+    tiling_constraints: List[TuningConstraint] = [
         TuningConstraint(name="BLOCK_B", min=1, max=1, step=1),
         TuningConstraint(name="BLOCK_H", min=1, max=2, step=1),
         TuningConstraint(name="BLOCK_N_Q", min=16, max=128, step=16),
         TuningConstraint(name="BLOCK_D_KV", min=16, max=128, step=16),
         TuningConstraint(name="BLOCK_N_KV", min=16, max=64, step=16),
-    ]
-
+    ],
+):
     tuning_results = {}
     tuning_dir = Path("results/tuning")
     os.makedirs(tuning_dir, exist_ok=True)
 
-    def tune_config(config):
-        tuning_result: tuple[float, TuningSpec, tuple[MMAType]] = (
+    def tune_config(config: Tuple[str, AttentionAttributes]):
+        tuning_result: tuple[
+            float,
+            AttentionBMNKTuningSpec | AttentionBSHDTuningSpec,
+            tuple[MMAType, MMAType],
+        ] = (
             math.inf,
             None,
             mfma_configs[0],
         )
 
         config_tag, kernel = config
-        config_name = kernel.to_bshd().get_name()
+        config_name = kernel.get_name()
 
         def objective(trial: optuna.Trial) -> float:
             nonlocal tuning_result
@@ -347,15 +353,16 @@ def tune_attention_kernels(
                 )
                 for constraint in tiling_constraints
             ]
-            tuning_spec = TuningSpec(
-                wg_tiles=block_sizes,
-                reduction_tiles=[0 for _ in range(len(block_sizes))],
-                M_warp=0,
-                N_warp=0,
-                intrinsic="none",
-                waves_per_eu=2,
-                denorm_flush=False,
-            )
+
+            tuning_spec_params = {
+                constraint.name: block_sizes[i]
+                for i, constraint in enumerate(tiling_constraints)
+            }
+
+            if kernel.attention_type == "bshd":
+                tuning_spec = AttentionBSHDTuningSpec(**tuning_spec_params)
+            else:
+                tuning_spec = AttentionBMNKTuningSpec(**tuning_spec_params)
 
             mfma_config = mfma_configs[
                 trial.suggest_categorical("MFMA_INDEX", list(range(len(mfma_configs))))
@@ -399,12 +406,12 @@ def tune_attention_kernels(
         study.optimize(objective, n_trials=100, show_progress_bar=True)
 
         best_runtime, best_spec, best_mfma = tuning_result
-        print("Optimal spec", best_spec)
+        print("Optimal spec", asdict(best_spec))
 
         if best_spec and best_mfma:
             tuning_results[config_name] = {
-                "spec": asdict(best_spec),
-                "mfma": [mfma.name for mfma in best_mfma],
+                "block_sizes": asdict(best_spec),
+                "mfma_variant": [mfma.name for mfma in best_mfma],
                 "mean_microseconds": best_runtime,
             }
             with open(tuning_dir / "results.json", "w") as file:
@@ -412,31 +419,6 @@ def tune_attention_kernels(
 
     for config in configs:
         tune_config(config)
-
-
-@dataclass
-class TuningConstraint:
-    name: str
-    min: int
-    max: int
-    step: int
-    exponential: bool = False
-
-    def get_range(self) -> list[int]:
-        range = []
-
-        curr = self.min
-        while curr <= self.max:
-            range.append(curr)
-            if self.exponential:
-                curr *= self.step
-            else:
-                if curr == 1 and self.step > 1:
-                    curr += self.step - 1
-                else:
-                    curr += self.step
-
-        return range
 
 
 if __name__ == "__main__":
@@ -522,8 +504,12 @@ if __name__ == "__main__":
     else:
         configs = get_attention_configs(use_fp8=False)
 
-    configs = reduce_configs(configs, args.max_kernels)
+    configs: List[Tuple[str, AttentionAttributes]] = reduce_configs(
+        configs, args.max_kernels
+    )
     print(f"Generated {len(configs)} attention configs.")
+
+    attention_type = configs[0][1].attention_type
 
     repo_root = Path(__file__).parent.parent
     kernel_dir = repo_root / "attention" / backend_name / "mlir"
@@ -537,7 +523,7 @@ if __name__ == "__main__":
         tune_attention_kernels(configs, kernel_dir, vmfb_dir, dump_dir)
 
     else:
-        specs: dict[str, TuningSpec] = {}
+        specs: dict[str, AttentionTuningSpec] = {}
         mfma_configs: dict[str, tuple[MMAType, MMAType]] = {}
 
         def to_mma(str_config: list[str]) -> tuple[MMAType, MMAType]:
@@ -550,11 +536,15 @@ if __name__ == "__main__":
             with open(args.use_tuned, "r") as file:
                 tuned_data: dict[str, dict] = json.load(file)
                 specs = {
-                    kernel_name: TuningSpec(**tune_result["spec"])
+                    kernel_name: (
+                        AttentionBMNKTuningSpec(**tune_result["block_sizes"])
+                        if attention_type == "bmnk"
+                        else AttentionBSHDTuningSpec(**tune_result["block_sizes"])
+                    )
                     for kernel_name, tune_result in tuned_data.items()
                 }
                 mfma_configs = {
-                    kernel_name: to_mma(tune_result["mfma"])
+                    kernel_name: to_mma(tune_result["mfma_variant"])
                     for kernel_name, tune_result in tuned_data.items()
                 }
 

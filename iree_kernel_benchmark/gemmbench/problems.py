@@ -951,7 +951,7 @@ def square(dtype: str, raw_accumulators: bool) -> list[GemmConfig]:
 
 
 def get_gemm_configs(
-    dtype: str, raw_accumulators: bool
+    dtype: str, backend: str, raw_accumulators: bool
 ) -> list[tuple[str, GemmConfig]]:
     llama8b_prefill_configs = llama8b_prefill(dtype, raw_accumulators)
     llama13bmatvec_configs = llama13bmatvec(dtype, raw_accumulators)
@@ -966,7 +966,8 @@ def get_gemm_configs(
     square_configs = square(dtype, raw_accumulators)
 
     all_configs: list[tuple[str, GemmConfig]] = []
-    all_configs += [("llama8b_prefill", x) for x in llama8b_prefill_configs]
+    if backend == "iree":
+        all_configs += [("llama8b_prefill", x) for x in llama8b_prefill_configs]
     all_configs += [("llama13bmatvec", x) for x in llama13bmatvec_configs]
     all_configs += [("llama70bmatvec", x) for x in llama70bmatvec_configs]
     all_configs += [("llama13bskinny", x) for x in llama13bskinny_configs]
