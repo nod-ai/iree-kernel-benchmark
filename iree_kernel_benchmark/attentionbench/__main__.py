@@ -302,7 +302,7 @@ def benchmark_attention_kernels(
 
         runtimes.append(benchmark_gemm_mean_time_ms)
         statuses.append(ok)
-        configs.append((tag, config))
+        configs.append((tag, attn_attrs))
 
     save_results(configs, runtimes, statuses, output_csv)
 
