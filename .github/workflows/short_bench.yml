@@ -40,15 +40,7 @@ jobs:
       SELECTED_BACKEND: ${{ inputs.selected_backend || 'all' }}
 
     steps:
-      - name: Checkout PR branch
-        if: ${{ inputs.pr_branch && inputs.pr_repository }}
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.pr_branch }}
-          repository: ${{ inputs.pr_repository }}
-
-      - name: Checkout default branch
-        if: ${{ !(inputs.pr_branch && inputs.pr_repository) }}
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: "Setup Python"
@@ -66,6 +58,24 @@ jobs:
           pip install -r requirements.txt
           pip install iree-turbine@git+https://github.com/iree-org/iree-turbine.git@main
           pip install wave-lang
+
+      - name: Setup venv using PR wave
+        if: ${{ inputs.pr_branch && inputs.pr_repository }}
+        run: |
+          python3 -m venv bench_venv
+          source bench_venv/bin/activate
+          pip install --upgrade pip
+
+          git clone https://github.com/${{ inputs.pr_repository }}.git
+          cd wave
+          git checkout ${{ inputs.pr_branch }}
+          pip install -r requirements-iree-pinned.txt
+          pip install -r pytorch-rocm-requirements.txt
+          pip install -r requirements.txt
+          pip install -e .
+
+          cd ..
+          pip install -r requirements.txt
 
       # WAVE BACKEND
       - name: Attention - Wave
