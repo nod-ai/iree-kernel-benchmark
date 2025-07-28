@@ -22,6 +22,7 @@ class BenchmarkRun:
     blobName: str
     timestamp: datetime
     changeStats: ChangeStats
+    hasArtifact: bool = False
 
 @dataclass
 class RunArtifact:

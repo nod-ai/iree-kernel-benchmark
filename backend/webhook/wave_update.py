@@ -1,4 +1,6 @@
+from datetime import timezone
 from auth import get_access_token
+from globals import TESTING_MODE
 from storage.db import DatabaseClient
 from storage.directory import DirectoryClient
 from storage.types import *
@@ -39,36 +41,40 @@ class WaveUpdateListener:
 
     def __init__(self, db_client: DatabaseClient, storage_client: DirectoryClient):
         self._wave_auth = Auth.Token(get_access_token('WAVE'))
-        self._bench_auth = Auth.Token(get_access_token('BENCH'))
+        self._bench_auth = Auth.Token(get_access_token('TEST' if TESTING_MODE else 'BENCH'))
         gh_wave = Github(auth=self._wave_auth)
         gh_bench = Github(auth=self._bench_auth)
         self._wave_repo = gh_wave.get_repo('iree-org/wave')
-        self._bench_repo = gh_bench.get_repo('nod-ai/iree-kernel-benchmark')
+        self._bench_repo = gh_bench.get_repo('suryajasper/github-api-test' if TESTING_MODE else 'nod-ai/iree-kernel-benchmark')
         self._db_client = db_client
         self._storage_client = storage_client
 
     def trigger_workflow(self, repo_name: str, branch_name: str, metadata: dict = None):
-        workflow_id = 'short_bench.yml'
+        bench_repo_name = self._bench_repo.full_name
+        workflow_id = 'main.yml' if TESTING_MODE else 'short_bench.yml'
         token = self._bench_auth.token
 
-        url = f'https://api.github.com/repos/nod-ai/iree-kernel-benchmark/actions/workflows/{workflow_id}/dispatches'
+        url = f'https://api.github.com/repos/{bench_repo_name}/actions/workflows/{workflow_id}/dispatches'
         headers = {
             "Accept": "application/vnd.github+json",
             "Authorization": f"Bearer {token}",
             "X-GitHub-Api-Version": "2022-11-28"
         }
-        body = {
-            "ref": "main",
-            "inputs": {
-                "iterations": "3",
-                "max_kernels": "50",
-                "selected_backend": "all",
-                "pr_repository": repo_name,
-                "pr_branch": branch_name,
+        if TESTING_MODE:
+            body = { "ref": "main" }
+        else:
+            body = {
+                "ref": "main",
+                "inputs": {
+                    "iterations": "3",
+                    "max_kernels": "50",
+                    "selected_backend": "all",
+                    "pr_repository": repo_name,
+                    "pr_branch": branch_name,
+                }
             }
-        }
-        if metadata:
-            body['inputs']['metadata'] = json.dumps(metadata)
+            if metadata:
+                body['inputs']['metadata'] = json.dumps(metadata)
         
         response = requests.post(url, headers=headers, json=body)
         if response.status_code != 204:
@@ -98,7 +104,7 @@ class WaveUpdateListener:
                 headSha=pr_obj['head']['sha'],
                 url=pr_obj['html_url'],
                 type='pr',
-                timestamp=datetime.fromisoformat(pr_obj['created_at']),
+                timestamp=datetime.now(timezone.utc), # fromisoformat(pr_obj['created_at']),
                 author=author,
                 title=pr_obj['title'],
                 status=pr_obj['state'],
@@ -115,6 +121,7 @@ class WaveUpdateListener:
         if pr_obj['draft']:
             return
         
+        # ignore if not being merged into iree-org/wave/main
         if pr_obj['base']['repo']['full_name'] != 'iree-org/wave' or \
             pr_obj['base']['ref'] != 'main':
             return
@@ -136,4 +143,4 @@ class WaveUpdateListener:
             print(f'Pull Request {pr_obj["html_url"]} triggering workflow on {action}')
             head_repo_name = pr_obj['head']['repo']['full_name']
             head_branch = pr_obj['head']['ref']
-            self.trigger_workflow(head_repo_name, head_branch, { 'trigger': pr_entry })
+            self.trigger_workflow(head_repo_name, head_branch) # { 'trigger': pr_entry }

@@ -35,9 +35,9 @@ class DatabaseClient:
         self._run_tb.upsert_entity(run_obj)
         return run._id
     
-    def update_run(self, run_id: str, **kwargs):
+    def update_run(self, run_id: str, update_dict: dict[str, Any]):
         entity = self._run_tb.get_entity(partition_key="run", row_key=run_id)
-        entity.update(kwargs)
+        entity.update(update_dict)
         entity = flatten_entry(entity)
         self._run_tb.update_entity(entity)
 
@@ -48,7 +48,7 @@ class DatabaseClient:
         return self._run_tb.get_entity(partition_key="run", row_key=run_id)
 
     def query_runs(self, query: str) -> list[BenchmarkRun]:
-        entities = list(self._run_tb.query_entities(query))
+        entities = list(self._run_tb.query_entities(query, headers={'Accept' : 'application/json;odata=nometadata'}))
         runs = []
         for entity in entities:
             entity['steps'] = json.loads(entity['steps'])
@@ -57,7 +57,7 @@ class DatabaseClient:
         return runs
 
     def find_all_runs(self) -> list[BenchmarkRun]:
-        entities = list(self._run_tb.list_entities())
+        entities = list(self._run_tb.list_entities(headers={'Accept' : 'application/json;odata=nometadata'}))
         runs = []
         for entity in entities:
             entity['steps'] = json.loads(entity['steps'])
@@ -70,9 +70,9 @@ class DatabaseClient:
         self._repo_tb.upsert_entity(entity)
         return pr._id
 
-    def update_pull_request(self, prId: str, **kwargs):
+    def update_pull_request(self, prId: str, update_dict: dict[str, Any]):
         entity = self._repo_tb.get_entity(partition_key="pull", row_key=prId)
-        entity.update(flatten_entry(kwargs))
+        entity.update(flatten_entry(update_dict))
         self._repo_tb.update_entity(entity)
 
     def delete_pull_request(self, prId: str) -> str:
@@ -84,9 +84,9 @@ class DatabaseClient:
         self._repo_tb.upsert_entity(entity)
         return pr._id
 
-    def update_merge(self, mergeId: str, **kwargs):
+    def update_merge(self, mergeId: str, update_dict: dict[str, Any]):
         entity = self._repo_tb.get_entity(partition_key="merge", row_key=mergeId)
-        entity.update(flatten_entry(kwargs))
+        entity.update(flatten_entry(update_dict))
         self._repo_tb.update_entity(entity)
 
     def delete_merge(self, mergeId: str) -> str:
@@ -115,6 +115,13 @@ class DatabaseClient:
                 modifications.append(fromdict(RepoMerge, entity_dict))
         
         return modifications
+
+    def find_latest_pr(self) -> RepoPullRequest:
+        entities = list(self._repo_tb.query_entities("type eq 'pr'", headers={'Accept' : 'application/json;odata=nometadata'}))
+        latest_entity = max(entities, key=lambda x: x['timestamp'])
+        latest_entity['author'] = json.loads(latest_entity['author'])
+        latest_entity['commits'] = json.loads(latest_entity['commits'])
+        return fromdict(RepoPullRequest, latest_entity)
     
     def clear_all_runs(self):
         entities = self._run_tb.list_entities()

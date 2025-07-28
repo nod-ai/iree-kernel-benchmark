@@ -1,40 +1,54 @@
 from auth import get_access_token
+from storage.conversion import random_stats
+from globals import TESTING_MODE
 from storage.db import DatabaseClient
 from storage.directory import DirectoryClient
 from storage.types import *
-from storage.artifacts import download_artifact_kernels_by_run_id
+from storage.artifacts import download_artifact_kernels_by_run_id, save_run_artifact
 from dataclass_wizard import asdict
 from github import Github, Auth
 import json
+from azure.core.exceptions import ResourceNotFoundError
 
 def jsonify(model) -> str:
     return json.dumps(asdict(model), indent=4)
 
 class WorkflowListener:
     def __init__(self, db_client: DatabaseClient, storage_client: DirectoryClient):
-        auth = Auth.Token(get_access_token('BENCH'))
-        gh = Github(auth=auth)
-        self._repo = gh.get_repo('nod-ai/iree-kernel-benchmark')
+        if TESTING_MODE:
+            gh = Github(auth=Auth.Token(get_access_token('TEST')))
+            self._repo = gh.get_repo('suryajasper/github-api-test')
+        else:
+            gh = Github(auth=Auth.Token(get_access_token('BENCH')))
+            self._repo = gh.get_repo('nod-ai/iree-kernel-benchmark')
+
         self._db_client = db_client
         self._storage_client = storage_client
 
     def _handle_workflow_run_requested(self, run_payload: dict):
         run_data = run_payload['workflow_run']
         run_id = str(run_data['id'])
+
+        pr = self._db_client.find_latest_pr()
+
         run = BenchmarkRun(
             _id=run_id,
-            headSha=run_data['head_sha'],
+            headSha=pr.headSha,
             status=run_data['status'],
             conclusion=run_data['conclusion'] or 'unknown',
+            numSteps=7 if TESTING_MODE else 17,
             steps=[],
             blobName=run_data['updated_at'],
-            kernels=[],
+            timestamp=datetime.fromisoformat(run_data['updated_at']),
+            changeStats={},
+            hasArtifact=False,
         )
         print('adding new run', run_id, jsonify(run))
-        self._db_client.insert_run(run)
+        self._db_client.insert_run(run) 
 
     def _handle_workflow_run_progress(self, run_payload: dict):
         run_data = run_payload['workflow_run']
+        
         run_id = str(run_data['id'])
 
         print('updating run', run_id, json.dumps({
@@ -44,10 +58,11 @@ class WorkflowListener:
         }, indent=4))
 
         self._db_client.update_run(
-            run_id,
-            status=run_data['status'],
-            conclusion=run_data['conclusion'],
-            blobName=run_data['updated_at'],
+            run_id, {
+                "status": run_data['status'],
+                "conclusion": run_data['conclusion'],
+                "timestamp": datetime.fromisoformat(run_data['updated_at']),
+            }
         )
 
     def _handle_workflow_run_complete(self, run_payload: dict):
@@ -60,20 +75,20 @@ class WorkflowListener:
             'updated_at': run_data['updated_at'],
         }, indent=4))
 
-        kernels = download_artifact_kernels_by_run_id(self._repo, run_id)
-
         self._db_client.update_run(
-            run_id,
-            status=run_data['status'],
-            conclusion=run_data['conclusion'],
-            blobName=run_data['updated_at'],
-            kernels=kernels,
+            run_id, {
+                "status": run_data['status'],
+                "conclusion": run_data['conclusion'],
+                "timestamp": datetime.fromisoformat(run_data['updated_at']),
+            }
         )
 
     def handle_workflow_run_payload(self, run_payload: dict):
-        if run_payload['repository']['name'] != 'github-api-test':
+        if run_payload['workflow_run']['event'] != 'workflow_dispatch':
             return
-        if run_payload['workflow_run']['name'] != 'Test Job':
+        if run_payload['repository']['name'] != 'iree-kernel-benchmark':
+            return
+        if run_payload['workflow_run']['name'] != 'Short Benchmark':
             return
         
         handler = {
@@ -85,9 +100,9 @@ class WorkflowListener:
         handler[run_payload['action']](run_payload)
 
     def handle_workflow_job_payload(self, job_payload: dict):
-        if job_payload['repository']['name'] != 'github-api-test':
+        if job_payload['repository']['name'] != 'iree-kernel-benchmark':
             return
-        if job_payload['workflow_job']['name'] != 'dummy-delay-job':
+        if job_payload['workflow_job']['name'] != 'short_benchmark':
             return
 
         run_id = str(job_payload['workflow_job']['run_id'])
@@ -95,4 +110,7 @@ class WorkflowListener:
 
         print('updating job', json.dumps(steps, indent=4))
 
-        self._db_client.update_run(run_id, steps=steps)
+        try:
+            self._db_client.update_run(run_id, { "steps": steps })
+        except Exception as e:
+            return

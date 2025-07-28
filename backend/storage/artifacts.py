@@ -1,3 +1,4 @@
+from globals import TESTING_MODE
 from .directory import DirectoryClient
 from .db import DatabaseClient
 from .types import *
@@ -98,7 +99,7 @@ def download_artifact_kernels(
 
     download_url = artifact.archive_download_url
     headers = dict(artifact.raw_headers)
-    headers['Authorization'] = f'Bearer {get_access_token('BENCH')}'
+    headers['Authorization'] = f'Bearer {get_access_token('TEST' if TESTING_MODE else 'BENCH')}'
 
     response = requests.get(download_url, headers=headers)
     
@@ -172,6 +173,30 @@ def download_artifact_kernels_by_run_id(repo: Repository.Repository, run_id) -> 
         return artifact_kernels
     return []
 
+def save_run_artifact(repo: Repository.Repository, run_data: BenchmarkRun, dir_client: DirectoryClient) -> Optional[os.PathLike]:
+    run = repo.get_workflow_run(int(run_data._id))
+    artifacts = run.get_artifacts()
+    
+    for artifact in artifacts:
+        artifact_kernels, artifact_path = download_artifact_kernels(artifact)
+        print(f'Downloaded artifacts to local path {artifact_path}')
+
+        if len(artifact_kernels) == 0:
+            print('Failed to parse artifact')
+            return None
+
+        try:
+            print(f'Uploading artifacts to azure path {run_data.blobName}')
+            dir_client.upload(f'{artifact_path}/benchmark-results', run_data.blobName)
+            shutil.rmtree(artifact_path)
+            return run_data.blobName
+        except:
+            print(f'Blob already exists for artifact {artifact.id}. Skipped upload')
+            return None
+    
+    print('No artifact returned by run')
+    return None
+
 def load_artifact_kernels(client: DirectoryClient, directory_name: str) -> list[dict]:
     artifact_id = str(uuid4())
     local_path = Path(f'./tmp/{artifact_id}')
@@ -206,3 +231,38 @@ def fetch_artifact_by_trigger_id(directory_client: DirectoryClient, db_client: D
     run_dir_name = runs[0].blobName
     kernels = load_artifact_kernels(directory_client, f'{run_dir_name}/benchmark-results')
     return RunArtifact(kernels, runs[0])
+
+def compare_artifact_kernels(old: List[Dict], new: List[Dict] = None) -> dict[str, float]:
+    if not new:
+        unique_backends = set([kernel['backend'] for kernel in new])
+        return { backend: 0.0 for backend in unique_backends }
+
+    def hash_kernel(kernel: Dict) -> str:
+        shape: dict = kernel['shape']
+        dtype: str = kernel['dtype']
+        shape_hash = '_'.join([f'{k}.{v}' for k, v in shape.items()])
+        return f'{shape_hash}_dt{dtype}'
+
+    common_shapes = { hash_kernel(kernel) for kernel in old + new }
+
+    unique_backends = set([kernel['backend'] for kernel in new])
+    perf_stats = { backend: [0, 0, 0] for backend in unique_backends }
+
+    for i, kernel_list in enumerate((old, new)):
+        for kernel in kernel_list:
+            kernel_hash = hash_kernel(kernel)
+            if kernel_hash not in common_shapes:
+                continue
+            backend = kernel['backend']
+            if backend not in perf_stats:
+                continue
+            runtime = kernel['meanMicroseconds']
+            perf_stats[backend][i] += runtime
+            if i == 0:
+                perf_stats[backend][2] += 1
+    
+    change_stats = { backend: 0.0 for backend in unique_backends }
+    for backend, (old_perf, new_perf, count) in perf_stats.items():
+        change_stats[backend] = (new_perf / old_perf - 1) * 100
+    
+    return change_stats

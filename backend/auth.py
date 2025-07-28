@@ -84,7 +84,8 @@ def get_access_token(installation: Literal['WAVE', 'BENCH', 'TEST'] = 'WAVE'):
         save_cache(cache_file, cache)
         return response_data["token"]
     else:
-        raise Exception(f"Failed to get access token: {response_data}")
+        print("Failed to get access token. Clearing cache and retrying")
+        os.remove(f'{installation}_{ACCESS_TOKEN_CACHE_FILE}')
 
 if __name__ == '__main__':
     token = get_access_token()

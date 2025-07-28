@@ -32,7 +32,7 @@ def convert_prs_from_github(pr_json: list[dict]) -> list[dict]:
             url=pr_dict.get('html_url'),
             author=author,
             title=pr_dict.get('title'),
-            status=pr_dict.get('status'),
+            status=pr_dict.get('state'),
             commits=[],
             description=pr_dict.get('body'),
         )

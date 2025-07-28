@@ -5,7 +5,7 @@ from flask_cors import CORS
 from dataclass_wizard import fromdict, asdict
 
 from storage import get_azure_clients
-from storage.artifacts import fetch_latest_artifact, load_artifact_kernels
+from storage.artifacts import fetch_latest_artifact, load_artifact_kernels, parse_kernels_from_path
 from storage.conversion import convert_prs_from_github
 import json
 
@@ -36,8 +36,14 @@ def get_all_runs():
 
 @app.route('/artifact')
 def get_latest_artifact():
+    return jsonify(
+        load_artifact_kernels(directory_client, 'baseline/benchmark-results')
+    )
     # artifact = fetch_latest_artifact(directory_client, db_client)
     # return jsonify(artifact.kernels)
+
+    # return jsonify(parse_kernels_from_path('test/benchmark-results-latest'))
+
     return jsonify(
         load_artifact_kernels(directory_client, '2025-07-23T17:30:22.817728+00:00/benchmark-results')
     )
