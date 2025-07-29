@@ -1,8 +1,12 @@
-from typing import Optional
+from typing import Optional, override
 import torch
 
-from iree_kernel_benchmark.utils.wave_utils import DTYPE_TO_TORCH, dtype_to_torch
-from .attention_config import AttentionAttributes
+from ..utils import *
+from .attention_config import (
+    AttentionAttributes,
+    AttentionConfigBMNK,
+    bmnk1k2_to_attention_attributes,
+)
 from wave_lang.kernel.wave.utils.torch_utils import (
     device_randn,
     device_zeros,
@@ -11,38 +15,43 @@ from wave_lang.kernel.wave.utils.torch_utils import (
 import time
 
 
-def clear_mem(*tensors):
-    for tensor in tensors:
-        del tensor
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
+class TorchAttentionBenchmark(KernelBenchmark):
+    def _clear_mem(self, *tensors):
+        for tensor in tensors:
+            del tensor
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
+    @override
+    def bench_kernel(
+        self, config: AttentionConfigBMNK, vmfb_filename, num_iterations=3, debug=False
+    ):
 
-def benchmark_torch_attention(
-    config: AttentionAttributes, num_iterations: int = 3
-) -> Optional[float]:
+        shape = bmnk1k2_to_attention_attributes(config)
 
-    q_shape = (config.num_query_heads, config.query_seq_len, config.head_size)
-    k_shape = (config.num_query_heads, config.kv_seq_len, config.head_size)
-    v_shape = (config.num_query_heads, config.kv_seq_len, config.head_size_kv)
+        q_shape = (shape.num_query_heads, shape.query_seq_len, shape.head_size)
+        k_shape = (shape.num_query_heads, shape.kv_seq_len, shape.head_size)
+        v_shape = (shape.num_query_heads, shape.kv_seq_len, shape.head_size_kv)
 
-    q = device_randn(q_shape, dtype=dtype_to_torch(config.dtype))
-    k = device_randn(k_shape, dtype=dtype_to_torch(config.dtype))
-    v = device_randn(v_shape, dtype=dtype_to_torch(config.dtype))
+        q = device_randn(q_shape, dtype=dtype_to_torch(config.dtype))
+        k = device_randn(k_shape, dtype=dtype_to_torch(config.dtype))
+        v = device_randn(v_shape, dtype=dtype_to_torch(config.dtype))
 
-    clear_mem()
-    try:
-        start_time = time.perf_counter()
-        for _ in range(num_iterations):
-            torch.nn.functional.scaled_dot_product_attention(q, k, v, attn_mask=None)
-        end_time = time.perf_counter()
-    except Exception as e:
-        print(f"Failed to benchmark kernel {config.get_name()}: {e}")
-        return None
-    clear_mem(q, k, v)
+        self._clear_mem()
+        try:
+            start_time = time.perf_counter()
+            for _ in range(num_iterations):
+                torch.nn.functional.scaled_dot_product_attention(
+                    q, k, v, attn_mask=None
+                )
+            end_time = time.perf_counter()
+        except Exception as e:
+            print(f"Failed to benchmark kernel {config.get_name()}: {e}")
+            return 0, False
+        self._clear_mem(q, k, v)
 
-    delta_time_seconds = end_time - start_time
-    delta_time_us = delta_time_seconds * 1e6
-    mean_time_us = delta_time_us / num_iterations
+        delta_time_seconds = end_time - start_time
+        delta_time_us = delta_time_seconds * 1e6
+        mean_time_us = delta_time_us / num_iterations
 
-    return mean_time_us
+        return mean_time_us, True

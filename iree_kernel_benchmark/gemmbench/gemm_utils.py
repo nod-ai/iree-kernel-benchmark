@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 from typing import Optional, Tuple
+
+from iree_kernel_benchmark.utils.template import OpConfig
 from ..utils import *
 from iree.compiler import ir
 
@@ -22,7 +24,7 @@ def num_bytes(dtype: str) -> int:
 
 
 @dataclass
-class GemmConfig:
+class GemmConfig(OpConfig):
     # Note that M, N and K may be set to kDynamic, a special value
     M: int
     N: int
@@ -90,7 +92,36 @@ class GemmConfig:
         flops = 2 * M * N * K
         return flops
 
+    def to_dict(self):
+        return {
+            "M": self.M,
+            "N": self.N,
+            "K": self.K,
+            "tA": self.tA,
+            "tB": self.tB,
+            "dtype": self.operand_element_type,
+        }
 
+    def get_runtime_args(self, backend_name):
+        inp1 = self.get_inp1()
+        inp2 = self.get_inp2()
+
+        runtime_args = [
+            f"--input={inp1}",
+            f"--input={inp2}",
+        ]
+
+        if backend_name == "wave":
+            out_shape = self.get_out()
+            out_shape = "x".join(out_shape.split("x")[:-1] + ["f32"])
+            runtime_args += [f"--input={out_shape}", "--function=isolated_benchmark"]
+        else:
+            runtime_args += ["--function=main"]
+
+        return runtime_args
+
+
+@dataclass
 class GemmTuningSpec(TuningSpec):
     BLOCK_M: int
     BLOCK_N: int

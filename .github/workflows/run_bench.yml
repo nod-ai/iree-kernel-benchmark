@@ -74,12 +74,12 @@ jobs:
       - name: Convolutions - Wave
         run: |
           source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.convbench --tk --iterations=5
+          python -m iree_kernel_benchmark.convbench --backend=wave --iterations=5
 
       - name: Convolutions - IREE
         run: |
           source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.convbench --iterations=5
+          python -m iree_kernel_benchmark.convbench --backend=iree --iterations=5
 
       - name: Upload benchmark results
         uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
