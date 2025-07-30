@@ -361,7 +361,9 @@ class KernelBenchmark:
     ):
         tuning_results = {}
         tuning_dir = Path(f"results/tuning")
-        os.makedirs(tuning_dir, exist_ok=True)
+        tuning_result_basename = f"{self.kernel_type}_{self.backend}_tuned_results.json"
+        tuning_result_path = tuning_dir / self.kernel_type / tuning_result_basename
+        os.makedirs(os.path.dirname(tuning_result_path), exist_ok=True)
 
         def tune_config(config: Tuple[str, OpConfig]):
             tuning_result: tuple[
@@ -454,7 +456,8 @@ class KernelBenchmark:
                     "mfma_variant": [mfma.name for mfma in best_mfma],
                     "mean_microseconds": best_runtime,
                 }
-                with open(tuning_dir / "attention" / "results.json", "w") as file:
+
+                with open(tuning_result_path) as file:
                     json.dump(tuning_results, file, indent=4)
 
         for config in self.configs:

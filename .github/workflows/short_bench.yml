@@ -35,6 +35,7 @@ jobs:
     runs-on: linux-mi300-1gpu-ossci-nod-ai
 
     env:
+      WAVE_CACHE_ON: 0
       ITERATIONS: ${{ inputs.iterations || '3' }}
       MAX_KERNELS: ${{ inputs.max_kernels || '50' }}
       SELECTED_BACKEND: ${{ inputs.selected_backend || 'all' }}

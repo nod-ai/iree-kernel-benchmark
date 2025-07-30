@@ -1,3 +1,4 @@
+from dataclasses import asdict
 from ..utils import *
 from pathlib import Path
 from typing import Optional, override
@@ -21,45 +22,49 @@ class WaveConvBenchmark(KernelBenchmark):
         mfma_variant=None,
         spec=None,
     ):
-        op_type, layout = self._decode_op(config.OP)
+        try:
+            op_type, layout = self._decode_op(config.OP)
 
-        in_h = config.H * config.S + config.P - 1
-        in_w = config.W * config.S + config.Q - 1
-        if op_type == "conv_2d":
-            conv, hyperparams = get_igemm_conv2d(
-                layout=layout,
-                n=config.N,
-                h=in_h,
-                w=in_w,
-                c=config.C,
-                hf=config.P,
-                wf=config.Q,
-                nf=config.F,
-                stride=config.S,
-                input_dtype=self._convert_dtype(config.input_dtype),
-                output_dtype=self._convert_dtype(config.output_dtype),
+            in_h = config.H * config.S + config.P - 1
+            in_w = config.W * config.S + config.Q - 1
+            if op_type == "conv_2d":
+                conv, hyperparams = get_igemm_conv2d(
+                    layout=layout,
+                    n=config.N,
+                    h=in_h,
+                    w=in_w,
+                    c=config.C,
+                    hf=config.P,
+                    wf=config.Q,
+                    nf=config.F,
+                    stride=config.S,
+                    input_dtype=self._convert_dtype(config.input_dtype),
+                    output_dtype=self._convert_dtype(config.output_dtype),
+                )
+            else:
+                return False
+
+            if spec:
+                hyperparams.update(spec.hyperparams())
+
+            options = WaveCompileOptions(
+                subs=hyperparams,
+                canonicalize=True,
+                create_vmfb_file=vmfb_path,
+                schedule=SchedulingType.NONE,
+                iree_launch_async=False,
+                backend="rocm",
+                target="gfx942",
             )
-        else:
+            result = wave_compile(options, conv)
+            with open(mlir_path, "w") as f:
+                f.write(result.asm)
+
+            return True
+
+        except Exception as e:
+            print(f"Failed to compile {config.get_name()}: {e}")
             return False
-
-        if spec:
-            hyperparams.update(spec.hyperparams())
-
-        options = WaveCompileOptions(
-            subs=hyperparams,
-            canonicalize=True,
-            create_vmfb_file=vmfb_path,
-            schedule=SchedulingType.NONE,
-            # inline=False, (TODO: how to do this with new API?)
-            iree_launch_async=False,
-            backend="rocm",
-            target="gfx942",
-        )
-        result = wave_compile(options, conv)
-        with open(mlir_path, "w") as f:
-            f.write(result.asm)
-
-        return True
 
     def _decode_op(self, op: str) -> tuple[str, str]:
         if op.startswith("conv_2d_"):

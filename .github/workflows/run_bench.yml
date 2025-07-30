@@ -17,6 +17,9 @@ jobs:
   benchmark:
     runs-on: linux-mi300-1gpu-ossci-nod-ai
 
+    env:
+      WAVE_CACHE_ON: 0
+
     steps:
       - name: "Checkout Repo"
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
