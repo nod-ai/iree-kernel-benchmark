@@ -40,7 +40,7 @@ def attention(
     print("*" * 80, flush=True)
     print(
         f"Attention:\n\tb={b}, m={m}, n={n}, k1={k1}, k2={k2}\n"
-        + f"\tbatch={batch}\n\tis_casual={is_causal}, enable_gqa={enable_gqa}, dtype={dtype}"
+        + f"\tbatch={batch}\n\tis_causal={is_causal}, enable_gqa={enable_gqa}, dtype={dtype}"
         + f"\n\tnum_its={num_its}\n",
         flush=True,
     )
@@ -122,7 +122,7 @@ def main():
         help="embedding dimension of query and key",
     )
     parser.add_argument("-k2", type=int, required=True, help="source seq length")
-    parser.add_argument("--is-casual", action="store_true")
+    parser.add_argument("--is-causal", action="store_true")
     parser.add_argument("--gqa", action="store_true")
     parser.add_argument(
         "--dynamic-dims",
