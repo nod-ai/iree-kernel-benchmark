@@ -11,6 +11,7 @@ from typing import Optional
 
 type ChangeStats = dict[str, float]
 
+
 @dataclass
 class BenchmarkRun:
     _id: str
@@ -24,15 +25,18 @@ class BenchmarkRun:
     changeStats: ChangeStats
     hasArtifact: bool = False
 
+
 @dataclass
 class RunArtifact:
     kernels: list[dict]
     mapping: BenchmarkRun
 
+
 @dataclass
 class ChangeAuthor:
     name: str
     profileUrl: str
+
 
 @dataclass
 class RepoModification:
@@ -43,6 +47,7 @@ class RepoModification:
     timestamp: datetime
     author: ChangeAuthor
 
+
 @dataclass
 class RepoCommit:
     _id: str
@@ -51,12 +56,14 @@ class RepoCommit:
     timestamp: datetime
     description: Optional[str] = None
 
+
 @dataclass
 class RepoPullRequest(RepoModification):
     title: str
     status: str
     commits: list[RepoCommit]
     description: Optional[str] = None
+
 
 @dataclass
 class RepoMerge(RepoModification):

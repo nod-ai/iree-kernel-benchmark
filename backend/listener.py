@@ -10,7 +10,7 @@ import os
 
 load_dotenv()
 connection_string = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
-container_name = 'benchmarkcache'
+container_name = "benchmarkcache"
 
 db_client = DatabaseClient(connection_string)
 dir_client = DirectoryClient(connection_string, container_name)
@@ -20,14 +20,14 @@ wave_update_client = WaveUpdateListener(db_client, dir_client)
 
 ENDPOINT = "webhook"
 
-@view_defaults(
-    route_name=ENDPOINT, renderer="json", request_method="POST"
-)
+
+@view_defaults(route_name=ENDPOINT, renderer="json", request_method="POST")
 class PayloadView:
     """
     Handles incoming GitHub webhook payloads.
     The view is triggered only for JSON payloads sent via POST requests.
     """
+
     def __init__(self, request):
         self.request = request
         self.payload = self.request.json
@@ -35,14 +35,14 @@ class PayloadView:
     @view_config(header="X-Github-Event:push")
     def payload_push(self):
         """Handles push events."""
-        print("Number of commits in push:", len(self.payload['commits']))
+        print("Number of commits in push:", len(self.payload["commits"]))
         return Response("success")
 
     @view_config(header="X-Github-Event:pull_request")
     def payload_pull_request(self):
         """Handles pull request events."""
-        print("Pull Request action:", self.payload['action'])
-        print("Number of commits in PR:", self.payload['pull_request']['commits'])
+        print("Pull Request action:", self.payload["action"])
+        print("Number of commits in PR:", self.payload["pull_request"]["commits"])
         wave_update_client.handle_pr_payload(self.payload)
         return Response("success")
 
@@ -50,7 +50,7 @@ class PayloadView:
     def payload_workflow_run(self):
         workflow_client.handle_workflow_run_payload(self.payload)
         return Response("success")
-    
+
     @view_config(header="X-Github-Event:workflow_job")
     def payload_workflow_job(self):
         workflow_client.handle_workflow_job_payload(self.payload)
@@ -61,6 +61,7 @@ class PayloadView:
         """Handles GitHub's ping event when a webhook is created."""
         print("Webhook created with ID {}!".format(self.payload["hook"]["id"]))
         return {"status": 200}
+
 
 if __name__ == "__main__":
     config = Configurator()
