@@ -15,11 +15,11 @@ concurrency:
 
 jobs:
   benchmark:
-    runs-on: linux-mi300-1gpu-ossci-nod-ai
+    runs-on: linux-mi325-1gpu-ossci-nod-ai
 
     concurrency:
       group: benchmarking
-      cancel-in-progress: false
+      cancel-in-progress: true
 
     env:
       WAVE_CACHE_ON: 0
