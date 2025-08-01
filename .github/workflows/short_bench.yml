@@ -47,7 +47,7 @@ jobs:
     runs-on: linux-mi300-1gpu-ossci-nod-ai
 
     concurrency:
-      group: benchmarking
+      group: ${{ github.workflow }}-benchmarking
       cancel-in-progress: false
 
     env:
