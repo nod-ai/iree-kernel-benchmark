@@ -1,9 +1,13 @@
-from auth import get_repo
+from auth import get_repo, get_azure_clients
 from github import Github, Auth
 from storage.artifacts import *
 
-repo = get_repo("test")
+from dotenv import load_dotenv
+import os
 
-# kernels = download_artifact_kernels_by_run_id(repo, '16468922095')
-kernels = download_all_artifact_kernels(repo, limit=1)
-print(f"{len(kernels)}x{len(kernels[0])} kernels loaded successfully")
+db_client, dir_client = get_azure_clients()
+
+# dir_client.rm(f"baseline", recursive=True)
+# dir_client.upload(f"test/benchmark-results", "baseline")
+
+db_client.delete_runs("conclusion eq 'failure' or conclusion eq 'cancelled'")

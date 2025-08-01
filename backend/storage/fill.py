@@ -1,16 +1,11 @@
-from .directory import DirectoryClient
-from .db import DatabaseClient
 from .types import *
 from .artifacts import save_all_artifact_kernels
+from auth import get_azure_clients
 from dataclass_wizard import fromdict
 from storage.conversion import convert_prs_from_github, random_stats
-from storage.artifacts import load_artifact_kernels
 from auth import get_repo
-from github import Github, Auth
 import json
-from dotenv import load_dotenv
 from datetime import datetime, timezone
-import os
 import random
 from uuid import uuid4
 from tqdm import tqdm
@@ -22,12 +17,7 @@ def get_random_indices(sample: int, range_: int) -> list:
     return random.sample(range(range_), sample)
 
 
-load_dotenv()
-connection_string = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
-container_name = "benchmarkcache"
-
-directory_client = DirectoryClient(connection_string, container_name)
-db_client = DatabaseClient(connection_string)
+db_client, directory_client = get_azure_clients()
 
 repo = get_repo("bench")
 

@@ -1,19 +1,12 @@
 from webhook import WorkflowListener, WaveUpdateListener
-from storage import DatabaseClient, DirectoryClient
+from auth import get_azure_clients
 from wsgiref.simple_server import make_server
 from pyramid.config import Configurator
 from pyramid.view import view_config, view_defaults
 from pyramid.response import Response
-import json
-from dotenv import load_dotenv
-import os
 
-load_dotenv()
-connection_string = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
-container_name = "benchmarkcache"
 
-db_client = DatabaseClient(connection_string)
-dir_client = DirectoryClient(connection_string, container_name)
+db_client, dir_client = get_azure_clients()
 
 workflow_client = WorkflowListener(db_client, dir_client)
 wave_update_client = WaveUpdateListener(db_client, dir_client)

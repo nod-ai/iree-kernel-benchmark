@@ -52,6 +52,11 @@ class DatabaseClient:
     def delete_run(self, run_id: str):
         self._run_tb.delete_entity(partition_key="run", row_key=run_id)
 
+    def delete_runs(self, query: str):
+        queried_runs = self._run_tb.query_entities(query)
+        for run in queried_runs:
+            self._run_tb.delete_entity(run["PartitionKey"], run["RowKey"])
+
     def find_run_by_id(self, run_id: str) -> dict:
         return self._run_tb.get_entity(partition_key="run", row_key=run_id)
 

@@ -62,6 +62,8 @@ class RepoPullRequest(RepoModification):
     title: str
     status: str
     commits: list[RepoCommit]
+    repoName: str
+    branchName: str
     description: Optional[str] = None
 
 

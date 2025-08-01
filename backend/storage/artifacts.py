@@ -22,35 +22,39 @@ def load_result_csv(backend: str, kernel_type: str, csv_path: str) -> List[Dict]
         shape = {}
         dtype = ""
 
-        if kernel_type == "gemm":
-            dtype = row["dtype"]
-            shape = {
-                "M": row["M"],
-                "N": row["N"],
-                "K": row["K"],
-                "transpose": row["tA"] + row["tB"],
-            }
-        elif kernel_type == "attention":
-            dtype = row["dtype"]
-            shape = {
-                "B": row["B"],
-                "M": row["M"],
-                "N": row["N"],
-                "K1": row["K1"],
-                "K2": row["K2"],
-            }
-        elif kernel_type == "conv":
-            dtype = row["input_dtype"]
-            shape = {
-                "B": row["B"],
-                "H": row["H"],
-                "W": row["W"],
-                "C": row["C"],
-                "P": row["P"],
-                "Q": row["Q"],
-                "F": row["F"],
-                "S": row["S"],
-            }
+        try:
+            if kernel_type == "gemm":
+                dtype = row["dtype"]
+                shape = {
+                    "M": row["M"],
+                    "N": row["N"],
+                    "K": row["K"],
+                    "transpose": row["tA"] + row["tB"],
+                }
+            elif kernel_type == "attention":
+                dtype = row["dtype"]
+                shape = {
+                    "B": row["B"],
+                    "M": row["M"],
+                    "N": row["N"],
+                    "K1": row["K1"],
+                    "K2": row["K2"],
+                }
+            elif kernel_type == "conv":
+                dtype = row["input_dtype"]
+                shape = {
+                    "N": row["N"],
+                    "H": row["H"],
+                    "W": row["W"],
+                    "C": row["C"],
+                    "P": row["P"],
+                    "Q": row["Q"],
+                    "F": row["F"],
+                    "S": row["S"],
+                    "OP": row["OP"],
+                }
+        except:
+            continue
 
         kernel = {
             "id": str(uuid4()),
@@ -125,7 +129,7 @@ def download_artifact_kernels(
 
     try:
         kernels = parse_kernels_from_path(extract_path)
-    except:
+    except Exception:
         print(f"Failed to load artifact {artifact.url}")
 
     return kernels, base_path
@@ -268,35 +272,51 @@ def compare_artifact_kernels(
     old: List[Dict], new: List[Dict] = None
 ) -> dict[str, float]:
     if not new:
-        unique_backends = set([kernel["backend"] for kernel in new])
-        return {backend: 0.0 for backend in unique_backends}
+        unique_kernel_types = {
+            kernel["kernelType"] for kernel in old if kernel["backend"] == "wave"
+        }
+        return {k_type: 0.0 for k_type in unique_kernel_types}
 
     def hash_kernel(kernel: Dict) -> str:
-        shape: dict = kernel["shape"]
-        dtype: str = kernel["dtype"]
+        shape = kernel["shape"]
+        dtype = kernel["dtype"]
         shape_hash = "_".join([f"{k}.{v}" for k, v in shape.items()])
         return f"{shape_hash}_dt{dtype}"
 
-    common_shapes = {hash_kernel(kernel) for kernel in old + new}
+    old_wave = [k for k in old if k["backend"] == "wave"]
+    new_wave = [k for k in new if k["backend"] == "wave"]
 
-    unique_backends = set([kernel["backend"] for kernel in new])
-    perf_stats = {backend: [0, 0, 0] for backend in unique_backends}
+    old_shapes = {hash_kernel(k) for k in old_wave}
+    common_shapes = {hash_kernel(k) for k in new_wave if hash_kernel(k) in old_shapes}
 
-    for i, kernel_list in enumerate((old, new)):
+    kernel_types = {k["kernelType"] for k in new_wave}
+    perf_stats = {k_type: [0, 0, 0] for k_type in kernel_types}
+
+    for i, kernel_list in enumerate((old_wave, new_wave)):
         for kernel in kernel_list:
             kernel_hash = hash_kernel(kernel)
             if kernel_hash not in common_shapes:
                 continue
-            backend = kernel["backend"]
-            if backend not in perf_stats:
+            k_type = kernel["kernelType"]
+            if k_type not in perf_stats:
                 continue
             runtime = kernel["meanMicroseconds"]
-            perf_stats[backend][i] += runtime
+            perf_stats[k_type][i] += runtime
             if i == 0:
-                perf_stats[backend][2] += 1
+                perf_stats[k_type][2] += 1
 
-    change_stats = {backend: 0.0 for backend in unique_backends}
-    for backend, (old_perf, new_perf, count) in perf_stats.items():
-        change_stats[backend] = (new_perf / old_perf - 1) * 100
+    change_stats = {}
+    for k_type, (old_perf, new_perf, count) in perf_stats.items():
+        if old_perf > 0:
+            change_stats[k_type] = (new_perf / old_perf - 1) * 100
+        else:
+            change_stats[k_type] = 0.0
 
     return change_stats
+
+
+def fill_new_kernels(old: List[Dict], new: List[Dict]) -> List[Dict]:
+    new_wave = [k for k in new if "wave" in k["kernelType"]]
+    old_other = [k for k in old if "wave" not in k["kernelType"]]
+
+    return new_wave + old_other

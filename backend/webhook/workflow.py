@@ -25,11 +25,9 @@ class WorkflowListener:
         run_data = run_payload["workflow_run"]
         run_id = str(run_data["id"])
 
-        pr = self._db_client.find_latest_pr()
-
         run = BenchmarkRun(
             _id=run_id,
-            headSha=pr.headSha,
+            headSha="undefined",
             status=run_data["status"],
             conclusion=run_data["conclusion"] or "unknown",
             numSteps=7 if TESTING_MODE else 17,

@@ -1,12 +1,10 @@
 from datetime import timezone
 from auth import get_repo, get_github_token
-from globals import TESTING_MODE
+from globals import BENCH_ITERATIONS, MAX_BENCH_KERNELS, RUN_ALL_BACKENDS, TESTING_MODE
 from storage.db import DatabaseClient
 from storage.directory import DirectoryClient
 from storage.types import *
-from storage.artifacts import download_artifact_kernels_by_run_id
 from dataclass_wizard import asdict
-from github import Github, Auth
 import json
 import requests
 
@@ -47,7 +45,9 @@ class WaveUpdateListener:
         self._db_client = db_client
         self._storage_client = storage_client
 
-    def trigger_workflow(self, repo_name: str, branch_name: str, metadata: dict = None):
+    def trigger_workflow(
+        self, repo_name: str, branch_name: str, head_sha: str, metadata: dict = None
+    ) -> bool:
         bench_repo_name = self._bench_repo.full_name
         workflow_id = "main.yml" if TESTING_MODE else "short_bench.yml"
         token = get_github_token("bench")
@@ -62,13 +62,14 @@ class WaveUpdateListener:
             body = {"ref": "main"}
         else:
             body = {
-                "ref": "main",
+                "ref": "tuning",
                 "inputs": {
-                    "iterations": "3",
-                    "max_kernels": "50",
-                    "selected_backend": "all",
+                    "iterations": str(BENCH_ITERATIONS),
+                    "max_kernels": str(MAX_BENCH_KERNELS),
+                    "selected_backend": "all" if RUN_ALL_BACKENDS else "wave",
                     "pr_repository": repo_name,
                     "pr_branch": branch_name,
+                    "pr_headsha": head_sha,
                 },
             }
             if metadata:
@@ -77,13 +78,33 @@ class WaveUpdateListener:
         response = requests.post(url, headers=headers, json=body)
         if response.status_code != 204:
             print(f"Workflow failed: {response.json()}")
+            return False
         print(f"Workflow dispatched successfully: {response.status_code}")
+        return True
 
     def _save_pr(self, id: str, pr_obj: dict) -> dict:
         author = ChangeAuthor(
             name=pr_obj["user"].get("name") or pr_obj["user"].get("login", "Anonymous"),
             profileUrl=pr_obj["user"]["avatar_url"],
         )
+        pr = RepoPullRequest(
+            _id=id,
+            headSha=pr_obj["head"]["sha"],
+            url=pr_obj["html_url"],
+            type="pr",
+            timestamp=datetime.now(
+                timezone.utc
+            ),  # fromisoformat(pr_obj['created_at']),
+            author=author,
+            title=pr_obj["title"],
+            status=pr_obj["state"],
+            commits=[],
+            description=pr_obj["body"],
+            repoName=pr_obj["head"]["repo"]["full_name"],
+            branchName=pr_obj["head"]["ref"],
+        )
+        self._db_client.insert_pull_request(pr)
+
         if pr_obj["merged"]:
             merge = RepoMerge(
                 _id=id,
@@ -97,21 +118,6 @@ class WaveUpdateListener:
             self._db_client.insert_merge(merge)
             return asdict(merge)
         else:
-            pr = RepoPullRequest(
-                _id=id,
-                headSha=pr_obj["head"]["sha"],
-                url=pr_obj["html_url"],
-                type="pr",
-                timestamp=datetime.now(
-                    timezone.utc
-                ),  # fromisoformat(pr_obj['created_at']),
-                author=author,
-                title=pr_obj["title"],
-                status=pr_obj["state"],
-                commits=[],
-                description=pr_obj["body"],
-            )
-            self._db_client.insert_pull_request(pr)
             return asdict(pr)
 
     def handle_pr_payload(self, pr_payload: dict):
@@ -143,10 +149,11 @@ class WaveUpdateListener:
 
         pr_entry = self._save_pr(entry_id, pr_obj)
 
-        if has_changed:
+        if has_changed and not is_merge:
             print(f'Pull Request {pr_obj["html_url"]} triggering workflow on {action}')
             head_repo_name = pr_obj["head"]["repo"]["full_name"]
             head_branch = pr_obj["head"]["ref"]
+            head_sha = pr_obj["head"]["sha"]
             self.trigger_workflow(
-                head_repo_name, head_branch
+                head_repo_name, head_branch, head_sha
             )  # { 'trigger': pr_entry }
