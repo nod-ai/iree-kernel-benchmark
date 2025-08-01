@@ -5,7 +5,7 @@ def get_attention_attrs_bmnk(
     B: int, M: int, N: int, K1: int, K2: int, dtype: str
 ) -> list[AttentionAttributes]:
     return bmnk1k2_to_attention_attributes(
-        config_bmnk=AttentionConfigBMNK(dtype, B, M, N, K1, K2)
+        config_bmnk=AttentionConfigBMNK(B, M, N, K1, K2, dtype)
     )
 
 

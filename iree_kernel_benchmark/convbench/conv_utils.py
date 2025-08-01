@@ -1,7 +1,5 @@
 from ..utils import *
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Optional
 
 FUNC_ARGS = r"""%arg0: tensor<{LHS_TYPE}>, %arg1: tensor<{RHS_TYPE}>"""
 CONSTANTS = r"""
@@ -24,7 +22,7 @@ TEST = r"""util.func public @{FUNC_NAME}({FUNC_ARGS}) -> tensor<{OUT_TYPE}> {{{C
 
 
 @dataclass
-class ConvConfig:
+class ConvConfig(OpConfig):
     N: int
     H: int
     W: int
@@ -133,116 +131,27 @@ class ConvConfig:
         flops = operation_per_pixel * output_pixels_per_batch * batch
         return flops
 
+    def get_runtime_args(self, backend_name):
+        image_shape = self.get_img_shape()
+        filter_shape = self.get_kernel_shape()
 
-def generate_mlir(config: ConvConfig):
-    n = config.N
-    h = config.H
-    w = config.W
-    c = config.C
-    p = config.P
-    q = config.Q
-    f = config.F
-    stride = config.S
-    operation = config.OP
-    dtypes = f"{config.input_dtype}x{config.input_dtype}x{config.output_dtype}"
-    elem_types = dtypes.split("x")
-    in_h = str(int(h) * int(stride) + int(p) - 1)
-    in_w = str(int(w) * int(stride) + int(q) - 1)
-    if "nhwc" in operation:
-        conv_type = "nhwc_hwcf"
-        lhs = f"{n}x{in_h}x{in_w}x{c}x{elem_types[0]}"
-        rhs = f"{p}x{q}x{c}x{f}x{elem_types[1]}"
-        out = f"{n}x{h}x{w}x{f}x{elem_types[2]}"
-    if "nchw" in operation:
-        conv_type = "nchw_fchw"
-        lhs = f"{n}x{c}x{in_h}x{in_w}x{elem_types[0]}"
-        rhs = f"{f}x{c}x{p}x{q}x{elem_types[1]}"
-        out = f"{n}x{f}x{h}x{w}x{elem_types[2]}"
-    one = "1"
-    zero = "0"
-    if elem_types[0][0] == "f" or elem_types[0][0] == "b":
-        one = "1.0"
-        zero = "0.0"
-    conv_template = CONV
-    if "q" in operation:
-        conv_template = CONV_Q
-    operation = conv_template.format(
-        INPUT_TYPE=lhs,
-        FILTER_TYPE=rhs,
-        OUTPUT_TYPE=out,
-        CONV_TYPE=conv_type,
-        STRIDE=stride,
-    )
+        runtime_args = [
+            f"--input={image_shape}",
+            f"--input={filter_shape}",
+        ]
 
-    constants = ""
-    func_args = ""
-    func_args = FUNC_ARGS.format(
-        LHS_TYPE=lhs,
-        RHS_TYPE=rhs,
-    )
+        if backend_name == "wave":
+            out_shape = self.get_out_shape()
+            runtime_args += [f"--input={out_shape}", "--function=isolated_benchmark"]
+        else:
+            runtime_args.append("--function=main")
 
-    mlir = TEST.format(
-        FUNC_NAME="main",
-        FUNC_ARGS=func_args,
-        CONSTANT_INPUTS=constants,
-        LHS_TYPE=lhs,
-        RHS_TYPE=rhs,
-        OUT_TYPE=out,
-        OUT_ELEM_TYPE=elem_types[2],
-        ZERO=zero,
-        OPERATION=operation,
-    )
-    return mlir
+        return runtime_args
 
 
-def compile_conv_config(
-    tag: str,
-    config: ConvConfig,
-    kernel_dir: Path,
-    vmfb_dir: Path,
-    extra_compiler_args: list[str],
-) -> tuple[Path, Optional[Path]]:
-    # Name with tag is used for filenames so that duplicate configs with
-    # different tags will not clobber eachother.
-    name_with_tag = tag + "-" + config.get_name()
-    mlir_file = kernel_dir / (name_with_tag + ".mlir")
-    vmfb_file = vmfb_dir / (name_with_tag + ".vmfb")
-    dump_file = kernel_dir / (name_with_tag + ".stderr.mlir")
-    files_path = vmfb_dir / name_with_tag
-
-    # Generate mlir content
-    mlir_content = generate_mlir(config)
-
-    # Write MLIR content to file
-    with open(mlir_file, "w") as f:
-        f.write(mlir_content)
-
-    # TODO: Do not hardcode device information, instead pass it as a class
-    # Compile MLIR to vmfb
-    exec_args = [
-        "iree-compile",
-        # Input file
-        f"{mlir_file}",
-        # Output file
-        "-o",
-        f"{vmfb_file}",
-        # Target Device: hip
-        "--iree-hal-target-device=hip",
-        # Device: MI300x
-        "--iree-hip-target=gfx942",
-        f"--iree-hal-dump-executable-files-to={files_path}",
-    ] + extra_compiler_args
-
-    ret_value, stdout, stderr = run_iree_command(exec_args)
-    if ret_value == 0:
-        if stderr:
-            with open(dump_file, "w") as f:
-                f.write(stderr.decode("utf-8"))
-    else:
-        error_file = vmfb_dir / (config.get_name() + "_error.txt")
-        print(f"Failed to compile {mlir_file}. Error dumped in {error_file}")
-        with open(error_file, "w") as f:
-            f.write(stderr.decode("utf-8"))
-        return mlir_file, None, None
-
-    return mlir_file, vmfb_file, files_path
+@dataclass
+class ConvTuningSpec(TuningSpec):
+    BLOCK_M: int
+    BLOCK_N: int
+    BLOCK_K: int
+    ELEMS_PER_THREAD: int

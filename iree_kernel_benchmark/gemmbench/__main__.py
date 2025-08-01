@@ -4,7 +4,12 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+from dataclasses import asdict
+import json
+import math
+import pandas as pd
 import os
+import optuna
 from tqdm import tqdm
 from multiprocessing import Pool, cpu_count, Manager
 import logging
@@ -12,241 +17,136 @@ import itertools
 from pathlib import Path
 import argparse
 import sys
+
+from wave_lang.kernel.wave.constraints import MMAType
 from ..utils import *
 from .gemm_utils import *
-from .iree_gemm import compile_iree_gemm
-from .wave_gemm import compile_wave_gemm
-from .torch_gemm import benchmark_torch_gemm
+from .iree_gemm import IREEGemmBenchmark
+from .wave_gemm import WaveGemmBenchmark
+from .torch_gemm import TorchGemmBenchmark
 from .problems import get_gemm_configs, get_tk_gemm_configs, get_matching_configs
 
+BACKEND_TO_GEMM_BENCH = {
+    "torch": TorchGemmBenchmark,
+    "wave": WaveGemmBenchmark,
+    "iree": IREEGemmBenchmark,
+}
 
-def compile_gemm(
-    backend: str,
-    tag: str,
-    config: GemmConfig,
+
+def tune_gemm_kernels(
+    configs: List[Tuple[str, GemmConfig]],
     kernel_dir: Path,
     vmfb_dir: Path,
-    target: Optional[str] = None,
-    extra_compiler_args: list[str] = [],
-    dump_dir: Optional[Path] = None,
-) -> tuple[str, GemmConfig, Path, Optional[Path]]:
-    name = config.get_name()
-    if dump_dir:
-        dump_dir = Path(dump_dir)
-        dpath = dump_dir / name
-        extra_compiler_args.extend([f"--iree-hal-dump-executable-files-to={dpath}"])
-
-    mlir_file = kernel_dir / f"{name}.mlir"
-    vmfb_file = vmfb_dir / f"{name}.vmfb"
-
-    if backend == "iree":
-        mlir_file, vmfb_file = compile_iree_gemm(
-            config, kernel_dir, vmfb_dir, target, extra_compiler_args
-        )
-    else:
-        mlir_file, vmfb_file = compile_wave_gemm(config, mlir_file, vmfb_file, dump_dir)
-
-    return (tag, config, mlir_file, vmfb_file)
-
-
-def compile_gemm_kernels(
-    backend_name: str,
-    configs: List[GemmConfig],
-    kernel_dir: Path,
-    vmfb_dir: Path,
-    dump_dir: Optional[Path],
-    target: str = None,
-    extra_compiler_args: list[str] = [],
-) -> dict[str, tuple[str, GemmConfig]]:
-    def compile_args_generator():
-        return itertools.starmap(
-            lambda tag, config: (
-                backend_name,
-                tag,
-                config,
-                kernel_dir,
-                vmfb_dir,
-                target,
-                extra_compiler_args,
-                dump_dir,
-            ),
-            configs,
-        )
-
-    num_cpus = max(1, max(cpu_count() // 2, 1))
-    print(f"Using {num_cpus} CPUs for parallel processing.")
-
-    manager = Manager()
-    shared_vmfb_dict = manager.dict()
-
-    with Pool(num_cpus) as pool:
-        compilation_results = list(
-            tqdm(
-                pool.istarmap(compile_gemm, compile_args_generator()),
-                total=len(configs),
-                desc="Compiling GEMM Kernels",
-            )
-        )
-    vmfb_dict = shared_vmfb_dict
-
-    compile_error_count = 0
-    for tag, config, mlir_file, vmfb_file in compilation_results:
-        if vmfb_file:
-            vmfb_dict[vmfb_file] = (tag, config)
-        else:
-            compile_error_count += 1
-    print(
-        f"{len(configs) - compile_error_count} Success, {compile_error_count} Failed out of {len(configs)} configs"
-    )
-    print("Compilation process completed.")
-
-    return dict(vmfb_dict)
-
-
-def save_results(
-    configs: List[Tuple[str, GemmConfig]],
-    runtimes_us: List[float],
-    ok: List[bool],
-    output_csv: Path,
+    dump_dir: Path,
+    mfma_configs: List[MMAType] = [
+        MMAType.F32_16x16x16_F16,
+        MMAType.F32_32x32x8_F16,
+        MMAType.F32_16x16x32_K8_F16,
+        MMAType.F32_32x32x16_K8_F16,
+    ],
+    tiling_constraints: List[TuningConstraint] = [
+        TuningConstraint(name="BLOCK_M", min=16, max=256, step=4),
+        TuningConstraint(name="BLOCK_N", min=16, max=256, step=4),
+        TuningConstraint(name="BLOCK_K", min=16, max=128, step=4),
+    ],
+    num_trials: int = 100,
 ):
+    tuning_results = {}
+    tuning_dir = Path("results/tuning/gemm")
+    os.makedirs(tuning_dir, exist_ok=True)
 
-    csv_dir = os.path.dirname(output_csv)
-    if not os.path.exists(csv_dir):
-        os.makedirs(csv_dir)
-
-    results = []
-    index = 0
-
-    for i, (tag, config) in enumerate(configs):
-        flops = config.get_flops()
-        byte_count = config.get_byte_count()
-
-        benchmark_mean_time_us = runtimes_us[i]
-
-        arithmetic_intensity = flops / byte_count
-        if benchmark_mean_time_us == 0:
-            tflops_per_second = 0
-        else:
-            tflops_per_second = (flops / 1e12) / (benchmark_mean_time_us / 1e6)
-
-        results.append(
-            (
-                index,
-                tag,
-                config.get_name(),
-                config.M,
-                config.N,
-                config.K,
-                config.operand_element_type,
-                config.tA,
-                config.tB,
-                f"D={config.runtime_dim}" if config.runtime_dim is not None else "",
-                round(benchmark_mean_time_us, 4),
-                round(arithmetic_intensity, 4),
-                round(tflops_per_second, 4),
-                ok[i],
-            )
+    def tune_config(config: Tuple[str, GemmConfig]):
+        tuning_result: tuple[
+            float,
+            GemmConfig,
+            MMAType,
+        ] = (
+            math.inf,
+            None,
+            mfma_configs[0],
         )
-        index += 1
 
-    fieldnames = [
-        "index",
-        "tag",
-        "name",
-        "M",
-        "N",
-        "K",
-        "dtype",
-        "tA",
-        "tB",
-        "runtime_dim",
-        "mean_microseconds",
-        "arithmetic_intensity",
-        "tflops",
-        "ok",
-    ]
+        config_tag, kernel = config
+        config_name = kernel.get_name()
 
-    write_results_to_csv(results, output_csv, fieldnames)
-    print(f"Results written to {output_csv}")
+        def objective(trial: optuna.Trial) -> float:
+            nonlocal tuning_result
 
+            block_sizes = [
+                trial.suggest_int(
+                    constraint.name,
+                    constraint.min,
+                    constraint.max,
+                    step=constraint.step,
+                )
+                for constraint in tiling_constraints
+            ]
 
-def benchmark_gemm_kernels(
-    backend_name: str,
-    vmfb_dict: dict[str, tuple[str, GemmConfig]],
-    output_csv: Path,
-    num_iterations: int = 3,
-    debug=True,
-):
-    configs = []
-    runtimes = []
-    statuses = []
+            tuning_spec_params = {
+                constraint.name: block_sizes[i]
+                for i, constraint in enumerate(tiling_constraints)
+            }
 
-    run_error_count = 0
-    for vmfb_filename, value in tqdm(
-        vmfb_dict.items(), desc="Benchmarking GEMM Kernels"
-    ):
-        tag, config = value
-        name = config.get_name()
+            tuning_spec = GemmTuningSpec(**tuning_spec_params)
 
-        inp1 = config.get_inp1()
-        inp2 = config.get_inp2()
+            mfma_config = mfma_configs[
+                trial.suggest_categorical("MFMA_INDEX", list(range(len(mfma_configs))))
+            ]
 
-        exec_args = [
-            "iree-benchmark-module",
-            f"--device={device}",
-            "--device_allocator=caching",
-            f"--module={vmfb_filename}",
-            f"--benchmark_repetitions={num_iterations}",
-            f"--input={inp1}",
-            f"--input={inp2}",
-        ]
+            try:
+                vmfb_dict = compile_gemm_kernels(
+                    "wave",
+                    [config],
+                    kernel_dir,
+                    vmfb_dir,
+                    dump_dir,
+                    None,
+                    [],
+                    {config_name: mfma_config},
+                    {config_name: tuning_spec},
+                )
+            except Exception as e:
+                print("Failed to compile, skipping", e)
+                return math.inf
 
-        if backend_name == "wave":
-            out_shape = config.get_out()
-            out_shape = "x".join(out_shape.split("x")[:-1] + ["f32"])
-            exec_args.append(f"--input={out_shape}")
-            exec_args += ["--function=isolated_benchmark"]
-        else:
-            exec_args += ["--function=main"]
+            output_csv_path = Path(f"temp.csv")
 
-        # iree benchmark kernels
-        ret_value, cmd_out, cmd_err = run_iree_command(exec_args)
-        ok = ret_value == 0
-        if not ok:
-            run_error_count += 1
-        benchmark_gemm_mean_time_ms = bench_summary_process(ret_value, cmd_out)
-        if benchmark_gemm_mean_time_ms is None:
-            print(f"{name} benchmark failed. Skipping")
-            continue
-        benchmark_mean_time_us = benchmark_gemm_mean_time_ms * 1000
+            try:
+                result_df = benchmark_gemm_kernels(
+                    "wave",
+                    device,
+                    vmfb_dict,
+                    output_csv_path,
+                    num_iterations=3,
+                    debug=False,
+                )
+            except Exception as e:
+                print("Failed runtime, skipping", e)
+                return math.inf
 
-        configs.append((tag, config))
-        runtimes.append(benchmark_mean_time_us)
-        statuses.append(ok)
+            runtime = result_df["mean_microseconds"].mean()
+            if runtime < tuning_result[0]:
+                tuning_result = (runtime, tuning_spec, mfma_config)
 
-    save_results(configs, runtimes, statuses, output_csv)
+            return runtime
 
+        study = optuna.create_study(direction="minimize")
+        study.optimize(objective, n_trials=num_trials, show_progress_bar=True)
 
-def benchmark_extern_gemm_kernels(
-    backend: str,
-    configs: List[Tuple[str, GemmConfig]],
-    output_csv: Path,
-    num_iterations: int = 3,
-):
-    runtimes_us = []
-    statuses = []
+        best_runtime, best_spec, best_mfma = tuning_result
+        print("Optimal spec", asdict(best_spec))
 
-    for tag, config in tqdm(configs, f"Benchmarking {backend} gemm kernels"):
-        if backend == "torch":
-            mean_us = benchmark_torch_gemm(config, num_iterations)
-            if mean_us:
-                runtimes_us.append(mean_us)
-                statuses.append(True)
-            else:
-                runtimes_us.append(0)
-                statuses.append(False)
+        if best_spec and best_mfma:
+            tuning_results[config_name] = {
+                "block_sizes": asdict(best_spec),
+                "mfma_variant": [best_mfma.name],
+                "mean_microseconds": best_runtime,
+            }
+            with open(tuning_dir / "results.json", "w") as file:
+                json.dump(tuning_results, file, indent=4)
 
-    return save_results(configs, runtimes_us, statuses, output_csv)
+    for config in configs:
+        tune_config(config)
 
 
 if __name__ == "__main__":
@@ -333,6 +233,23 @@ if __name__ == "__main__":
         help="Number of benchmark iterations.",
     )
     parser.add_argument(
+        "--tune",
+        action="store_true",
+        help="Uses heuristic approach to optimize mfma variant, tiling, and waves.",
+    )
+    parser.add_argument(
+        "--tuning_config",
+        type=str,
+        default=None,
+        help="Path to tuning configuration file.",
+    )
+    parser.add_argument(
+        "--use_tuned",
+        type=str,
+        default=None,
+        help="Path to json file with tuned results.",
+    )
+    parser.add_argument(
         "--max_kernels",
         type=int,
         default=None,
@@ -361,7 +278,16 @@ if __name__ == "__main__":
 
     backend_name = args.backend
 
-    configs = []
+    repo_root = Path(__file__).parent.parent
+    kernel_dir = repo_root / "kernels"
+    dump_dir = Path(args.dump_dir) if args.dump_dir else None
+    kernel_dir.mkdir(parents=True, exist_ok=True)
+
+    target = args.target
+    extra_compiler_args = ["--" + x for x in list(args.Xiree_compile)]
+    device = "local-task" if target == "host_cpu" else args.device
+
+    configs: List[Tuple[str, GemmConfig]] = []
     for dtype in requested_dtypes:
         configs += get_gemm_configs(dtype, backend_name, args.raw_accumulators)
     configs = get_matching_configs(
@@ -370,36 +296,53 @@ if __name__ == "__main__":
         args.tag_regex,
         args.config_regex,
     )
-    configs = reduce_configs(configs, args.max_kernels)
-    print(f"Generated {len(configs)} gemm configs.")
 
-    output_csv_base = f"gemm_{backend_name}"
-    if args.raw_accumulators:
-        output_csv_base += "_raw_accumulators"
-    output_csv_path = Path(f"results/gemm/{output_csv_base}.csv")
+    bench_params = {
+        "backend": backend_name,
+        "kernel_type": "gemm",
+        "device": device,
+        "configs": configs,
+        "kernel_dir": kernel_dir,
+        "dump_dir": dump_dir,
+        "debug": True,
+        "target": target,
+        "num_iterations": args.iterations,
+    }
 
-    if backend_name not in ["iree", "wave", "wavegqa"]:
-        benchmark_extern_gemm_kernels(backend_name, configs, output_csv_path)
-        exit(0)
+    bench: KernelBenchmark = BACKEND_TO_GEMM_BENCH[backend_name](**bench_params)
+    bench.reduce_configs(args.max_kernels)
+    print(f"Generated {len(bench.configs)} gemm configs.")
 
-    repo_root = Path(__file__).parent.parent
-    kernel_dir = repo_root / "gemm" / backend_name / "mlir"
-    vmfb_dir = repo_root / "gemm" / backend_name / "vmfb"
-    dump_dir = Path(args.dump_dir) if args.dump_dir else None
-    kernel_dir.mkdir(parents=True, exist_ok=True)
-    vmfb_dir.mkdir(parents=True, exist_ok=True)
-    target = args.target
-    extra_compiler_args = ["--" + x for x in list(args.Xiree_compile)]
-    device = "local-task" if args.target == "host_cpu" else args.device
+    if args.tune:
+        # if args.tuning_config:
+        #     with open(args.tuning_config, "r") as file:
+        #         tuning_config = json.load(file)
+        #     configs = [
+        #         (tag, kernel)
+        #         for tag, kernel in configs
+        #         if kernel.get_name() in tuning_config["kernels"]
+        #     ]
+        #     num_trials = tuning_config["num_trials"]
+        # else:
+        #     num_trials = 100
+        mfma_configs: List[MMAType] = [
+            MMAType.F32_16x16x16_F16,
+            MMAType.F32_32x32x8_F16,
+            MMAType.F32_16x16x32_K8_F16,
+            MMAType.F32_32x32x16_K8_F16,
+        ]
+        tiling_constraints: List[TuningConstraint] = [
+            TuningConstraint(name="BLOCK_M", min=16, max=256, step=4),
+            TuningConstraint(name="BLOCK_N", min=16, max=256, step=4),
+            TuningConstraint(name="BLOCK_K", min=16, max=128, step=4),
+        ]
+        bench.tune_kernels(mfma_configs, tiling_constraints, GemmTuningSpec)
+    else:
+        if args.use_tuned:
+            bench.load_tuned_results(args.use_tuned, GemmTuningSpec)
 
-    vmfb_dict = compile_gemm_kernels(
-        backend_name,
-        configs,
-        kernel_dir,
-        vmfb_dir,
-        dump_dir,
-        target,
-        extra_compiler_args,
-    )
-
-    benchmark_gemm_kernels(backend_name, vmfb_dict, output_csv_path, args.iterations)
+        if backend_name in ["iree", "wave"]:
+            bench.compile_kernels()
+            bench.benchmark_kernels()
+        else:
+            bench.benchmark_kernels_extern()

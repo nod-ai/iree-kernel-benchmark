@@ -25,16 +25,33 @@ on:
       pr_repository:
         description: "Repository to check out from (e.g., iree-org/wave)"
         required: false
+      pr_headsha:
+        description: "Head sha of pull request that triggered dispatch"
+        required: false
+        default: "undefined"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.number || github.sha }}
+  group: ${{ github.workflow }}-${{ inputs.pr_branch || github.event.number || github.sha }}
   cancel-in-progress: true
 
 jobs:
+  identifier:
+    name: Benchmark Run Identifier
+    runs-on: ubuntu-latest
+    steps:
+      - name: headSha_${{ inputs.pr_headsha }}
+        run: echo run identifier ${{ inputs.pr_headsha }}
+
   short_benchmark:
+    name: Short Benchmark
     runs-on: linux-mi325-1gpu-ossci-nod-ai
 
+    concurrency:
+      group: benchmarking
+      cancel-in-progress: false
+
     env:
+      WAVE_CACHE_ON: 0
       ITERATIONS: ${{ inputs.iterations || '3' }}
       MAX_KERNELS: ${{ inputs.max_kernels || '50' }}
       SELECTED_BACKEND: ${{ inputs.selected_backend || 'all' }}
@@ -100,7 +117,7 @@ jobs:
         if: env.SELECTED_BACKEND == 'wave' || env.SELECTED_BACKEND == 'all'
         run: |
           source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.convbench --tk --iterations=$ITERATIONS --max_kernels=$MAX_KERNELS
+          python -m iree_kernel_benchmark.convbench --backend=wave --iterations=$ITERATIONS --max_kernels=$MAX_KERNELS
 
       # IREE BACKEND
       - name: Attention - IREE
@@ -119,7 +136,7 @@ jobs:
         if: env.SELECTED_BACKEND == 'iree' || env.SELECTED_BACKEND == 'all'
         run: |
           source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.convbench --iterations=$ITERATIONS --max_kernels=$MAX_KERNELS
+          python -m iree_kernel_benchmark.convbench --backend=iree --iterations=$ITERATIONS --max_kernels=$MAX_KERNELS
 
       # TORCH BACKEND
       - name: Attention - Torch

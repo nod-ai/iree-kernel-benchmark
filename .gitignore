@@ -23,6 +23,7 @@ wheelhouse
 *.egg-info
 *.whl
 bench_venv*/
+test_venv*/
 *.venv/
 
 # Bench Artifacts
@@ -30,4 +31,5 @@ attention/
 conv/
 gemm/
 results/
+kernels/
 dump/
