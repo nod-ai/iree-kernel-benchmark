@@ -25,14 +25,30 @@ on:
       pr_repository:
         description: "Repository to check out from (e.g., iree-org/wave)"
         required: false
+      pr_headsha:
+        description: "Head sha of pull request that triggered dispatch"
+        required: false
+        default: "undefined"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.number || github.sha }}
+  group: ${{ github.workflow }}-${{ inputs.pr_branch || github.event.number || github.sha }}
   cancel-in-progress: true
 
 jobs:
+  identifier:
+    name: Benchmark Run Identifier
+    runs-on: ubuntu-latest
+    steps:
+      - name: headSha_${{ inputs.pr_headsha }}
+        run: echo run identifier ${{ inputs.pr_headsha }}
+
   short_benchmark:
+    name: Short Benchmark
     runs-on: linux-mi300-1gpu-ossci-nod-ai
+
+    concurrency:
+      group: benchmarking
+      cancel-in-progress: false
 
     env:
       WAVE_CACHE_ON: 0

@@ -17,6 +17,10 @@ jobs:
   benchmark:
     runs-on: linux-mi300-1gpu-ossci-nod-ai
 
+    concurrency:
+      group: benchmarking
+      cancel-in-progress: false
+
     env:
       WAVE_CACHE_ON: 0
 
