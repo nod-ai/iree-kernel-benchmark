@@ -457,7 +457,7 @@ class KernelBenchmark:
                     "mean_microseconds": best_runtime,
                 }
 
-                with open(tuning_result_path) as file:
+                with open(tuning_result_path, "w") as file:
                     json.dump(tuning_results, file, indent=4)
 
         for config in self.configs:
