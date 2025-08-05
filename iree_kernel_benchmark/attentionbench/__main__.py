@@ -146,19 +146,34 @@ if __name__ == "__main__":
     tuning_spec_class = BACKEND_TO_ATTENTION_TUNING_SPEC[backend_name]
 
     if args.tune:
-        mfma_configs: List[Tuple[MMAType, MMAType]] = [
-            (MMAType.F32_32x32x16_K8_F16, MMAType.F32_32x32x8_F16),
-            (MMAType.F32_16x16x32_K8_F16, MMAType.F32_16x16x16_F16),
-            (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
-            (MMAType.F32_32x32x8_F16, MMAType.F32_32x32x8_F16),
-        ]
-        tiling_constraints: List[TuningConstraint] = [
-            TuningConstraint(name="BLOCK_B", min=1, max=1, step=1),
-            TuningConstraint(name="BLOCK_H", min=1, max=2, step=1),
-            TuningConstraint(name="BLOCK_N_Q", min=16, max=128, step=16),
-            TuningConstraint(name="BLOCK_D_KV", min=16, max=128, step=16),
-            TuningConstraint(name="BLOCK_N_KV", min=16, max=64, step=16),
-        ]
+        if backend_name == "wavegqa":
+            mfma_configs: List[Tuple[MMAType, MMAType]] = [
+                (MMAType.F32_32x32x16_K8_F16, MMAType.F32_32x32x8_F16),
+                (MMAType.F32_16x16x32_K8_F16, MMAType.F32_16x16x16_F16),
+                (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
+                (MMAType.F32_32x32x8_F16, MMAType.F32_32x32x8_F16),
+            ]
+            tiling_constraints: List[TuningConstraint] = [
+                TuningConstraint(name="BLOCK_B", min=1, max=1, step=1),
+                TuningConstraint(name="BLOCK_H", min=1, max=2, step=1),
+                TuningConstraint(name="BLOCK_N_Q", min=16, max=128, step=16),
+                TuningConstraint(name="BLOCK_D_KV", min=16, max=128, step=16),
+                TuningConstraint(name="BLOCK_N_KV", min=16, max=64, step=16),
+            ]
+        else:
+            mfma_configs: List[Tuple[MMAType, MMAType]] = [
+                (MMAType.F32_32x32x16_K8_F16, MMAType.F32_32x32x8_F16),
+                (MMAType.F32_16x16x32_K8_F16, MMAType.F32_16x16x16_F16),
+                (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
+                (MMAType.F32_32x32x8_F16, MMAType.F32_32x32x8_F16),
+            ]
+            tiling_constraints: List[TuningConstraint] = [
+                TuningConstraint(name="BLOCK_B", min=1, max=1, step=1),
+                TuningConstraint(name="BLOCK_M", min=32, max=256, step=8),
+                TuningConstraint(name="BLOCK_N", min=16, max=128, step=4),
+                TuningConstraint(name="BLOCK_K2", min=32, max=256, step=8),
+            ]
+
         bench.tune_kernels(mfma_configs, tiling_constraints, tuning_spec_class)
 
     else:
