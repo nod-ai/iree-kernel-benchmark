@@ -301,11 +301,11 @@ if __name__ == "__main__":
         "backend": backend_name,
         "kernel_type": "gemm",
         "device": device,
+        "target": target,
         "configs": configs,
         "kernel_dir": kernel_dir,
         "dump_dir": dump_dir,
         "debug": True,
-        "target": target,
         "num_iterations": args.iterations,
     }
 

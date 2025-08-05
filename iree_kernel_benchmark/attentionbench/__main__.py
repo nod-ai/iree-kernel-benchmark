@@ -51,6 +51,12 @@ if __name__ == "__main__":
         type=str,
         default="hip",
     )
+    parser.add_argument(
+        "--target",
+        help="The IREE hip target to compile for.",
+        type=str,
+        default="gfx942",
+    )
     parser.add_argument("--plot", help="location to save plot", default=None)
     parser.add_argument(
         "--batch", help="roofline on certain batch", type=int, default=None
@@ -132,6 +138,7 @@ if __name__ == "__main__":
         "backend": backend_name,
         "kernel_type": "attention",
         "device": device,
+        "target": args.target,
         "configs": configs,
         "kernel_dir": kernel_dir,
         "dump_dir": dump_dir,

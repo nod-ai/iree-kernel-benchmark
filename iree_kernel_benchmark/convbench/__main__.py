@@ -39,6 +39,12 @@ if __name__ == "__main__":
         default="hip",
     )
     parser.add_argument(
+        "--target",
+        help="The IREE hip target to compile for.",
+        type=str,
+        default="gfx942",
+    )
+    parser.add_argument(
         "--Xiree_compile",
         nargs="+",
         default=[],
@@ -128,6 +134,7 @@ if __name__ == "__main__":
         "backend": backend_name,
         "kernel_type": "conv",
         "device": device,
+        "target": args.target,
         "configs": configs,
         "kernel_dir": kernel_dir,
         "dump_dir": dump_dir,

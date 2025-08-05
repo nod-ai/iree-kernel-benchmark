@@ -460,5 +460,5 @@ class KernelBenchmark:
                 with open(tuning_result_path, "w") as file:
                     json.dump(tuning_results, file, indent=4)
 
-        for config in self.configs:
+        for config in tqdm(self.configs, desc=f"Tuning {len(self.configs)} configs"):
             tune_config(config)

@@ -64,7 +64,7 @@ class WaveAttentionMHABenchmark(KernelBenchmark):
                 create_vmfb_file=vmfb_path,
                 iree_launch_async=False,
                 backend="rocm",
-                target="gfx942",
+                target=self.target,
                 print_ir_after_all=self.dump_dir is not None,
             )
 
@@ -124,7 +124,7 @@ class WaveAttentionGQABenchmark(KernelBenchmark):
                 create_vmfb_file=vmfb_path,
                 iree_launch_async=False,
                 backend="rocm",
-                target="gfx942",
+                target=self.target,
                 print_ir_after_all=self.dump_dir is not None,
             )
 

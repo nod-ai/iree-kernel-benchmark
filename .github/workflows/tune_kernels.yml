@@ -5,7 +5,19 @@ on:
     inputs:
       config_url:
         description: "URL to tuning configuration"
-        required: true
+        required: false
+      config_json:
+        description: "Stringified JSON for tuning configuration"
+        required: false
+        default: "[]"
+      num_trials:
+        description: "Number of trials per kernel for tuning"
+        required: false
+        default: "100"
+      iterations:
+        description: "Number of benchmark iterations per trial"
+        required: false
+        default: "5"
 
 concurrency:
   group: ${{ github.workflow }}
@@ -14,6 +26,9 @@ concurrency:
 jobs:
   tuning:
     runs-on: linux-mi325-1gpu-ossci-nod-ai
+
+    env:
+      CONFIG_JSON: ${{ inputs.config_json }}
 
     concurrency:
       group: benchmarking
@@ -42,8 +57,19 @@ jobs:
           pip install -r requirements.txt
           pip install wave-lang
 
-      - name: Load Tuning Configuratoin
+      - name: Load Tuning Configuration from URL
+        if: ${{ inputs.config_url }}
         run: |
-          curl ${{ inputs.config_url }}
+          curl -o tune_config.json ${{ inputs.config_url }}
+
+      - name: Load Tuning Configuration from JSON string
+        if: ${{ !inputs.config_url }}
+        run: |
+          echo "$CONFIG_JSON" > tune_config.json
+
+      - name: Run Tuning
+        if: contains(env.CONFIG_JSON, 'attention')
+        run: |
           source tune_venv/bin/activate
+          python -m json.tool tune_config.json > /dev/null || { echo "Error: Invalid JSON format"; exit 1; }
           python -m tune --config=tune_config.json
