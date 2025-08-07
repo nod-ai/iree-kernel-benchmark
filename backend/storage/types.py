@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Any
 
 # @dataclass
 # class RunResultEntry:
@@ -13,16 +13,24 @@ type ChangeStats = dict[str, float]
 
 
 @dataclass
-class BenchmarkRun:
+class PerformanceRun:
     _id: str
+    blobName: str
+    timestamp: datetime
+    changeStats: ChangeStats
+
+
+@dataclass
+class BenchmarkRun(PerformanceRun):
+    # _id: str
     headSha: str
     status: str
     conclusion: str
     numSteps: int
     steps: list[dict]
-    blobName: str
-    timestamp: datetime
-    changeStats: ChangeStats
+    # blobName: str
+    # timestamp: datetime
+    # changeStats: ChangeStats
     hasArtifact: bool = False
 
 
@@ -30,6 +38,25 @@ class BenchmarkRun:
 class RunArtifact:
     kernels: list[dict]
     mapping: BenchmarkRun
+
+
+@dataclass
+class Kernel:
+    id: str
+    backend: str
+    kernelType: str
+    name: str
+    tag: str
+    dtype: str
+    allowedBackends: list[str]
+    shape: dict[str, Any]
+
+
+@dataclass
+class TuningRequest:
+    id: str
+    kernelNames: list[str]
+    completed: bool
 
 
 @dataclass

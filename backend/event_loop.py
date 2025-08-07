@@ -17,7 +17,7 @@ db_client, dir_client = get_azure_clients()
 repo = get_repo("bench")
 
 
-def run_forever():
+def serve_event_loop():
     last_run_update_time = 0
     last_mapping_update_time = 0
     last_change_stats_update_time = 0
@@ -62,4 +62,4 @@ def run_forever():
 
 
 if __name__ == "__main__":
-    run_forever()
+    serve_event_loop()

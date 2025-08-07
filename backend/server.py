@@ -34,6 +34,12 @@ def get_all_runs():
     return jsonify([asdict(run) for run in runs])
 
 
+@app.route("/performances")
+def get_all_perfs():
+    perfs = db_client.find_all_performances()
+    return jsonify([asdict(perf) for perf in perfs])
+
+
 @app.route("/artifact/<run_id>")
 def get_artifact_by_run_id(run_id):
     new_kernels = load_artifact_kernels(directory_client, f"{run_id}/benchmark-results")
@@ -70,12 +76,22 @@ def cancel_workflow():
         return "Failure", 500
 
 
-@app.route("/pull_requests/rebase", methods=["POST"])
+@app.route("/rebase", methods=["POST"])
 def rebase_prs():
     rebase_all()
     modifications = db_client.find_all_modifications()
-    return jsonify([asdict(modification) for modification in modifications])
+    performances = db_client.find_all_performances()
+    return jsonify(
+        {
+            "modifications": [asdict(modification) for modification in modifications],
+            "performances": [asdict(perf) for perf in performances],
+        }
+    )
+
+
+def serve_backend(port=3000):
+    app.run("0.0.0.0", port=port)
 
 
 if __name__ == "__main__":
-    app.run(port=3000)
+    serve_backend()

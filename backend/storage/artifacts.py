@@ -192,6 +192,23 @@ def download_artifact_kernels_by_run_id(
     return []
 
 
+def save_results_from_local_path(
+    dir_client: DirectoryClient,
+    local_path: os.PathLike,
+    blob_name: str,
+    delete_local=True,
+):
+    try:
+        print(f"Uploading artifacts to azure path {blob_name}")
+        dir_client.upload(f"{local_path}/benchmark-results", blob_name)
+        if delete_local:
+            shutil.rmtree(local_path)
+        return blob_name
+    except:
+        print(f"Blob {blob_name} already exists. Skipped upload")
+        return None
+
+
 def save_run_artifact(
     repo: Repository.Repository, run_data: BenchmarkRun, dir_client: DirectoryClient
 ) -> Optional[os.PathLike]:
@@ -206,14 +223,7 @@ def save_run_artifact(
             print("Failed to parse artifact")
             return None
 
-        try:
-            print(f"Uploading artifacts to azure path {run_data.blobName}")
-            dir_client.upload(f"{artifact_path}/benchmark-results", run_data.blobName)
-            shutil.rmtree(artifact_path)
-            return run_data.blobName
-        except:
-            print(f"Blob already exists for artifact {artifact.id}. Skipped upload")
-            return None
+        save_results_from_local_path(dir_client, artifact_path, run_data.blobName)
 
     print("No artifact returned by run")
     return None

@@ -56,10 +56,14 @@ class PayloadView:
         return {"status": 200}
 
 
-if __name__ == "__main__":
+def serve_listener(port=2500):
     config = Configurator()
     config.add_route(ENDPOINT, "/{}".format(ENDPOINT))
     config.scan()
     app = config.make_wsgi_app()
-    server = make_server("127.0.0.1", 2500, app)
+    server = make_server("0.0.0.0", port, app)
     server.serve_forever()
+
+
+if __name__ == "__main__":
+    serve_listener()
