@@ -101,6 +101,9 @@ if __name__ == "__main__":
         default=None,
         help="Maximum number of kernels to benchmark.",
     )
+    parser.add_argument(
+        "--load_problems", type=str, default=None, help="Path to custom problem list."
+    )
 
     args = parser.parse_args()
     logging.basicConfig(level=args.log_level)
@@ -113,20 +116,33 @@ if __name__ == "__main__":
 
     mfma_config = (MMAType.F32_32x32x16_K8_F16, MMAType.F32_32x32x16_K8_F16)
 
-    if backend_name == "wavegqa":
-        configs = [
-            (tag, config.to_bshd()) for tag, config in get_attention_configs_gqa()
-        ]
-    elif backend_name == "iree":
-        configs = [
-            (tag, config.to_bmnk1k2())
-            for tag, config in get_attention_configs(use_fp8=True)
-        ]
-    else:
-        configs = [
-            (tag, config.to_bmnk1k2())
-            for tag, config in get_attention_configs(use_fp8=False)
-        ]
+    configs = []
+    if args.load_problems:
+        config_class = (
+            AttentionConfigBSHD if backend_name == "wavegqa" else AttentionConfigBMNK
+        )
+        configs = load_configs(
+            args.load_problems,
+            "attention",
+            backend_name,
+            config_class,
+        )
+
+    if len(configs) == 0:
+        if backend_name == "wavegqa":
+            configs = [
+                (tag, config.to_bshd()) for tag, config in get_attention_configs_gqa()
+            ]
+        elif backend_name == "iree":
+            configs = [
+                (tag, config.to_bmnk1k2())
+                for tag, config in get_attention_configs(use_fp8=True)
+            ]
+        else:
+            configs = [
+                (tag, config.to_bmnk1k2())
+                for tag, config in get_attention_configs(use_fp8=False)
+            ]
 
     repo_root = Path(__file__).parent.parent
     kernel_dir = repo_root / "kernels"

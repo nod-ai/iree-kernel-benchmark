@@ -13,8 +13,36 @@ import hashlib
 import warnings
 import random
 import torch
-from typing import Any, List, Tuple
+import json
+from typing import Any, List, Tuple, Dict
 from contextlib import contextmanager
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, asdict
+
+
+@dataclass
+class OpConfig(ABC):
+    @abstractmethod
+    def get_name(self) -> str:
+        pass
+
+    @abstractmethod
+    def get_flops(self) -> int:
+        pass
+
+    @abstractmethod
+    def get_byte_count(self) -> int:
+        pass
+
+    @abstractmethod
+    def get_runtime_args(self, backend_name: str) -> List[str]:
+        pass
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+
+type ConfigList = List[Tuple[str, OpConfig]]
 
 
 def generate_md5_hex(file_path):
@@ -79,7 +107,7 @@ def decode_output(bench_lines):
     return benchmark_results
 
 
-def bench_summary_process(ret_value, output):
+def bench_summary_process(ret_value, output: bytes):
     if ret_value == 1:
         # Output should have already been logged earlier.
         logging.getLogger().error("Running benchmark failed. Exiting.")
@@ -88,9 +116,12 @@ def bench_summary_process(ret_value, output):
     bench_lines = output.decode().split("\n")[3:]
     benchmark_results = decode_output(bench_lines)
     logging.getLogger().info(benchmark_results)
-    benchmark_mean_time = float(benchmark_results[3].time.split()[0])
 
-    return benchmark_mean_time
+    for result in benchmark_results:
+        if "real_time_mean" in result.benchmark_name:
+            return float(result.time.split()[0])
+
+    return float(benchmark_results[0].time.split()[0])
 
 
 def write_results_to_csv(
@@ -115,6 +146,21 @@ def write_results_to_csv(
 
         for result in results:
             writer.writerow(result)
+
+
+def get_kernel_perf_stats(
+    config: OpConfig, benchmark_mean_time_us: float
+) -> Tuple[float, float]:
+    flops = config.get_flops()
+    byte_count = config.get_byte_count()
+
+    arithmetic_intensity = flops / byte_count
+    if benchmark_mean_time_us == 0:
+        tflops_per_second = 0
+    else:
+        tflops_per_second = (flops / 1e12) / (benchmark_mean_time_us / 1e6)
+
+    return arithmetic_intensity, tflops_per_second
 
 
 def filter_batch(data, b):
@@ -294,6 +340,29 @@ def reduce_configs(
         overflow_tags = next_round_overflow
 
     return selected_configs
+
+
+def load_configs(
+    config_path: os.PathLike, kernel_type: str, backend: str, config_class
+) -> List[Tuple[str, Any]]:
+    try:
+        with open(config_path, "r") as file:
+            config_data = json.load(file)
+    except:
+        return []
+
+    filtered_data = [
+        config
+        for config in config_data
+        if config["kernelType"] == kernel_type and backend in config["allowedBackends"]
+    ]
+
+    config_list = [
+        (str(config["tag"]), config_class(**config["problem"]))
+        for config in filtered_data
+    ]
+
+    return config_list
 
 
 @contextmanager

@@ -15,34 +15,16 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from .tuning import TuningConstraint
-from .bench_utils import bench_summary_process, run_iree_command, write_results_to_csv
+from .bench_utils import (
+    bench_summary_process,
+    get_kernel_perf_stats,
+    run_iree_command,
+    write_results_to_csv,
+    OpConfig,
+    ConfigList,
+)
 from wave_lang.kernel.wave.constraints import MMAType
 from .wave_utils import TuningSpec
-
-
-@dataclass
-class OpConfig(ABC):
-    @abstractmethod
-    def get_name(self) -> str:
-        pass
-
-    @abstractmethod
-    def get_flops(self) -> int:
-        pass
-
-    @abstractmethod
-    def get_byte_count(self) -> int:
-        pass
-
-    @abstractmethod
-    def get_runtime_args(self, backend_name: str) -> List[str]:
-        pass
-
-    def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
-
-
-type ConfigList = List[Tuple[str, OpConfig]]
 
 
 @dataclass
@@ -194,14 +176,9 @@ class KernelBenchmark:
         for i, (tag, config) in enumerate(selected_configs):
             benchmark_mean_time_us = runtimes_us[i]
 
-            flops = config.get_flops()
-            byte_count = config.get_byte_count()
-
-            arithmetic_intensity = flops / byte_count
-            if benchmark_mean_time_us == 0:
-                tflops_per_second = 0
-            else:
-                tflops_per_second = (flops / 1e12) / (benchmark_mean_time_us / 1e6)
+            arithmetic_intensity, tflops_per_second = get_kernel_perf_stats(
+                config, benchmark_mean_time_us
+            )
 
             config_dict = config.to_dict()
 
@@ -450,11 +427,18 @@ class KernelBenchmark:
             best_runtime, best_spec, best_mfma = tuning_result
             print("Optimal spec", asdict(best_spec))
 
+            arithmetic_intensity, tflops_per_second = get_kernel_perf_stats(
+                kernel, best_runtime
+            )
+
             if best_spec and best_mfma:
                 tuning_results[config_name] = {
                     "block_sizes": asdict(best_spec),
                     "mfma_variant": [mfma.name for mfma in best_mfma],
                     "mean_microseconds": best_runtime,
+                    "arithmetic_intensity": arithmetic_intensity,
+                    "tflops": tflops_per_second,
+                    "problem": asdict(kernel),
                 }
 
                 with open(tuning_result_path, "w") as file:

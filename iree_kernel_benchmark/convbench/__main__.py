@@ -107,6 +107,9 @@ if __name__ == "__main__":
         default=None,
         help="Maximum number of kernels to benchmark.",
     )
+    parser.add_argument(
+        "--load_problems", type=str, default=None, help="Path to custom problem list."
+    )
 
     args = parser.parse_args()
     logging.basicConfig(level=args.log_level)
@@ -115,14 +118,25 @@ if __name__ == "__main__":
         roofline(args.roofline, args.plot, args.batch, args.dtype, args.model)
         sys.exit()
 
-    configs = get_tk_conv_configs()
+    backend_name = args.backend
+
+    configs = []
+    if args.load_problems:
+        configs = load_configs(
+            args.load_problems,
+            "conv",
+            backend_name,
+            ConvConfig,
+        )
+
+    if len(configs) == 0:
+        configs = get_tk_conv_configs()
+
     if args.filter_config is not None:
         filter_regex = re.compile(args.filter_config)
         configs = list(
             filter(lambda config: filter_regex.match(config[1].get_name()), configs)
         )
-
-    backend_name = args.backend
 
     repo_root = Path(__file__).parent.parent
     kernel_dir = repo_root / "kernels"
@@ -151,8 +165,8 @@ if __name__ == "__main__":
             MMAType.F32_16x16x16_F16,
         ]
         tiling_constraints: List[TuningConstraint] = [
-            TuningConstraint(name="BLOCK_M", min=16, max=256, step=4),
-            TuningConstraint(name="BLOCK_N", min=16, max=256, step=4),
+            TuningConstraint(name="BLOCK_M", min=16, max=256, step=8),
+            TuningConstraint(name="BLOCK_N", min=16, max=256, step=8),
             TuningConstraint(name="BLOCK_K", min=16, max=128, step=4),
             TuningConstraint(name="ELEMS_PER_THREAD", min=4, max=4, step=1),
         ]
@@ -166,14 +180,3 @@ if __name__ == "__main__":
             bench.benchmark_kernels()
         else:
             bench.benchmark_kernels_extern()
-
-    # exec_args = [
-    #     "iree-benchmark-module",
-    #     f"--device={device}",
-    #     "--device_allocator=caching",
-    #     f"--module={vmfb_filename}",
-    #     f"--function={entrypoint}",
-    #     f"--benchmark_repetitions={args.iterations}",
-    #     f"--input={image_shape}",
-    #     f"--input={filter_shape}",
-    # ]
