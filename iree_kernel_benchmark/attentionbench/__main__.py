@@ -87,6 +87,12 @@ if __name__ == "__main__":
         help="Uses heuristic approach to optimize mfma variant, tiling, and waves.",
     )
     parser.add_argument(
+        "--num_trials",
+        type=int,
+        default=100,
+        help="Number of tuning trials.",
+    )
+    parser.add_argument(
         "--use_tuned",
         type=str,
         default=None,
@@ -197,7 +203,12 @@ if __name__ == "__main__":
                 TuningConstraint(name="BLOCK_K2", min=32, max=256, step=8),
             ]
 
-        bench.tune_kernels(mfma_configs, tiling_constraints, tuning_spec_class)
+        bench.tune_kernels(
+            mfma_configs,
+            tiling_constraints,
+            tuning_spec_class,
+            num_trials=args.num_trials,
+        )
 
     else:
         if args.use_tuned:

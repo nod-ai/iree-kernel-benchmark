@@ -107,6 +107,17 @@ def decode_output(bench_lines):
     return benchmark_results
 
 
+def unit_to_microseconds(real_time: float, time_unit: str) -> float:
+    unit_conversions = {
+        "s": 1e6,
+        "ms": 1e3,
+        "us": 1,
+        "ns": 1e-3,
+    }
+    assert time_unit in unit_conversions, f"Unsupported time unit: {time_unit}"
+    return real_time * unit_conversions[time_unit]
+
+
 def bench_summary_process(ret_value, output: bytes):
     if ret_value == 1:
         # Output should have already been logged earlier.

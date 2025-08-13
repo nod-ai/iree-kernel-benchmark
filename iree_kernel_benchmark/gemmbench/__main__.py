@@ -112,6 +112,12 @@ if __name__ == "__main__":
         help="Uses heuristic approach to optimize mfma variant, tiling, and waves.",
     )
     parser.add_argument(
+        "--num_trials",
+        type=int,
+        default=100,
+        help="Number of tuning trials.",
+    )
+    parser.add_argument(
         "--tuning_config",
         type=str,
         default=None,
@@ -177,6 +183,15 @@ if __name__ == "__main__":
         for dtype in requested_dtypes:
             configs += get_gemm_configs(dtype, backend_name, args.raw_accumulators)
 
+    # with open("results/tuning/gemm/gemm_wave_tuned_results.json", "r") as file:
+    #     tuned_configs = json.load(file)
+    # tuned_config_names = dict(tuned_configs).keys()
+    # configs = [
+    #     (tag, config)
+    #     for tag, config in configs
+    #     if config.get_name() in tuned_config_names
+    # ]
+
     configs = get_matching_configs(
         configs,
         requested_variants,
@@ -212,7 +227,9 @@ if __name__ == "__main__":
             TuningConstraint(name="BLOCK_N", min=16, max=256, step=8),
             TuningConstraint(name="BLOCK_K", min=16, max=128, step=4),
         ]
-        bench.tune_kernels(mfma_configs, tiling_constraints, GemmTuningSpec)
+        bench.tune_kernels(
+            mfma_configs, tiling_constraints, GemmTuningSpec, num_trials=args.num_trials
+        )
     else:
         if args.use_tuned:
             bench.load_tuned_results(args.use_tuned, GemmTuningSpec)

@@ -9,21 +9,25 @@ from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, field
 import itertools
 import pandas as pd
+import time
 import json
 from os import PathLike
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from .tuning import TuningConstraint
+from wave_lang.kernel.wave.constraints import MMAType
+import iree.runtime as ireert
+
+from .tuning import TuningConstraint, tune_config_worker
 from .bench_utils import (
-    bench_summary_process,
+    unit_to_microseconds,
     get_kernel_perf_stats,
     run_iree_command,
     write_results_to_csv,
     OpConfig,
     ConfigList,
 )
-from wave_lang.kernel.wave.constraints import MMAType
+from .parallel import ParallelProgressManager
 from .wave_utils import TuningSpec
 
 
@@ -64,23 +68,76 @@ class KernelBenchmark:
         config: OpConfig,
         vmfb_filename: PathLike,
         num_iterations: int = 3,
+        device: str = None,
         debug: bool = False,
     ) -> Tuple[float, bool]:
-        exec_args = [
-            "iree-benchmark-module",
-            f"--device={self.device}",
-            "--device_allocator=caching",
-            f"--module={vmfb_filename}",
-            f"--benchmark_repetitions={num_iterations}",
-            *config.get_runtime_args(self.backend),
-        ]
 
-        ret_value, cmd_out, cmd_err = run_iree_command(exec_args)
-        benchmark_mean_time_ms = bench_summary_process(ret_value, cmd_out)
-        benchmark_mean_time_us = benchmark_mean_time_ms * 1000
-        ok = ret_value == 0 and benchmark_mean_time_us > 0
+        extra_flags = {}
+        func_name = None
+        inputs = []
+        for flag in config.get_runtime_args(self.backend):
+            split_key_value = flag[2:].split("=")
+            key = split_key_value[0]
+            value = "=".join(split_key_value[1:])
+            if key == "function":
+                func_name = value
+                continue
+            if key == "input":
+                inputs.append(value)
+                continue
+            extra_flags[key] = value
 
-        return benchmark_mean_time_us, ok
+        try:
+            bench_results = ireert.benchmark.benchmark_module(
+                vmfb_filename,
+                entry_function=func_name,
+                inputs=inputs,
+                device=device or self.device,
+                device_allocator="caching",
+                benchmark_repetitions=num_iterations,
+                **extra_flags,
+            )
+        except:
+            return 0, False
+
+        times = []
+        for bench_result in bench_results:
+            # print(bench_result)
+            bench_name = bench_result.benchmark_name
+            if bench_name.split("/")[-1] == "real_time":
+                time_and_unit = bench_result.time.split(" ")
+                assert (
+                    len(time_and_unit) == 2
+                ), "expected the benchmark time to be the time and unit separated by a space."
+                time_us = unit_to_microseconds(
+                    real_time=float(time_and_unit[0]),
+                    time_unit=time_and_unit[1],
+                )
+                times.append(time_us)
+
+        if len(times) == 0:
+            return 0, False
+
+        benchmark_mean_time_us = sum(times) / float(len(times))
+        return benchmark_mean_time_us, True
+
+        # exec_args = [
+        #     "iree-benchmark-module",
+        #     f"--device={device or self.device}",
+        #     "--device_allocator=caching",
+        #     f"--module={vmfb_filename}",
+        #     f"--benchmark_repetitions={num_iterations}",
+        #     *config.get_runtime_args(self.backend),
+        # ]
+
+        # ret_value, cmd_out, cmd_err = run_iree_command(exec_args)
+        # benchmark_mean_time_ms = bench_summary_process(ret_value, cmd_out)
+        # if not benchmark_mean_time_ms:
+        #     return 0, False
+        # benchmark_mean_time_us = benchmark_mean_time_ms * 1000
+        # ok = ret_value == 0 and benchmark_mean_time_us > 0
+
+        # return benchmark_mean_time_us, ok
 
     def _log(self, *args):
         if self.debug:
@@ -144,8 +201,11 @@ class KernelBenchmark:
         with open(result_path, "r") as file:
             tuned_data: dict[str, dict] = json.load(file)
 
-        def to_mma(str_config: list[str]) -> tuple[MMAType]:
-            return tuple([MMAType[mma_name] for mma_name in str_config])
+        def to_mma(str_config: list[str]) -> tuple[MMAType] | MMAType:
+            mma_types = tuple([MMAType[mma_name] for mma_name in str_config])
+            if len(mma_types) == 1:
+                return mma_types[0]
+            return mma_types
 
         self.specs = {
             kernel_name: (spec_class_type(**tune_result["block_sizes"]))
@@ -298,7 +358,10 @@ class KernelBenchmark:
             tag, config = value
 
             benchmark_mean_time_us, ok = self.bench_kernel(
-                config, vmfb_filename, self.num_iterations, self.debug
+                config,
+                vmfb_filename,
+                num_iterations=self.num_iterations,
+                debug=self.debug,
             )
 
             runtimes.append(benchmark_mean_time_us)
@@ -336,113 +399,78 @@ class KernelBenchmark:
         tuning_class,
         num_trials: int = 100,
     ):
-        tuning_results = {}
         tuning_dir = Path(f"results/tuning")
         tuning_result_basename = f"{self.kernel_type}_{self.backend}_tuned_results.json"
         tuning_result_path = tuning_dir / self.kernel_type / tuning_result_basename
         os.makedirs(os.path.dirname(tuning_result_path), exist_ok=True)
 
-        def tune_config(config: Tuple[str, OpConfig]):
-            tuning_result: tuple[
-                float,
-                TuningSpec,
-                tuple[MMAType],
-            ] = (
-                math.inf,
-                None,
-                mfma_configs[0],
+        # Create manager for shared resources
+        manager = Manager()
+        results_lock = manager.Lock()
+        shared_results = manager.dict()
+
+        # Prepare configs with device assignments
+        worker_args = []
+        total_configs = len(self.configs)
+        num_gpus = min(8, total_configs)
+
+        # Create progress manager
+        progress_manager = ParallelProgressManager(total_configs, num_gpus)
+        progress_manager.start_main_progress()
+
+        for i, config in enumerate(self.configs):
+            device_id = i % num_gpus
+            worker_args.append(
+                (
+                    config,
+                    device_id,
+                    i + 1,
+                    total_configs,
+                    self.kernel_type,
+                    self.backend,
+                    self.kernel_dir,
+                    self.num_iterations,
+                    self.debug,
+                    mfma_configs,
+                    tiling_constraints,
+                    tuning_class,
+                    num_trials,
+                    tuning_result_path,
+                    results_lock,
+                    shared_results,
+                    self.compile_kernel,
+                    self.bench_kernel,
+                    get_kernel_perf_stats,
+                    progress_manager.get_shared_state(),  # Add this
+                    progress_manager.get_lock(),  # Add this
+                )
             )
 
-            config_tag, kernel = config
-            config_name = kernel.get_name()
+        # Run parallel tuning with progress monitoring
+        import threading
 
-            def objective(trial: optuna.Trial) -> float:
-                nonlocal tuning_result
+        # Start a thread to refresh the display
+        stop_refresh = threading.Event()
 
-                block_sizes = [
-                    trial.suggest_int(
-                        constraint.name,
-                        constraint.min,
-                        constraint.max,
-                        step=constraint.step,
-                    )
-                    for constraint in tiling_constraints
-                ]
+        def refresh_thread():
+            while not stop_refresh.is_set():
+                progress_manager.refresh_display()
+                time.sleep(0.5)
 
-                tuning_spec_params = {
-                    constraint.name: block_sizes[i]
-                    for i, constraint in enumerate(tiling_constraints)
-                }
+        refresh_thread_obj = threading.Thread(target=refresh_thread)
+        refresh_thread_obj.start()
 
-                tuning_spec: TuningSpec = tuning_class(**tuning_spec_params)
+        try:
+            with Pool(processes=num_gpus) as pool:
+                for result in pool.imap_unordered(tune_config_worker, worker_args):
+                    if result[1] is not None:
+                        pass
+        finally:
+            stop_refresh.set()
+            refresh_thread_obj.join()
+            progress_manager.close()
 
-                mfma_config = mfma_configs[
-                    trial.suggest_categorical(
-                        "MFMA_INDEX", list(range(len(mfma_configs)))
-                    )
-                ]
-
-                local_kernel_dir = self.kernel_dir / self.kernel_type / self.backend
-
-                mlir_dir = local_kernel_dir / "mlir"
-                vmfb_dir = local_kernel_dir / "vmfb"
-                os.makedirs(mlir_dir, exist_ok=True)
-                os.makedirs(vmfb_dir, exist_ok=True)
-
-                mlir_path = mlir_dir / f"{config_name}.mlir"
-                vmfb_path = vmfb_dir / f"{config_name}.vmfb"
-
-                try:
-                    compile_success = self.compile_kernel(
-                        kernel,
-                        mlir_path,
-                        vmfb_path,
-                        mfma_variant=mfma_config,
-                        spec=tuning_spec,
-                    )
-                    if not compile_success:
-                        raise Exception(f"Compiling kernel {config_name} failed")
-                except:
-                    print("Failed to compile, skipping")
-                    return math.inf
-
-                try:
-                    runtime, bench_success = self.bench_kernel(
-                        kernel, vmfb_path, self.num_iterations, self.debug
-                    )
-                    if not bench_success:
-                        raise Exception(f"Benchmarking kernel {config_name} failed")
-                except:
-                    print("Failed runtime, skipping")
-                    return math.inf
-
-                if runtime < tuning_result[0]:
-                    tuning_result = (runtime, tuning_spec, mfma_config)
-
-                return runtime
-
-            study = optuna.create_study(direction="minimize")
-            study.optimize(objective, n_trials=num_trials, show_progress_bar=True)
-
-            best_runtime, best_spec, best_mfma = tuning_result
-            print("Optimal spec", asdict(best_spec))
-
-            arithmetic_intensity, tflops_per_second = get_kernel_perf_stats(
-                kernel, best_runtime
-            )
-
-            if best_spec and best_mfma:
-                tuning_results[config_name] = {
-                    "block_sizes": asdict(best_spec),
-                    "mfma_variant": [mfma.name for mfma in best_mfma],
-                    "mean_microseconds": best_runtime,
-                    "arithmetic_intensity": arithmetic_intensity,
-                    "tflops": tflops_per_second,
-                    "problem": asdict(kernel),
-                }
-
-                with open(tuning_result_path, "w") as file:
-                    json.dump(tuning_results, file, indent=4)
-
-        for config in tqdm(self.configs, desc=f"Tuning {len(self.configs)} configs"):
-            tune_config(config)
+        # Store final results
+        with open(tuning_result_path, "w") as file:
+            json.dump(dict(shared_results), file, indent=4)
+        print(f"\nSaved tuning results to {tuning_result_path}")
