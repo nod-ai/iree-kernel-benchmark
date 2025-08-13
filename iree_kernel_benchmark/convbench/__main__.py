@@ -81,7 +81,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--iterations",
         type=int,
-        default=3,
+        default=1,
         help="Number of benchmark iterations.",
     )
     parser.add_argument(

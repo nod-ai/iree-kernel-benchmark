@@ -41,6 +41,9 @@ class OpConfig(ABC):
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
+    def get_dim_names(self) -> List[str]:
+        return list(self.to_dict().keys())
+
 
 type ConfigList = List[Tuple[str, OpConfig]]
 

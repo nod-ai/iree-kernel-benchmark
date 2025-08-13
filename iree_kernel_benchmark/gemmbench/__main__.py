@@ -15,7 +15,11 @@ from .gemm_utils import *
 from .iree_gemm import IREEGemmBenchmark
 from .wave_gemm import WaveGemmBenchmark
 from .torch_gemm import TorchGemmBenchmark
-from .problems import get_gemm_configs, get_tk_gemm_configs, get_matching_configs
+from .problems import (
+    get_gemm_configs,
+    get_tk_gemm_configs,
+    get_matching_configs,
+)
 
 BACKEND_TO_GEMM_BENCH = {
     "torch": TorchGemmBenchmark,
@@ -103,7 +107,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--iterations",
         type=int,
-        default=3,
+        default=1,
         help="Number of benchmark iterations.",
     )
     parser.add_argument(

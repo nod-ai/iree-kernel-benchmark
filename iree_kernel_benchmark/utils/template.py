@@ -5,6 +5,7 @@ import random
 import optuna
 from tqdm import tqdm
 from multiprocessing import Pool, cpu_count, Manager
+import threading
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, field
 import itertools
@@ -13,12 +14,12 @@ import time
 import json
 from os import PathLike
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Type
 
 from wave_lang.kernel.wave.constraints import MMAType
 import iree.runtime as ireert
 
-from .tuning import TuningConstraint, tune_config_worker
+from .tuning import TuningConstraint, tune_kernels_parallel
 from .bench_utils import (
     unit_to_microseconds,
     get_kernel_perf_stats,
@@ -48,7 +49,6 @@ class KernelBenchmark:
 
     target: str = "gfx942"
     num_iterations: int = 3
-    num_tuning_trials: int = 100
 
     _vmfb_dict: Dict[str, Tuple[str, OpConfig]] = field(default_factory=dict)
 
@@ -102,7 +102,6 @@ class KernelBenchmark:
 
         times = []
         for bench_result in bench_results:
-            # print(bench_result)
             bench_name = bench_result.benchmark_name
             if bench_name.split("/")[-1] == "real_time":
                 time_and_unit = bench_result.time.split(" ")
@@ -120,24 +119,6 @@ class KernelBenchmark:
 
         benchmark_mean_time_us = sum(times) / float(len(times))
         return benchmark_mean_time_us, True
-
-        # exec_args = [
-        #     "iree-benchmark-module",
-        #     f"--device={device or self.device}",
-        #     "--device_allocator=caching",
-        #     f"--module={vmfb_filename}",
-        #     f"--benchmark_repetitions={num_iterations}",
-        #     *config.get_runtime_args(self.backend),
-        # ]
-
-        # ret_value, cmd_out, cmd_err = run_iree_command(exec_args)
-        # benchmark_mean_time_ms = bench_summary_process(ret_value, cmd_out)
-        # if not benchmark_mean_time_ms:
-        #     return 0, False
-        # benchmark_mean_time_us = benchmark_mean_time_ms * 1000
-        # ok = ret_value == 0 and benchmark_mean_time_us > 0
-
-        # return benchmark_mean_time_us, ok
 
     def _log(self, *args):
         if self.debug:
@@ -396,81 +377,28 @@ class KernelBenchmark:
         self,
         mfma_configs: List[Tuple[MMAType]],
         tiling_constraints: List[TuningConstraint],
-        tuning_class,
+        tuning_class: Type[TuningSpec],
         num_trials: int = 100,
     ):
         tuning_dir = Path(f"results/tuning")
         tuning_result_basename = f"{self.kernel_type}_{self.backend}_tuned_results.json"
         tuning_result_path = tuning_dir / self.kernel_type / tuning_result_basename
-        os.makedirs(os.path.dirname(tuning_result_path), exist_ok=True)
 
-        # Create manager for shared resources
-        manager = Manager()
-        results_lock = manager.Lock()
-        shared_results = manager.dict()
+        local_kernel_dir = self.kernel_dir / self.kernel_type / self.backend
 
-        # Prepare configs with device assignments
-        worker_args = []
-        total_configs = len(self.configs)
-        num_gpus = min(8, total_configs)
+        tune_kernels_parallel(
+            self.configs,
+            mfma_configs,
+            tiling_constraints,
+            tuning_class,
+            self.compile_kernel,
+            self.bench_kernel,
+            local_kernel_dir,
+            tuning_result_path,
+            self.num_iterations,
+            num_trials,
+            self.debug,
+            save_results=True,
+        )
 
-        # Create progress manager
-        progress_manager = ParallelProgressManager(total_configs, num_gpus)
-        progress_manager.start_main_progress()
-
-        for i, config in enumerate(self.configs):
-            device_id = i % num_gpus
-            worker_args.append(
-                (
-                    config,
-                    device_id,
-                    i + 1,
-                    total_configs,
-                    self.kernel_type,
-                    self.backend,
-                    self.kernel_dir,
-                    self.num_iterations,
-                    self.debug,
-                    mfma_configs,
-                    tiling_constraints,
-                    tuning_class,
-                    num_trials,
-                    tuning_result_path,
-                    results_lock,
-                    shared_results,
-                    self.compile_kernel,
-                    self.bench_kernel,
-                    get_kernel_perf_stats,
-                    progress_manager.get_shared_state(),  # Add this
-                    progress_manager.get_lock(),  # Add this
-                )
-            )
-
-        # Run parallel tuning with progress monitoring
-        import threading
-
-        # Start a thread to refresh the display
-        stop_refresh = threading.Event()
-
-        def refresh_thread():
-            while not stop_refresh.is_set():
-                progress_manager.refresh_display()
-                time.sleep(0.5)
-
-        refresh_thread_obj = threading.Thread(target=refresh_thread)
-        refresh_thread_obj.start()
-
-        try:
-            with Pool(processes=num_gpus) as pool:
-                for result in pool.imap_unordered(tune_config_worker, worker_args):
-                    if result[1] is not None:
-                        pass
-        finally:
-            stop_refresh.set()
-            refresh_thread_obj.join()
-            progress_manager.close()
-
-        # Store final results
-        with open(tuning_result_path, "w") as file:
-            json.dump(dict(shared_results), file, indent=4)
-        print(f"\nSaved tuning results to {tuning_result_path}")
+        print(f"Saved results to {tuning_result_path}")

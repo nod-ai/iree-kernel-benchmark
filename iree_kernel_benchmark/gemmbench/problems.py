@@ -950,6 +950,30 @@ def square(dtype: str, raw_accumulators: bool) -> list[GemmConfig]:
     return configs
 
 
+def cai(dtype: str) -> list[GemmConfig]:
+    shapes = [
+        (16384, 4096, 32768),
+        (16384, 32768, 4096),
+        (16384, 4096, 8192),
+        (16384, 8704, 4096),
+        (16384, 8192, 4096),
+    ]
+
+    configs = [
+        GemmConfig(
+            *shape,
+            tA="N",
+            tB="T",
+            operand_element_type=dtype,
+            accumulator_element_type=get_default_accumulator_element_type(dtype),
+            result_element_type="f32",
+        )
+        for shape in shapes
+    ]
+
+    return configs
+
+
 def get_gemm_configs(
     dtype: str, backend: str, raw_accumulators: bool
 ) -> list[tuple[str, GemmConfig]]:
@@ -964,6 +988,7 @@ def get_gemm_configs(
     compute_configs = compute(dtype, raw_accumulators)
     unet_configs = unet(dtype, raw_accumulators)
     square_configs = square(dtype, raw_accumulators)
+    cai_configs = cai(dtype)
 
     all_configs: list[tuple[str, GemmConfig]] = []
     if backend == "iree":
@@ -978,6 +1003,7 @@ def get_gemm_configs(
     all_configs += [("unet", x) for x in unet_configs]
     all_configs += [("square", x) for x in square_configs]
     all_configs += [("tk", x) for x in tk_default_configs]
+    all_configs += [("cai", x) for x in cai_configs]
 
     return all_configs
 

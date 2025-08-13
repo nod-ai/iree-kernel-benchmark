@@ -1,8 +1,5 @@
-from multiprocessing import Manager, Lock
+from multiprocessing import Manager
 from tqdm import tqdm
-import sys
-from typing import Dict, Optional
-import time
 
 
 class ParallelProgressManager:
@@ -48,7 +45,7 @@ class ParallelProgressManager:
         for i in range(self.num_workers):
             self.worker_pbars[i] = tqdm(
                 total=100,  # Will be updated dynamically
-                desc=f"GPU {i}",
+                desc=f"\t- GPU {i}",
                 position=i + 1,
                 colour="blue",
                 leave=True,
