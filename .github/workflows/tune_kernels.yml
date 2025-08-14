@@ -43,20 +43,6 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install rust
-        run: |
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-
-      - name: Setup venv
-        run: |
-          python3 -m venv tune_venv
-          source tune_venv/bin/activate
-          pip install --upgrade pip
-          pip install --pre --no-cache-dir --find-links https://iree.dev/pip-release-links.html iree-base-compiler iree-base-runtime --upgrade
-          pip install -r pytorch-rocm-requirements.txt
-          pip install -r requirements.txt
-          pip install wave-lang
-
       - name: Load Tuning Configuration from URL
         if: ${{ inputs.config_url }}
         run: |
@@ -71,6 +57,16 @@ jobs:
         run: |
           source tune_venv/bin/activate
           python -m json.tool tune_config.json > /dev/null || { echo "Error: Invalid JSON format"; exit 1; }
+
+      - name: Setup venv
+        run: |
+          python3 -m venv tune_venv
+          source tune_venv/bin/activate
+          pip install --upgrade pip
+          pip install --pre --no-cache-dir --find-links https://iree.dev/pip-release-links.html iree-base-compiler iree-base-runtime --upgrade
+          pip install -r pytorch-rocm-requirements.txt
+          pip install -r requirements.txt
+          pip install wave-lang
 
       - name: Tune Attention
         run: |

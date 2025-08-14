@@ -65,6 +65,9 @@ class WaveAttentionMHABenchmark(KernelBenchmark):
                 iree_launch_async=False,
                 backend="rocm",
                 target=self.target,
+                use_buffer_load_ops=True,
+                use_buffer_store_ops=True,
+                use_stride_cache_swizzle=True,
                 print_ir_after_all=self.dump_dir is not None,
             )
 
