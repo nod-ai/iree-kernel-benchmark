@@ -28,10 +28,9 @@ on:
       pr_headsha:
         description: "Head sha of pull request that triggered dispatch"
         required: false
-        default: "undefined"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ inputs.pr_branch || github.event.number || github.sha }}
+  group: ${{ github.workflow }}-${{ inputs.pr_headsha || github.event.number || github.sha }}
   cancel-in-progress: true
 
 jobs:
@@ -39,8 +38,8 @@ jobs:
     name: Benchmark Run Identifier
     runs-on: ubuntu-latest
     steps:
-      - name: headSha_${{ inputs.pr_headsha }}
-        run: echo run identifier ${{ inputs.pr_headsha }}
+      - name: headSha_${{ inputs.pr_headsha || 'undefined' }}
+        run: echo run identifier ${{ inputs.pr_headsha || 'undefined' }}
 
   short_benchmark:
     name: Short Benchmark
@@ -55,6 +54,8 @@ jobs:
       ITERATIONS: ${{ inputs.iterations || '3' }}
       MAX_KERNELS: ${{ inputs.max_kernels || '50' }}
       SELECTED_BACKEND: ${{ inputs.selected_backend || 'all' }}
+      WAVE_REPO: ${{ inputs.pr_repository || 'iree-org/wave' }}
+      WAVE_BRANCH: ${{ inputs.pr_branch || 'main' }}
 
     steps:
       - name: Checkout
@@ -65,27 +66,20 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Setup default venv
-        if: ${{ !(inputs.pr_branch && inputs.pr_repository) }}
-        run: |
-          python3 -m venv bench_venv
-          source bench_venv/bin/activate
-          pip install --upgrade pip
-          pip install --pre --no-cache-dir --find-links https://iree.dev/pip-release-links.html iree-base-compiler iree-base-runtime --upgrade
-          pip install -r pytorch-rocm-requirements.txt
-          pip install -r requirements.txt
-          pip install wave-lang
+      - name: "Setting up Rust"
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
 
-      - name: Setup venv using PR wave
-        if: ${{ inputs.pr_branch && inputs.pr_repository }}
+      - name: Setup venv
         run: |
           python3 -m venv bench_venv
           source bench_venv/bin/activate
           pip install --upgrade pip
 
-          git clone https://github.com/${{ inputs.pr_repository }}.git
+          git clone https://github.com/${{ env.WAVE_REPO }}.git
           cd wave
-          git checkout ${{ inputs.pr_branch }}
+          git checkout ${{ env.WAVE_BRANCH }}
           pip install -r requirements-iree-pinned.txt
           pip install -r pytorch-rocm-requirements.txt
           pip install -r requirements.txt

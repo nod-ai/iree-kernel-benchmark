@@ -97,7 +97,7 @@ class IREEConvBenchmark(KernelBenchmark):
             # Target Device: hip
             "--iree-hal-target-device=hip",
             # Device: MI300x
-            "--iree-hip-target=gfx942",
+            f"--iree-hip-target={self.target}",
         ] + extra_compiler_args
 
         if self.dump_dir:

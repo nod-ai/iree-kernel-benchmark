@@ -54,7 +54,7 @@ class WaveConvBenchmark(KernelBenchmark):
                 schedule=SchedulingType.NONE,
                 iree_launch_async=False,
                 backend="rocm",
-                target="gfx942",
+                target=self.target,
             )
             result = wave_compile(options, conv)
             with open(mlir_path, "w") as f:

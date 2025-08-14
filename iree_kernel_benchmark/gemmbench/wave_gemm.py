@@ -11,6 +11,7 @@ from wave_lang.kernel.wave.utils.general_utils import (
 )
 from wave_lang.kernel.wave.scheduling.schedule_enums import SchedulingType
 from wave_lang.kernel.wave.templates.gemm import get_gemm_kernel
+from wave_lang.kernel.wave.templates.reordered_gemm import get_reordered_matmul
 
 
 class WaveGemmBenchmark(KernelBenchmark):
@@ -28,11 +29,20 @@ class WaveGemmBenchmark(KernelBenchmark):
             if not mfma_variant:
                 mfma_variant = MMAType.F32_32x32x8_F16
 
-            base_gemm, hyperparams, dynamic_symbols = get_gemm_kernel(
-                shape=(config.M, config.N, config.K),
-                dynamic_dims=False,
+            BLOCK_M = 128
+            BLOCK_N = 256
+            BLOCK_K = 64
+            GROUP_SIZE_M = 8
+
+            base_gemm, hyperparams = get_reordered_matmul(
+                config.M,
+                config.N,
+                config.K,
+                BLOCK_M,
+                BLOCK_N,
+                BLOCK_K,
+                GROUP_SIZE_M,
                 mfma_variant=mfma_variant,
-                dtype=dtype_to_torch(config.operand_element_type),
             )
 
             if spec:
@@ -41,14 +51,15 @@ class WaveGemmBenchmark(KernelBenchmark):
 
             compile_options = WaveCompileOptions(
                 subs=hyperparams,
-                schedule=SchedulingType.NONE,
-                dynamic_symbols=dynamic_symbols,
                 canonicalize=True,
                 create_vmfb_file=vmfb_path,
+                run_bench=False,
+                target=self.target,
+                schedule=SchedulingType.PREFETCH,
+                use_buffer_load_ops=True,
+                use_buffer_store_ops=True,
+                use_stride_cache_swizzle=True,
                 iree_launch_async=False,
-                backend="rocm",
-                target="gfx942",
-                print_ir_after_all=self.dump_dir is not None,
             )
 
             if self.dump_dir:

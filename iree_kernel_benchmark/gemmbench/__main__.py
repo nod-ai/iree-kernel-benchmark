@@ -4,16 +4,7 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-from dataclasses import asdict
-import json
-import math
-import pandas as pd
-import os
-import optuna
-from tqdm import tqdm
-from multiprocessing import Pool, cpu_count, Manager
 import logging
-import itertools
 from pathlib import Path
 import argparse
 import sys
@@ -24,130 +15,17 @@ from .gemm_utils import *
 from .iree_gemm import IREEGemmBenchmark
 from .wave_gemm import WaveGemmBenchmark
 from .torch_gemm import TorchGemmBenchmark
-from .problems import get_gemm_configs, get_tk_gemm_configs, get_matching_configs
+from .problems import (
+    get_gemm_configs,
+    get_tk_gemm_configs,
+    get_matching_configs,
+)
 
 BACKEND_TO_GEMM_BENCH = {
     "torch": TorchGemmBenchmark,
     "wave": WaveGemmBenchmark,
     "iree": IREEGemmBenchmark,
 }
-
-
-def tune_gemm_kernels(
-    configs: List[Tuple[str, GemmConfig]],
-    kernel_dir: Path,
-    vmfb_dir: Path,
-    dump_dir: Path,
-    mfma_configs: List[MMAType] = [
-        MMAType.F32_16x16x16_F16,
-        MMAType.F32_32x32x8_F16,
-        MMAType.F32_16x16x32_K8_F16,
-        MMAType.F32_32x32x16_K8_F16,
-    ],
-    tiling_constraints: List[TuningConstraint] = [
-        TuningConstraint(name="BLOCK_M", min=16, max=256, step=4),
-        TuningConstraint(name="BLOCK_N", min=16, max=256, step=4),
-        TuningConstraint(name="BLOCK_K", min=16, max=128, step=4),
-    ],
-    num_trials: int = 100,
-):
-    tuning_results = {}
-    tuning_dir = Path("results/tuning/gemm")
-    os.makedirs(tuning_dir, exist_ok=True)
-
-    def tune_config(config: Tuple[str, GemmConfig]):
-        tuning_result: tuple[
-            float,
-            GemmConfig,
-            MMAType,
-        ] = (
-            math.inf,
-            None,
-            mfma_configs[0],
-        )
-
-        config_tag, kernel = config
-        config_name = kernel.get_name()
-
-        def objective(trial: optuna.Trial) -> float:
-            nonlocal tuning_result
-
-            block_sizes = [
-                trial.suggest_int(
-                    constraint.name,
-                    constraint.min,
-                    constraint.max,
-                    step=constraint.step,
-                )
-                for constraint in tiling_constraints
-            ]
-
-            tuning_spec_params = {
-                constraint.name: block_sizes[i]
-                for i, constraint in enumerate(tiling_constraints)
-            }
-
-            tuning_spec = GemmTuningSpec(**tuning_spec_params)
-
-            mfma_config = mfma_configs[
-                trial.suggest_categorical("MFMA_INDEX", list(range(len(mfma_configs))))
-            ]
-
-            try:
-                vmfb_dict = compile_gemm_kernels(
-                    "wave",
-                    [config],
-                    kernel_dir,
-                    vmfb_dir,
-                    dump_dir,
-                    None,
-                    [],
-                    {config_name: mfma_config},
-                    {config_name: tuning_spec},
-                )
-            except Exception as e:
-                print("Failed to compile, skipping", e)
-                return math.inf
-
-            output_csv_path = Path(f"temp.csv")
-
-            try:
-                result_df = benchmark_gemm_kernels(
-                    "wave",
-                    device,
-                    vmfb_dict,
-                    output_csv_path,
-                    num_iterations=3,
-                    debug=False,
-                )
-            except Exception as e:
-                print("Failed runtime, skipping", e)
-                return math.inf
-
-            runtime = result_df["mean_microseconds"].mean()
-            if runtime < tuning_result[0]:
-                tuning_result = (runtime, tuning_spec, mfma_config)
-
-            return runtime
-
-        study = optuna.create_study(direction="minimize")
-        study.optimize(objective, n_trials=num_trials, show_progress_bar=True)
-
-        best_runtime, best_spec, best_mfma = tuning_result
-        print("Optimal spec", asdict(best_spec))
-
-        if best_spec and best_mfma:
-            tuning_results[config_name] = {
-                "block_sizes": asdict(best_spec),
-                "mfma_variant": [best_mfma.name],
-                "mean_microseconds": best_runtime,
-            }
-            with open(tuning_dir / "results.json", "w") as file:
-                json.dump(tuning_results, file, indent=4)
-
-    for config in configs:
-        tune_config(config)
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Config file updater.")
@@ -158,18 +36,17 @@ if __name__ == "__main__":
         type=str.upper,
         help="Set the logging level",
     )
-
-    parser.add_argument(
-        "--target",
-        help="The IREE hip target to compile for. The special value host_cpu results in a llvm-cpu benchmark instead of HIP, compiled for the host CPU.",
-        type=str,
-        default="gfx942",
-    )
     parser.add_argument(
         "--device",
         help="The IREE device to execute benchmarks on",
         type=str,
         default="hip",
+    )
+    parser.add_argument(
+        "--machine",
+        help="Machine used for benchmarking (ex: mi300x, mi325x, etc.).",
+        type=str,
+        default="mi325x",
     )
     parser.add_argument(
         "--Xiree_compile",
@@ -229,13 +106,19 @@ if __name__ == "__main__":
     parser.add_argument(
         "--iterations",
         type=int,
-        default=3,
+        default=1,
         help="Number of benchmark iterations.",
     )
     parser.add_argument(
         "--tune",
         action="store_true",
         help="Uses heuristic approach to optimize mfma variant, tiling, and waves.",
+    )
+    parser.add_argument(
+        "--num_trials",
+        type=int,
+        default=100,
+        help="Number of tuning trials.",
     )
     parser.add_argument(
         "--tuning_config",
@@ -254,6 +137,9 @@ if __name__ == "__main__":
         type=int,
         default=None,
         help="Maximum number of kernels to benchmark.",
+    )
+    parser.add_argument(
+        "--load_problems", type=str, default=None, help="Path to custom problem list."
     )
 
     args = parser.parse_args()
@@ -283,13 +169,24 @@ if __name__ == "__main__":
     dump_dir = Path(args.dump_dir) if args.dump_dir else None
     kernel_dir.mkdir(parents=True, exist_ok=True)
 
-    target = args.target
     extra_compiler_args = ["--" + x for x in list(args.Xiree_compile)]
-    device = "local-task" if target == "host_cpu" else args.device
+    device = args.device
 
     configs: List[Tuple[str, GemmConfig]] = []
-    for dtype in requested_dtypes:
-        configs += get_gemm_configs(dtype, backend_name, args.raw_accumulators)
+    if args.load_problems:
+        configs = load_configs(
+            args.load_problems,
+            "gemm",
+            backend_name,
+            GemmConfig,
+        )
+        if args.tune and len(configs) == 0:
+            exit(0)
+
+    if len(configs) == 0:
+        for dtype in requested_dtypes:
+            configs += get_gemm_configs(dtype, backend_name, args.raw_accumulators)
+
     configs = get_matching_configs(
         configs,
         requested_variants,
@@ -301,11 +198,11 @@ if __name__ == "__main__":
         "backend": backend_name,
         "kernel_type": "gemm",
         "device": device,
+        "machine": args.machine,
         "configs": configs,
         "kernel_dir": kernel_dir,
         "dump_dir": dump_dir,
         "debug": True,
-        "target": target,
         "num_iterations": args.iterations,
     }
 
@@ -314,17 +211,6 @@ if __name__ == "__main__":
     print(f"Generated {len(bench.configs)} gemm configs.")
 
     if args.tune:
-        # if args.tuning_config:
-        #     with open(args.tuning_config, "r") as file:
-        #         tuning_config = json.load(file)
-        #     configs = [
-        #         (tag, kernel)
-        #         for tag, kernel in configs
-        #         if kernel.get_name() in tuning_config["kernels"]
-        #     ]
-        #     num_trials = tuning_config["num_trials"]
-        # else:
-        #     num_trials = 100
         mfma_configs: List[MMAType] = [
             MMAType.F32_16x16x16_F16,
             MMAType.F32_32x32x8_F16,
@@ -332,11 +218,14 @@ if __name__ == "__main__":
             MMAType.F32_32x32x16_K8_F16,
         ]
         tiling_constraints: List[TuningConstraint] = [
-            TuningConstraint(name="BLOCK_M", min=16, max=256, step=4),
-            TuningConstraint(name="BLOCK_N", min=16, max=256, step=4),
+            TuningConstraint(name="BLOCK_M", min=16, max=256, step=8),
+            TuningConstraint(name="BLOCK_N", min=16, max=256, step=8),
             TuningConstraint(name="BLOCK_K", min=16, max=128, step=4),
+            TuningConstraint(name="GROUP_SIZE_M", min=4, max=32, step=4),
         ]
-        bench.tune_kernels(mfma_configs, tiling_constraints, GemmTuningSpec)
+        bench.tune_kernels(
+            mfma_configs, tiling_constraints, GemmTuningSpec, num_trials=args.num_trials
+        )
     else:
         if args.use_tuned:
             bench.load_tuned_results(args.use_tuned, GemmTuningSpec)

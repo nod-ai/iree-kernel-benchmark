@@ -51,6 +51,12 @@ if __name__ == "__main__":
         type=str,
         default="hip",
     )
+    parser.add_argument(
+        "--machine",
+        help="Machine used for benchmarking (ex: mi300x, mi325x, etc.).",
+        type=str,
+        default="mi325x",
+    )
     parser.add_argument("--plot", help="location to save plot", default=None)
     parser.add_argument(
         "--batch", help="roofline on certain batch", type=int, default=None
@@ -72,13 +78,19 @@ if __name__ == "__main__":
     parser.add_argument(
         "--iterations",
         type=int,
-        default=3,
+        default=1,
         help="Number of benchmark iterations.",
     )
     parser.add_argument(
         "--tune",
         action="store_true",
         help="Uses heuristic approach to optimize mfma variant, tiling, and waves.",
+    )
+    parser.add_argument(
+        "--num_trials",
+        type=int,
+        default=100,
+        help="Number of tuning trials.",
     )
     parser.add_argument(
         "--use_tuned",
@@ -95,6 +107,9 @@ if __name__ == "__main__":
         default=None,
         help="Maximum number of kernels to benchmark.",
     )
+    parser.add_argument(
+        "--load_problems", type=str, default=None, help="Path to custom problem list."
+    )
 
     args = parser.parse_args()
     logging.basicConfig(level=args.log_level)
@@ -107,20 +122,35 @@ if __name__ == "__main__":
 
     mfma_config = (MMAType.F32_32x32x16_K8_F16, MMAType.F32_32x32x16_K8_F16)
 
-    if backend_name == "wavegqa":
-        configs = [
-            (tag, config.to_bshd()) for tag, config in get_attention_configs_gqa()
-        ]
-    elif backend_name == "iree":
-        configs = [
-            (tag, config.to_bmnk1k2())
-            for tag, config in get_attention_configs(use_fp8=True)
-        ]
-    else:
-        configs = [
-            (tag, config.to_bmnk1k2())
-            for tag, config in get_attention_configs(use_fp8=False)
-        ]
+    configs = []
+    if args.load_problems:
+        config_class = (
+            AttentionConfigBSHD if backend_name == "wavegqa" else AttentionConfigBMNK
+        )
+        configs = load_configs(
+            args.load_problems,
+            "attention",
+            backend_name,
+            config_class,
+        )
+        if args.tune and len(configs) == 0:
+            exit(0)
+
+    if len(configs) == 0:
+        if backend_name == "wavegqa":
+            configs = [
+                (tag, config.to_bshd()) for tag, config in get_attention_configs_gqa()
+            ]
+        elif backend_name == "iree":
+            configs = [
+                (tag, config.to_bmnk1k2())
+                for tag, config in get_attention_configs(use_fp8=True)
+            ]
+        else:
+            configs = [
+                (tag, config.to_bmnk1k2())
+                for tag, config in get_attention_configs(use_fp8=False)
+            ]
 
     repo_root = Path(__file__).parent.parent
     kernel_dir = repo_root / "kernels"
@@ -132,6 +162,7 @@ if __name__ == "__main__":
         "backend": backend_name,
         "kernel_type": "attention",
         "device": device,
+        "machine": args.machine,
         "configs": configs,
         "kernel_dir": kernel_dir,
         "dump_dir": dump_dir,
@@ -146,20 +177,40 @@ if __name__ == "__main__":
     tuning_spec_class = BACKEND_TO_ATTENTION_TUNING_SPEC[backend_name]
 
     if args.tune:
-        mfma_configs: List[Tuple[MMAType, MMAType]] = [
-            (MMAType.F32_32x32x16_K8_F16, MMAType.F32_32x32x8_F16),
-            (MMAType.F32_16x16x32_K8_F16, MMAType.F32_16x16x16_F16),
-            (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
-            (MMAType.F32_32x32x8_F16, MMAType.F32_32x32x8_F16),
-        ]
-        tiling_constraints: List[TuningConstraint] = [
-            TuningConstraint(name="BLOCK_B", min=1, max=1, step=1),
-            TuningConstraint(name="BLOCK_H", min=1, max=2, step=1),
-            TuningConstraint(name="BLOCK_N_Q", min=16, max=128, step=16),
-            TuningConstraint(name="BLOCK_D_KV", min=16, max=128, step=16),
-            TuningConstraint(name="BLOCK_N_KV", min=16, max=64, step=16),
-        ]
-        bench.tune_kernels(mfma_configs, tiling_constraints, tuning_spec_class)
+        if backend_name == "wavegqa":
+            mfma_configs: List[Tuple[MMAType, MMAType]] = [
+                (MMAType.F32_32x32x16_K8_F16, MMAType.F32_32x32x8_F16),
+                (MMAType.F32_16x16x32_K8_F16, MMAType.F32_16x16x16_F16),
+                (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
+                (MMAType.F32_32x32x8_F16, MMAType.F32_32x32x8_F16),
+            ]
+            tiling_constraints: List[TuningConstraint] = [
+                TuningConstraint(name="BLOCK_B", min=1, max=1, step=1),
+                TuningConstraint(name="BLOCK_H", min=1, max=2, step=1),
+                TuningConstraint(name="BLOCK_N_Q", min=16, max=128, step=16),
+                TuningConstraint(name="BLOCK_D_KV", min=16, max=128, step=16),
+                TuningConstraint(name="BLOCK_N_KV", min=16, max=64, step=16),
+            ]
+        else:
+            mfma_configs: List[Tuple[MMAType, MMAType]] = [
+                (MMAType.F32_32x32x16_K8_F16, MMAType.F32_32x32x8_F16),
+                (MMAType.F32_16x16x32_K8_F16, MMAType.F32_16x16x16_F16),
+                (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
+                (MMAType.F32_32x32x8_F16, MMAType.F32_32x32x8_F16),
+            ]
+            tiling_constraints: List[TuningConstraint] = [
+                TuningConstraint(name="BLOCK_B", min=1, max=1, step=1),
+                TuningConstraint(name="BLOCK_M", min=32, max=256, step=8),
+                TuningConstraint(name="BLOCK_N", min=16, max=128, step=4),
+                TuningConstraint(name="BLOCK_K2", min=32, max=256, step=8),
+            ]
+
+        bench.tune_kernels(
+            mfma_configs,
+            tiling_constraints,
+            tuning_spec_class,
+            num_trials=args.num_trials,
+        )
 
     else:
         if args.use_tuned:

@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Optional, Tuple, override
 
 from iree_kernel_benchmark.utils.template import OpConfig
 from ..utils import *
@@ -41,6 +41,7 @@ class GemmConfig(OpConfig):
     #       to be made to the execution logic (looks just like a static shape).
     runtime_dim: Optional[int] = None
 
+    @override
     def get_name(self) -> str:
         M = self.M if self.M != kDynamic else "D"
         N = self.N if self.N != kDynamic else "D"
@@ -79,6 +80,7 @@ class GemmConfig(OpConfig):
         M, N, K = self.get_runtime_dims()
         return f"{M}x{N}x{self.result_element_type}"
 
+    @override
     def get_byte_count(self) -> int:
         operand_bytes_per_element = num_bytes(self.operand_element_type)
         result_bytes_per_element = num_bytes(self.result_element_type)
@@ -87,11 +89,13 @@ class GemmConfig(OpConfig):
         byte_count_output = (M * N) * result_bytes_per_element
         return byte_count_input + byte_count_output
 
+    @override
     def get_flops(self) -> int:
         M, N, K = self.get_runtime_dims()
         flops = 2 * M * N * K
         return flops
 
+    @override
     def to_dict(self):
         return {
             "M": self.M,
@@ -126,3 +130,4 @@ class GemmTuningSpec(TuningSpec):
     BLOCK_M: int
     BLOCK_N: int
     BLOCK_K: int
+    GROUP_SIZE_M: int
