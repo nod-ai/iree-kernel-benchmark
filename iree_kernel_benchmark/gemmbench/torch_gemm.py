@@ -39,19 +39,24 @@ class TorchGemmBenchmark(KernelBenchmark):
 
         self._clear_mem()
         try:
-            start_time = time.perf_counter()
+            start_event = torch.cuda.Event(enable_timing=True)
+            end_event = torch.cuda.Event(enable_timing=True)
+
+            start_event.record()
             for _ in range(num_iterations):
                 a = a_base.transpose(-2, -1) if transposeA else a_base
                 b = b_base.transpose(-2, -1) if transposeB else b_base
                 torch.matmul(a, b)
-            end_time = time.perf_counter()
+            end_event.record()
+            torch.cuda.synchronize()
+
         except Exception as e:
             print(f"Failed to benchmark kernel {config.get_name()}: {e}")
             return 0, False
         self._clear_mem(a_base, b_base)
 
-        delta_time_seconds = end_time - start_time
-        delta_time_us = delta_time_seconds * 1e6
+        delta_time_ms = start_event.elapsed_time(end_event)
+        delta_time_us = delta_time_ms * 1e3
         mean_time_us = delta_time_us / num_iterations
 
         return mean_time_us, True

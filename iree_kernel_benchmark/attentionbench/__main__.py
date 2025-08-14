@@ -52,10 +52,10 @@ if __name__ == "__main__":
         default="hip",
     )
     parser.add_argument(
-        "--target",
-        help="The IREE hip target to compile for.",
+        "--machine",
+        help="Machine used for benchmarking (ex: mi300x, mi325x, etc.).",
         type=str,
-        default="gfx942",
+        default="mi325x",
     )
     parser.add_argument("--plot", help="location to save plot", default=None)
     parser.add_argument(
@@ -133,6 +133,8 @@ if __name__ == "__main__":
             backend_name,
             config_class,
         )
+        if args.tune and len(configs) == 0:
+            exit(0)
 
     if len(configs) == 0:
         if backend_name == "wavegqa":
@@ -160,7 +162,7 @@ if __name__ == "__main__":
         "backend": backend_name,
         "kernel_type": "attention",
         "device": device,
-        "target": args.target,
+        "machine": args.machine,
         "configs": configs,
         "kernel_dir": kernel_dir,
         "dump_dir": dump_dir,

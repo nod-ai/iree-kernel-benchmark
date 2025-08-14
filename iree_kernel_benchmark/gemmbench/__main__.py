@@ -36,18 +36,17 @@ if __name__ == "__main__":
         type=str.upper,
         help="Set the logging level",
     )
-
-    parser.add_argument(
-        "--target",
-        help="The IREE hip target to compile for. The special value host_cpu results in a llvm-cpu benchmark instead of HIP, compiled for the host CPU.",
-        type=str,
-        default="gfx942",
-    )
     parser.add_argument(
         "--device",
         help="The IREE device to execute benchmarks on",
         type=str,
         default="hip",
+    )
+    parser.add_argument(
+        "--machine",
+        help="Machine used for benchmarking (ex: mi300x, mi325x, etc.).",
+        type=str,
+        default="mi325x",
     )
     parser.add_argument(
         "--Xiree_compile",
@@ -170,9 +169,8 @@ if __name__ == "__main__":
     dump_dir = Path(args.dump_dir) if args.dump_dir else None
     kernel_dir.mkdir(parents=True, exist_ok=True)
 
-    target = args.target
     extra_compiler_args = ["--" + x for x in list(args.Xiree_compile)]
-    device = "local-task" if target == "host_cpu" else args.device
+    device = args.device
 
     configs: List[Tuple[str, GemmConfig]] = []
     if args.load_problems:
@@ -182,19 +180,12 @@ if __name__ == "__main__":
             backend_name,
             GemmConfig,
         )
+        if args.tune and len(configs) == 0:
+            exit(0)
 
     if len(configs) == 0:
         for dtype in requested_dtypes:
             configs += get_gemm_configs(dtype, backend_name, args.raw_accumulators)
-
-    # with open("results/tuning/gemm/gemm_wave_tuned_results.json", "r") as file:
-    #     tuned_configs = json.load(file)
-    # tuned_config_names = dict(tuned_configs).keys()
-    # configs = [
-    #     (tag, config)
-    #     for tag, config in configs
-    #     if config.get_name() in tuned_config_names
-    # ]
 
     configs = get_matching_configs(
         configs,
@@ -207,7 +198,7 @@ if __name__ == "__main__":
         "backend": backend_name,
         "kernel_type": "gemm",
         "device": device,
-        "target": target,
+        "machine": args.machine,
         "configs": configs,
         "kernel_dir": kernel_dir,
         "dump_dir": dump_dir,
@@ -230,6 +221,7 @@ if __name__ == "__main__":
             TuningConstraint(name="BLOCK_M", min=16, max=256, step=8),
             TuningConstraint(name="BLOCK_N", min=16, max=256, step=8),
             TuningConstraint(name="BLOCK_K", min=16, max=128, step=4),
+            TuningConstraint(name="GROUP_SIZE_M", min=4, max=32, step=4),
         ]
         bench.tune_kernels(
             mfma_configs, tiling_constraints, GemmTuningSpec, num_trials=args.num_trials

@@ -165,12 +165,13 @@ def tune_config_worker(wargs: TuningWorkerConfig):
 
     update_progress(
         {
-            "total_completed": 1,
             f"worker_{device_id}_completed": wargs.num_trials,
             f"worker_{device_id}_active": False,
             f"worker_{device_id}_current": "Idle",
         }
     )
+    with wargs.progress_lock:
+        wargs.progress_state["total_completed"] += 1
 
     if best_spec and best_mfma:
         arithmetic_intensity, tflops_per_second = get_kernel_perf_stats(

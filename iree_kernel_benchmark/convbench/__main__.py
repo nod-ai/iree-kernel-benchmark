@@ -39,10 +39,10 @@ if __name__ == "__main__":
         default="hip",
     )
     parser.add_argument(
-        "--target",
-        help="The IREE hip target to compile for.",
+        "--machine",
+        help="Machine used for benchmarking (ex: mi300x, mi325x, etc.).",
         type=str,
-        default="gfx942",
+        default="mi325x",
     )
     parser.add_argument(
         "--Xiree_compile",
@@ -90,10 +90,10 @@ if __name__ == "__main__":
         help="Uses heuristic approach to optimize mfma variant, tiling, and waves.",
     )
     parser.add_argument(
-        "--tuning_config",
-        type=str,
-        default=None,
-        help="Path to tuning configuration file.",
+        "--num_trials",
+        type=int,
+        default=100,
+        help="Number of tuning trials.",
     )
     parser.add_argument(
         "--use_tuned",
@@ -128,6 +128,8 @@ if __name__ == "__main__":
             backend_name,
             ConvConfig,
         )
+        if args.tune and len(configs) == 0:
+            exit(0)
 
     if len(configs) == 0:
         configs = get_tk_conv_configs()
@@ -148,7 +150,7 @@ if __name__ == "__main__":
         "backend": backend_name,
         "kernel_type": "conv",
         "device": device,
-        "target": args.target,
+        "machine": args.machine,
         "configs": configs,
         "kernel_dir": kernel_dir,
         "dump_dir": dump_dir,
@@ -170,7 +172,9 @@ if __name__ == "__main__":
             TuningConstraint(name="BLOCK_K", min=16, max=128, step=4),
             TuningConstraint(name="ELEMS_PER_THREAD", min=4, max=4, step=1),
         ]
-        bench.tune_kernels(mfma_configs, tiling_constraints, ConvTuningSpec)
+        bench.tune_kernels(
+            mfma_configs, tiling_constraints, ConvTuningSpec, num_trials=args.num_trials
+        )
     else:
         if args.use_tuned:
             bench.load_tuned_results(args.use_tuned, ConvTuningSpec)

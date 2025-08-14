@@ -13,11 +13,11 @@ on:
       num_trials:
         description: "Number of trials per kernel for tuning"
         required: false
-        default: "100"
+        default: "75"
       iterations:
         description: "Number of benchmark iterations per trial"
         required: false
-        default: "5"
+        default: "1"
 
 concurrency:
   group: ${{ github.workflow }}
@@ -25,7 +25,7 @@ concurrency:
 
 jobs:
   tuning:
-    runs-on: linux-mi325-1gpu-ossci-nod-ai
+    runs-on: linux-mi325-8gpu-ossci-nod-ai
 
     env:
       CONFIG_JSON: ${{ inputs.config_json }}
@@ -67,9 +67,28 @@ jobs:
         run: |
           echo "$CONFIG_JSON" > tune_config.json
 
-      - name: Run Tuning
-        if: contains(env.CONFIG_JSON, 'attention')
+      - name: Validate Configuration File
         run: |
           source tune_venv/bin/activate
           python -m json.tool tune_config.json > /dev/null || { echo "Error: Invalid JSON format"; exit 1; }
-          python -m tune --config=tune_config.json
+
+      - name: Tune Attention
+        run: |
+          source tune_venv/bin/activate
+          python -m iree_kernel_benchmark.attentionbench --backend=wave --tune --load_problems=tune_config.json --iterations=${{ inputs.iterations }} --num_trials=${{ inputs.num_trials }}
+
+      - name: Tune GEMM
+        run: |
+          source tune_venv/bin/activate
+          python -m iree_kernel_benchmark.gemmbench --backend=wave --tune --variants=NT --load_problems=tune_config.json --iterations=${{ inputs.iterations }} --num_trials=${{ inputs.num_trials }}
+
+      - name: Tune Convolutions
+        run: |
+          source tune_venv/bin/activate
+          python -m iree_kernel_benchmark.convbench --backend=wave --tune --load_problems=tune_config.json --iterations=${{ inputs.iterations }} --num_trials=${{ inputs.num_trials }}
+
+      - name: Upload tuning results
+        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1
+        with:
+          name: tuning-results
+          path: ./results/tuning/

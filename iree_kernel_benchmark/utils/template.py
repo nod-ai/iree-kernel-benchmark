@@ -21,12 +21,16 @@ import iree.runtime as ireert
 
 from .tuning import TuningConstraint, tune_kernels_parallel
 from .bench_utils import (
+    BenchmarkResult,
+    machine_to_hip_target,
     unit_to_microseconds,
     get_kernel_perf_stats,
     run_iree_command,
     write_results_to_csv,
+    reduce_configs,
     OpConfig,
     ConfigList,
+    write_results_to_json,
 )
 from .parallel import ParallelProgressManager
 from .wave_utils import TuningSpec
@@ -47,10 +51,15 @@ class KernelBenchmark:
     mfma_configs: Dict[str, Tuple[MMAType]] = field(default_factory=dict)
     specs: Dict[str, TuningSpec] = field(default_factory=dict)
 
-    target: str = "gfx942"
+    machine: str = "MI325X"
+    target: str = field(init=False)
     num_iterations: int = 3
 
     _vmfb_dict: Dict[str, Tuple[str, OpConfig]] = field(default_factory=dict)
+
+    def __post_init__(self):
+        self.machine = self.machine.upper()
+        self.target = machine_to_hip_target(self.machine)
 
     def compile_kernel(
         self,
@@ -125,58 +134,7 @@ class KernelBenchmark:
             print(*args)
 
     def reduce_configs(self, max_kernels: int = None, seed: int = 42):
-        if max_kernels is None or max_kernels >= len(self.configs):
-            return
-
-        random.seed(seed)
-
-        tag_to_configs = defaultdict(list)
-        for tag, attrs in self.configs:
-            tag_to_configs[tag].append((tag, attrs))
-
-        tags = list(tag_to_configs.keys())
-        total_tags = len(tags)
-
-        target_per_tag = max_kernels // total_tags
-        selected_configs = []
-        remaining_budget = max_kernels
-        overflow_tags = []
-
-        for tag in tags:
-            configs_for_tag = tag_to_configs[tag]
-            if len(configs_for_tag) <= target_per_tag:
-                selected_configs.extend(configs_for_tag)
-                remaining_budget -= len(configs_for_tag)
-            else:
-                overflow_tags.append(tag)
-
-        while remaining_budget > 0 and overflow_tags:
-            per_tag_extra = max(1, remaining_budget // len(overflow_tags))
-            next_round_overflow = []
-
-            for tag in overflow_tags:
-                configs_for_tag = tag_to_configs[tag]
-                already_selected = sum(1 for c in selected_configs if c[0] == tag)
-                remaining_for_tag = len(configs_for_tag) - already_selected
-                to_take = min(per_tag_extra, remaining_for_tag)
-                if to_take > 0:
-                    selected_configs.extend(
-                        random.sample(
-                            [
-                                cfg
-                                for cfg in configs_for_tag
-                                if cfg not in selected_configs
-                            ],
-                            to_take,
-                        )
-                    )
-                    remaining_budget -= to_take
-                if remaining_for_tag > to_take:
-                    next_round_overflow.append(tag)
-
-            overflow_tags = next_round_overflow
-
-        self.configs = selected_configs
+        self.configs = reduce_configs(self.configs, max_kernels, seed)
 
     def load_tuned_results(self, result_path: PathLike, spec_class_type):
         with open(result_path, "r") as file:
@@ -197,60 +155,26 @@ class KernelBenchmark:
             for kernel_name, tune_result in tuned_data.items()
         }
 
-    def save_results(
-        self, selected_configs: ConfigList, runtimes_us: List[float], ok: List[bool]
-    ):
-        if len(selected_configs) == 0:
+    def save_results(self, results: List[BenchmarkResult]):
+        if len(results) == 0:
             return None
 
-        output_csv_path = (
-            f"results/{self.kernel_type}/{self.kernel_type}_{self.backend}.csv"
-        )
+        output_base = f"{self.kernel_type}_{self.backend}"
 
-        csv_dir = os.path.dirname(output_csv_path)
-        if csv_dir and not os.path.exists(csv_dir):
-            os.makedirs(csv_dir)
+        output_csv_dir = Path(f"results/csv/{self.kernel_type}")
+        output_json_dir = Path(f"results/json/{self.kernel_type}")
 
-        index = 0
-        results = []
+        output_csv_path = output_csv_dir / f"{output_base}.csv"
+        output_json_path = output_json_dir / f"{output_base}.json"
 
-        for i, (tag, config) in enumerate(selected_configs):
-            benchmark_mean_time_us = runtimes_us[i]
+        os.makedirs(output_csv_dir, exist_ok=True)
+        os.makedirs(output_json_dir, exist_ok=True)
 
-            arithmetic_intensity, tflops_per_second = get_kernel_perf_stats(
-                config, benchmark_mean_time_us
-            )
-
-            config_dict = config.to_dict()
-
-            results.append(
-                (
-                    index,
-                    tag,
-                    config.get_name(),
-                    *config_dict.values(),
-                    round(benchmark_mean_time_us, 4),
-                    round(arithmetic_intensity, 4),
-                    round(tflops_per_second, 4),
-                    ok[i],
-                )
-            )
-
-            index += 1
-
-        fieldnames = [
-            "index",
-            "tag",
-            "name",
-            *config_dict.keys(),
-            "mean_microseconds",
-            "arithmetic_intensity",
-            "tflops",
-            "ok",
-        ]
-
-        write_results_to_csv(results, output_csv_path, fieldnames)
+        write_results_to_csv(results, output_csv_path)
         self._log(f"Results written to {output_csv_path}")
+
+        write_results_to_json(results, output_json_path)
+        self._log(f"Results written to {output_json_path}")
 
         return pd.read_csv(output_csv_path)
 
@@ -331,11 +255,9 @@ class KernelBenchmark:
             else self._vmfb_dict.items()
         )
 
-        runtimes = []
-        statuses = []
-        configs = []
+        results = []
 
-        for vmfb_filename, value in bench_items:
+        for index, (vmfb_filename, value) in enumerate(bench_items):
             tag, config = value
 
             benchmark_mean_time_us, ok = self.bench_kernel(
@@ -345,11 +267,34 @@ class KernelBenchmark:
                 debug=self.debug,
             )
 
-            runtimes.append(benchmark_mean_time_us)
-            statuses.append(ok)
-            configs.append((tag, config))
+            arithmetic_intensity, tflops_per_second = get_kernel_perf_stats(
+                config, benchmark_mean_time_us
+            )
 
-        return self.save_results(configs, runtimes, statuses)
+            tuning_config = self.specs.get(config.get_name())
+            if tuning_config:
+                tuning_config = asdict(tuning_config)
+
+            results.append(
+                BenchmarkResult(
+                    index=index,
+                    machine=self.machine,
+                    kernel_type=self.kernel_type,
+                    backend=self.backend,
+                    tag=tag,
+                    name=config.get_name(),
+                    dims=config.get_dim_names(),
+                    shape=config.to_dict(),
+                    problem=asdict(config),
+                    tuning_config=tuning_config,
+                    mean_microseconds=round(benchmark_mean_time_us, 4),
+                    arithmetic_intensity=round(arithmetic_intensity, 4),
+                    tflops=round(tflops_per_second, 4),
+                    ok=ok,
+                )
+            )
+
+        return self.save_results(results)
 
     def benchmark_kernels_extern(self):
         bench_items = (
@@ -358,20 +303,37 @@ class KernelBenchmark:
             else self.configs
         )
 
-        runtimes = []
-        statuses = []
-        configs = []
+        results = []
 
-        for tag, config in bench_items:
+        for index, (tag, config) in enumerate(bench_items):
             benchmark_mean_time_us, ok = self.bench_kernel(
                 config, "", self.num_iterations, self.debug
             )
 
-            runtimes.append(benchmark_mean_time_us)
-            statuses.append(ok)
-            configs.append((tag, config))
+            arithmetic_intensity, tflops_per_second = get_kernel_perf_stats(
+                config, benchmark_mean_time_us
+            )
 
-        return self.save_results(configs, runtimes, statuses)
+            results.append(
+                BenchmarkResult(
+                    index=index,
+                    machine=self.machine,
+                    kernel_type=self.kernel_type,
+                    backend=self.backend,
+                    tag=tag,
+                    name=config.get_name(),
+                    dims=config.get_dim_names(),
+                    shape=config.to_dict(),
+                    problem=asdict(config),
+                    tuning_config=None,
+                    mean_microseconds=round(benchmark_mean_time_us, 4),
+                    arithmetic_intensity=round(arithmetic_intensity, 4),
+                    tflops=round(tflops_per_second, 4),
+                    ok=ok,
+                )
+            )
+
+        return self.save_results(results)
 
     def tune_kernels(
         self,
