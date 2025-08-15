@@ -20,7 +20,7 @@ def attention(
     n: Dim,
     k1: Dim,
     k2: Dim,
-    is_causal: bool,
+    is_casual: bool,
     enable_gqa: bool,
     batch: tuple[int],
     dtype: torch.dtype,
@@ -32,7 +32,7 @@ def attention(
                 q,
                 k,
                 v,
-                is_causal=is_causal,
+                is_causal=is_casual,
                 attn_mask=None,
                 enable_gqa=enable_gqa,
             )
@@ -40,7 +40,7 @@ def attention(
     print("*" * 80, flush=True)
     print(
         f"Attention:\n\tb={b}, m={m}, n={n}, k1={k1}, k2={k2}\n"
-        + f"\tbatch={batch}\n\tis_causal={is_causal}, enable_gqa={enable_gqa}, dtype={dtype}"
+        + f"\tbatch={batch}\n\tis_casual={is_casual}, enable_gqa={enable_gqa}, dtype={dtype}"
         + f"\n\tnum_its={num_its}\n",
         flush=True,
     )
@@ -122,7 +122,7 @@ def main():
         help="embedding dimension of query and key",
     )
     parser.add_argument("-k2", type=int, required=True, help="source seq length")
-    parser.add_argument("--is-causal", action="store_true")
+    parser.add_argument("--is-casual", action="store_true")
     parser.add_argument("--gqa", action="store_true")
     parser.add_argument(
         "--dynamic-dims",
@@ -150,7 +150,7 @@ def main():
         n=Dim(args.n, "n" in args.dynamic_dims),
         k1=Dim(args.k1, "k1" in args.dynamic_dims),
         k2=Dim(args.k2, "k2" in args.dynamic_dims),
-        is_causal=args.is_causal,
+        is_casual=args.is_casual,
         enable_gqa=args.gqa,
         batch=tuple(args.batch_size),
         dtype=torch_types[args.dtype],

@@ -15,14 +15,7 @@ concurrency:
 
 jobs:
   benchmark:
-    runs-on: linux-mi325-1gpu-ossci-nod-ai
-
-    concurrency:
-      group: benchmarking
-      cancel-in-progress: true
-
-    env:
-      WAVE_CACHE_ON: 0
+    runs-on: linux-mi300-1gpu-ossci-nod-ai
 
     steps:
       - name: "Checkout Repo"
@@ -31,7 +24,7 @@ jobs:
       - name: "Setup Python"
         uses: actions/setup-python@8d9ed9ac5c53483de85588cdf95a591a75ab9f55 # v5.5.0
         with:
-          python-version: "3.12"
+          python-version: '3.12'
 
       - name: Setup venv
         run: |
@@ -39,9 +32,8 @@ jobs:
           source bench_venv/bin/activate
           pip install --upgrade pip
           pip install --pre --no-cache-dir --find-links https://iree.dev/pip-release-links.html iree-base-compiler iree-base-runtime --upgrade
-          pip install -r pytorch-rocm-requirements.txt
           pip install -r requirements.txt
-          pip install wave-lang
+          pip install iree-turbine@git+https://github.com/iree-org/iree-turbine.git@main
 
       - name: Attention - Wave
         run: |
@@ -58,35 +50,25 @@ jobs:
           source bench_venv/bin/activate
           python -m iree_kernel_benchmark.attentionbench --backend=iree --iterations=5
 
-      - name: Attention - Torch
-        run: |
-          source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.attentionbench --backend=torch --iterations=5
-
       - name: GEMM - Wave
         run: |
           source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.gemmbench --variants=NT --backend=wave --iterations=5
+          python -m iree_kernel_benchmark.gemmbench --tk --iterations=5
 
       - name: GEMM - IREE
         run: |
           source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.gemmbench --backend=iree --iterations=5
-
-      - name: GEMM - Torch
-        run: |
-          source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.gemmbench --backend=torch --iterations=5
+          python -m iree_kernel_benchmark.gemmbench --iterations=5
 
       - name: Convolutions - Wave
         run: |
           source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.convbench --backend=wave --iterations=5
+          python -m iree_kernel_benchmark.convbench --tk --iterations=5
 
       - name: Convolutions - IREE
         run: |
           source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.convbench --backend=iree --iterations=5
+          python -m iree_kernel_benchmark.convbench --iterations=5
 
       - name: Upload benchmark results
         uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1

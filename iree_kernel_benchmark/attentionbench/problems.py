@@ -5,7 +5,7 @@ def get_attention_attrs_bmnk(
     B: int, M: int, N: int, K1: int, K2: int, dtype: str
 ) -> list[AttentionAttributes]:
     return bmnk1k2_to_attention_attributes(
-        config_bmnk=AttentionConfigBMNK(B, M, N, K1, K2, dtype)
+        config_bmnk=AttentionConfigBMNK(dtype, B, M, N, K1, K2)
     )
 
 
@@ -69,7 +69,6 @@ def cai_attn(dtype: str) -> list[AttentionAttributes]:
     for M in [12288, 16384, 4145, 8192, 8698, 425, 8641, 8589, 4504]:
         configs.append(
             AttentionAttributes(
-                attention_type="bshd",
                 num_seqs=1,
                 num_query_heads=32,
                 num_kv_heads=1,

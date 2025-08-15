@@ -12,7 +12,3 @@ configs=(
 for conf in "${configs[@]}"; do
   python layer_norm.py ${conf} -m fwd
 done
-
-for conf in "${configs[@]}"; do
-  python layer_norm.py ${conf} -m bwd
-done

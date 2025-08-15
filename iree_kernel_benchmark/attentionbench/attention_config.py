@@ -1,13 +1,55 @@
 from dataclasses import dataclass
-from typing import Union, Optional, Literal
+from typing import Union, Optional
 import math
 from abc import ABC, abstractmethod
 
-from ..utils.template import OpConfig
+
+@dataclass
+class AttentionConfigBase(ABC):
+    dtype: str
+
+    @abstractmethod
+    def get_name(self) -> str:
+        pass
+
+    @abstractmethod
+    def get_query_shape(self) -> str:
+        pass
+
+    @abstractmethod
+    def get_key_shape(self) -> str:
+        pass
+
+    @abstractmethod
+    def get_value_shape(self) -> str:
+        pass
+
+    @abstractmethod
+    def get_output_shape(self) -> str:
+        pass
+
+    @abstractmethod
+    def get_byte_count(self) -> int:
+        pass
+
+    @abstractmethod
+    def get_flops(self) -> int:
+        pass
+
+    def _get_bytes_per_element(self) -> int:
+        dtype_bits_map = {
+            "f32": 32,
+            "f16": 16,
+            "bf16": 16,
+            "f8E4M3FNUZ": 8,
+            "i8": 8,
+            "i32": 32,
+        }
+        return dtype_bits_map[self.dtype] // 8
 
 
 @dataclass
-class AttentionConfigBMNK(OpConfig):
+class AttentionConfigBMNK(AttentionConfigBase):
     B: int
     M: int
     N: int
@@ -55,27 +97,9 @@ class AttentionConfigBMNK(OpConfig):
         total_flops = qk_matmul_flops + pv_matmul_flops
         return total_flops
 
-    def get_runtime_args(self, backend_name):
-        query_shape = self.get_query_shape()
-        key_shape = self.get_key_shape()
-        value_shape = self.get_value_shape()
-
-        if backend_name.startswith("wave"):
-            out_shape = self.get_output_shape()
-            out_shape = "x".join(out_shape.split("x")[:-1] + ["f32"])
-            inputs = [query_shape, key_shape, value_shape, out_shape]
-            bench_function = "isolated_benchmark"
-        else:
-            inputs = [query_shape, key_shape, value_shape]
-            bench_function = "main"
-
-        return [f"--input={input}" for input in inputs] + [
-            f"--function={bench_function}"
-        ]
-
 
 @dataclass
-class AttentionConfigBSHD(OpConfig):
+class AttentionConfigBSHD:
     B: int  # num_seqs
     H: int  # num_query_heads
     H_KV: int  # num_kv_heads
@@ -131,30 +155,11 @@ class AttentionConfigBSHD(OpConfig):
         total_flops = qk_matmul_flops + pv_matmul_flops
         return total_flops
 
-    def get_runtime_args(self, backend_name):
-        query_shape = self.get_query_shape()
-        key_shape = self.get_key_shape()
-        value_shape = self.get_value_shape()
-
-        if backend_name.startswith("wave"):
-            out_shape = self.get_output_shape()
-            out_shape = "x".join(out_shape.split("x")[:-1] + ["f32"])
-            inputs = [query_shape, key_shape, value_shape, out_shape]
-            bench_function = "isolated_benchmark"
-        else:
-            inputs = [query_shape, key_shape, value_shape]
-            bench_function = "main"
-
-        return [f"--input={input}" for input in inputs] + [
-            f"--function={bench_function}"
-        ]
-
 
 @dataclass
 class AttentionAttributes:
     """Unified attributes for all attention types"""
 
-    attention_type: Literal["bmnk", "bshd"]
     num_query_heads: int
     num_kv_heads: int
     head_size: int
@@ -176,12 +181,6 @@ class AttentionAttributes:
     # -----------------------
     # Decode specific
     block_size: Optional[int] = None
-
-    def get_name(self) -> str:
-        if self.attention_type == "bmnk":
-            return self.to_bmnk1k2().get_name()
-        else:
-            return self.to_bshd().get_name()
 
     def to_bmnk1k2(self) -> AttentionConfigBMNK:
         if self.batch_size is None:
@@ -216,7 +215,6 @@ def bmnk1k2_to_attention_attributes(
     config_bmnk: AttentionConfigBMNK,
 ) -> AttentionAttributes:
     return AttentionAttributes(
-        attention_type="bmnk",
         num_query_heads=config_bmnk.B,
         num_kv_heads=config_bmnk.B,
         head_size=config_bmnk.K1,
@@ -232,7 +230,6 @@ def bshd_to_attention_attributes(
     config_bshd: AttentionConfigBSHD,
 ) -> AttentionAttributes:
     return AttentionAttributes(
-        attention_type="bshd",
         num_query_heads=config_bshd.H,
         num_kv_heads=config_bshd.H_KV,
         head_size=config_bshd.D_Q,
