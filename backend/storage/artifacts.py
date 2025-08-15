@@ -86,9 +86,10 @@ def load_result_json(backend: str, kernel_type: str, json_path: str) -> List[Dic
     results = [
         {
             **convert_dict_case(result),
+            "id": str(uuid4()),
             "backend": backend,
             "kernelType": kernel_type,
-            "dtype": result["dtype"],
+            "dtype": result["shape"].get("dtype") or result["shape"].get("input_dtype"),
         }
         for result in results
     ]
@@ -122,8 +123,10 @@ def parse_kernels_from_path(artifact_path: str | Path) -> list[dict]:
     sub_dirs = os.listdir(artifact_path)
     if "json" in sub_dirs:
         sub_dirs = os.listdir(artifact_path / "json")
+        artifact_path = artifact_path / "json"
     elif "csv" in sub_dirs:
         sub_dirs = os.listdir(artifact_path / "csv")
+        artifact_path = artifact_path / "csv"
 
     for kernel_dir in sub_dirs:
         kernel_type = os.path.basename(kernel_dir)
