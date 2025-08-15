@@ -7,7 +7,7 @@ on:
       iterations:
         description: "Number of iterations per benchmark"
         required: false
-        default: "3"
+        default: "1"
       max_kernels:
         description: "Maximum number of kernels to benchmark"
         required: false
@@ -51,7 +51,7 @@ jobs:
 
     env:
       WAVE_CACHE_ON: 0
-      ITERATIONS: ${{ inputs.iterations || '3' }}
+      ITERATIONS: ${{ inputs.iterations || '1' }}
       MAX_KERNELS: ${{ inputs.max_kernels || '50' }}
       SELECTED_BACKEND: ${{ inputs.selected_backend || 'all' }}
       WAVE_REPO: ${{ inputs.pr_repository || 'iree-org/wave' }}
@@ -137,13 +137,13 @@ jobs:
         if: env.SELECTED_BACKEND == 'torch' || env.SELECTED_BACKEND == 'all'
         run: |
           source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.attentionbench --backend=torch --iterations=$ITERATIONS --max_kernels=$MAX_KERNELS
+          python -m iree_kernel_benchmark.attentionbench --backend=torch --iterations=10 --max_kernels=$MAX_KERNELS
 
       - name: GEMM - Torch
         if: env.SELECTED_BACKEND == 'torch' || env.SELECTED_BACKEND == 'all'
         run: |
           source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.gemmbench --backend=torch --iterations=$ITERATIONS --max_kernels=$MAX_KERNELS
+          python -m iree_kernel_benchmark.gemmbench --backend=torch --iterations=10 --max_kernels=$MAX_KERNELS
 
       # Finish
       - name: Tag result
