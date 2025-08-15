@@ -258,7 +258,7 @@ def tune_kernels_parallel(
     def refresh_thread():
         while not stop_refresh.is_set():
             progress_manager.refresh_display()
-            time.sleep(0.5)
+            time.sleep(20)
 
     refresh_thread_obj = threading.Thread(target=refresh_thread)
     refresh_thread_obj.start()
