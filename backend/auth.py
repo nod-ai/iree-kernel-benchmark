@@ -55,3 +55,7 @@ def get_repo(repo_id: str) -> Repository.Repository:
 
 def get_github_token(repo_id: str) -> str:
     return inst_auths[repo_id].token
+
+
+def get_gist_token() -> str:
+    return os.getenv("GIST_TOKEN")

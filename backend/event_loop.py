@@ -4,6 +4,7 @@ from storage.runs import (
     update_run_mappings,
     update_change_stats,
     update_artifacts,
+    update_tuning_runs,
 )
 import time
 import traceback
@@ -11,6 +12,7 @@ import traceback
 UPDATE_RUNS_INTERVAL = 10  # seconds
 UPDATE_MAPPINGS_INTERVAL = 15  # seconds
 UPDATE_ARTIFACTS_INTERVAL = 15  # seconds
+UPDATE_TUNING_RUNS_INTERVAL = 20  # seconds
 UPDATE_CHANGE_STATS_INTERVAL = 20  # seconds
 
 db_client, dir_client = get_azure_clients()
@@ -19,6 +21,7 @@ repo = get_repo("bench")
 
 def serve_event_loop():
     last_run_update_time = 0
+    last_tuning_run_update_time = 0
     last_mapping_update_time = 0
     last_change_stats_update_time = 0
     last_artifacts_update_time = 0
@@ -33,6 +36,14 @@ def serve_event_loop():
                 print("Exception occurred in update_runs:")
                 traceback.print_exc()
             last_run_update_time = now
+
+        if now - last_tuning_run_update_time >= UPDATE_TUNING_RUNS_INTERVAL:
+            try:
+                update_tuning_runs()
+            except Exception:
+                print("Exception occurred in update_tuning_runs:")
+                traceback.print_exc()
+            last_tuning_run_update_time = now
 
         if now - last_mapping_update_time >= UPDATE_MAPPINGS_INTERVAL:
             try:

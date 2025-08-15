@@ -1,7 +1,10 @@
+from uuid import uuid4
 from flask import Flask, jsonify, request
 from flask_cors import CORS
+import json
 from dataclass_wizard import fromdict, asdict
 
+from storage.runs import trigger_workflow_dispatch, upload_json_to_gist
 from storage.rebase import rebase_all
 from webhook.wave_update import WaveUpdateListener
 from auth import get_azure_clients, get_repo
@@ -34,6 +37,12 @@ def get_all_runs():
     return jsonify([asdict(run) for run in runs])
 
 
+@app.route("/kernels")
+def get_all_kernels():
+    kernels = db_client.find_all_kernels()
+    return jsonify([asdict(k) for k in kernels])
+
+
 @app.route("/performances")
 def get_all_perfs():
     perfs = db_client.find_all_performances()
@@ -46,10 +55,13 @@ def get_artifact_by_run_id(run_id):
     if run_id == "baseline":
         return jsonify(new_kernels)
 
-    old_kernels = load_artifact_kernels(directory_client, "baseline/benchmark-results")
-    filled_kernels = fill_new_kernels(old_kernels, new_kernels)
+    print(any([k["backend"] == "wavenew" for k in new_kernels]))
 
-    return jsonify(filled_kernels)
+    # old_kernels = load_artifact_kernels(directory_client, "baseline/benchmark-results")
+    # filled_kernels = fill_new_kernels(old_kernels, new_kernels)
+    # print(any([k["backend"] == "wavenew" for k in filled_kernels]))
+
+    return jsonify(new_kernels)
 
 
 @app.route("/workflow/trigger", methods=["POST"])
@@ -87,6 +99,48 @@ def rebase_prs():
             "performances": [asdict(perf) for perf in performances],
         }
     )
+
+
+@app.route("/tune", methods=["POST"])
+def tune_kernels():
+    payload = request.get_json()
+    kernel_ids = [str(id) for id in payload["kernel_ids"]]
+
+    kernels = db_client.find_all_kernels()
+    tuning_kernels = [asdict(k) for k in kernels if k.id in kernel_ids]
+
+    tuning_request_id = uuid4()
+    tuning_upload = upload_json_to_gist(
+        tuning_kernels,
+        filename=f"tuning-request-{tuning_request_id}",
+        description=f"Tuning configuration for {len(tuning_kernels)} kernels",
+    )
+
+    if not tuning_upload["success"]:
+        return "Failed to upload config to gist", 500
+
+    json_url = tuning_upload["raw_url"]
+
+    dispatch_success = trigger_workflow_dispatch(
+        "bench",
+        "tuning",
+        "tune_kernels.yml",
+        {
+            "config_url": json_url,
+            "num_trials": "20",
+            "iterations": "1",
+        },
+    )
+
+    if dispatch_success:
+        return "Success", 200
+    else:
+        return "Failed to dispatch workflow", 500
+
+
+@app.route("/tune/results", methods=["GET"])
+def get_tuned_results():
+    return jsonify(db_client.find_all_tuning_configs())
 
 
 def serve_backend(port=3000):

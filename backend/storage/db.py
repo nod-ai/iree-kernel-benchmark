@@ -1,9 +1,10 @@
-from azure.data.tables import TableServiceClient, TableEntity
+from math import ceil
+from azure.data.tables import TableServiceClient, TableEntity, TableClient
 from .types import *
 from dataclasses import is_dataclass
 from dataclass_wizard import fromdict, asdict
 from typing import Literal, Optional, Any
-import uuid
+from uuid import uuid4
 import json
 from datetime import datetime, timezone
 
@@ -33,6 +34,9 @@ class DatabaseClient:
         self._service_client = TableServiceClient.from_connection_string(
             connection_string
         )
+        self._tuning_run_tb = self._service_client.create_table_if_not_exists(
+            "tuningruns"
+        )
         self._run_tb = self._service_client.create_table_if_not_exists("runresults")
         self._repo_tb = self._service_client.create_table_if_not_exists(
             "repomodifications"
@@ -42,8 +46,22 @@ class DatabaseClient:
         )
         self._kernel_tb = self._service_client.create_table_if_not_exists("kernels")
         self._tuning_tb = self._service_client.create_table_if_not_exists(
-            "tuningrequests"
+            "tuningconfigs"
         )
+
+    def _batch_submit(
+        self,
+        table: TableClient,
+        op_name: str,
+        entities: list[dict[str, Any]],
+        batch_count=50,
+    ):
+        num_batches = ceil(len(entities) / batch_count)
+        for batch_idx in range(num_batches):
+            start = batch_idx * batch_count
+            end = min(start + batch_count, len(entities))
+            batch_ops = [(op_name, entity) for entity in entities[start:end]]
+            table.submit_transaction(batch_ops)
 
     def insert_run(self, run: BenchmarkRun) -> str:
         run_obj = flatten_entry(run, row_key=run._id, partition="run")
@@ -91,6 +109,51 @@ class DatabaseClient:
             entity["steps"] = json.loads(entity["steps"])
             entity["changeStats"] = json.loads(entity["changeStats"])
             runs.append(fromdict(BenchmarkRun, entity))
+        return runs
+
+    def insert_tuning_run(self, run: TuningRun) -> str:
+        run_obj = flatten_entry(run, row_key=run._id, partition="tuningrun")
+        self._tuning_run_tb.upsert_entity(run_obj)
+        return run._id
+
+    def update_tuning_run(self, run_id: str, update_dict: dict[str, Any]):
+        entity = self._tuning_run_tb.get_entity(
+            partition_key="tuningrun", row_key=run_id
+        )
+        entity.update(update_dict)
+        entity = flatten_entry(entity)
+        self._tuning_run_tb.update_entity(entity)
+
+    def delete_tuning_run(self, run_id: str):
+        self._tuning_run_tb.delete_entity(partition_key="tuningrun", row_key=run_id)
+
+    def delete_tuning_runs(self, query: str):
+        queried_runs = self._tuning_run_tb.query_entities(query)
+        for run in queried_runs:
+            self._tuning_run_tb.delete_entity(run["PartitionKey"], run["RowKey"])
+
+    def query_tuning_runs(self, query: str) -> list[TuningRun]:
+        entities = list(
+            self._tuning_run_tb.query_entities(
+                query, headers={"Accept": "application/json;odata=nometadata"}
+            )
+        )
+        runs = []
+        for entity in entities:
+            entity["changeStats"] = json.loads(entity["changeStats"])
+            runs.append(fromdict(TuningRun, entity))
+        return runs
+
+    def find_all_tuning_runs(self) -> list[TuningRun]:
+        entities = list(
+            self._tuning_run_tb.list_entities(
+                headers={"Accept": "application/json;odata=nometadata"}
+            )
+        )
+        runs = []
+        for entity in entities:
+            entity["changeStats"] = json.loads(entity["changeStats"])
+            runs.append(fromdict(TuningRun, entity))
         return runs
 
     def insert_pull_request(self, pr: RepoPullRequest) -> str:
@@ -211,9 +274,11 @@ class DatabaseClient:
 
     # Kernel methods
     def insert_kernels(self, kernels: list[Kernel]):
-        for kernel in kernels:
-            kernel_obj = flatten_entry(kernel, row_key=kernel.id, partition="kernel")
-            self._kernel_tb.upsert_entity(kernel_obj)
+        kernel_entities = [
+            flatten_entry(kernel, row_key=kernel.id, partition="kernel")
+            for kernel in kernels
+        ]
+        self._batch_submit(self._kernel_tb, "upsert", kernel_entities)
 
     def update_kernels(self, kernels: list[Kernel]):
         for kernel in kernels:
@@ -237,29 +302,77 @@ class DatabaseClient:
                 partition_key=entity["PartitionKey"], row_key=entity["RowKey"]
             )
 
-    # TuningRequest methods
-    def insert_tuning_request(self, tuning_request: TuningRequest) -> str:
-        tuning_obj = flatten_entry(
-            tuning_request, row_key=tuning_request.id, partition="tuning"
-        )
-        self._tuning_tb.upsert_entity(tuning_obj)
-        return tuning_request.id
+    def insert_tuning_configs(self, configs: list[TuningConfig]):
+        tuning_entities = [
+            flatten_entry(config, row_key=config._id, partition="tuning")
+            for config in configs
+        ]
+        self._batch_submit(self._tuning_tb, "upsert", tuning_entities)
 
-    def update_tuning_request(self, tuning_id: str, update_dict: dict[str, Any]):
+    def insert_tuning_config(self, config: TuningConfig) -> str:
+        tuning_obj = flatten_entry(config, row_key=config._id, partition="tuning")
+        self._tuning_tb.upsert_entity(tuning_obj)
+        return config._id
+
+    def update_tuning_config(self, tuning_id: str, update_dict: dict[str, Any]):
         entity = self._tuning_tb.get_entity(partition_key="tuning", row_key=tuning_id)
         entity.update(flatten_entry(update_dict))
         self._tuning_tb.update_entity(entity)
 
-    def delete_tuning_requests(self, tuning_ids: list[str]):
+    def delete_tuning_configs(self, tuning_ids: list[str]):
         for tuning_id in tuning_ids:
             self._tuning_tb.delete_entity(partition_key="tuning", row_key=tuning_id)
 
-    def clear_all_tuning_requests(self):
+    def clear_all_tuning_configs(self):
         entities = self._tuning_tb.list_entities()
         for entity in entities:
             self._tuning_tb.delete_entity(
                 partition_key=entity["PartitionKey"], row_key=entity["RowKey"]
             )
+
+    def query_tuning_configs(self, query: str) -> list[TuningConfig]:
+        entities = list(
+            self._tuning_tb.query_entities(
+                query, headers={"Accept": "application/json;odata=nometadata"}
+            )
+        )
+        tuning_configs = []
+        for entity in entities:
+            entity["result"] = json.loads(entity["result"])
+            tuning_configs.append(fromdict(TuningConfig, entity))
+        return tuning_configs
+
+    def find_all_tuning_configs(self) -> dict[str, list[dict]]:
+        entities = list(
+            self._tuning_tb.list_entities(
+                headers={"Accept": "application/json;odata=nometadata"}
+            )
+        )
+        tuning_configs: list[TuningConfig] = []
+        for entity in entities:
+            entity["result"] = json.loads(entity["result"])
+            tuning_configs.append(fromdict(TuningConfig, entity))
+
+        configs_by_kernel: dict[str, list[dict]] = {}
+
+        for config in tuning_configs:
+            configs_by_kernel.setdefault(config.kernel_name, []).append(asdict(config))
+
+        for kernel_name in configs_by_kernel.keys():
+            configs_by_kernel[kernel_name].sort(
+                key=lambda x: x["timestamp"], reverse=True
+            )
+
+        return configs_by_kernel
+
+    def find_latest_tuning_configs(self) -> dict[str, dict]:
+        configs_by_kernel = self.find_all_tuning_configs()
+        latest_config_by_kernel = {
+            kernel_name: results[0]
+            for kernel_name, results in configs_by_kernel.items()
+            if len(results) > 0
+        }
+        return latest_config_by_kernel
 
     # Additional helper methods for querying
     def query_performances(self, query: str) -> list[PerformanceRun]:
@@ -290,32 +403,15 @@ class DatabaseClient:
         kernels = []
         for entity in entities:
             entity["allowedBackends"] = json.loads(entity["allowedBackends"])
-            entity["shape"] = json.loads(entity["shape"])
+            entity["problem"] = json.loads(entity["problem"])
             kernels.append(fromdict(Kernel, entity))
         return kernels
 
     def find_kernel_by_id(self, kernel_id: str) -> Kernel:
         entity = self._kernel_tb.get_entity(partition_key="kernel", row_key=kernel_id)
         entity["allowedBackends"] = json.loads(entity["allowedBackends"])
-        entity["shape"] = json.loads(entity["shape"])
+        entity["problem"] = json.loads(entity["problem"])
         return fromdict(Kernel, entity)
-
-    def query_tuning_requests(self, query: str) -> list[TuningRequest]:
-        entities = list(
-            self._tuning_tb.query_entities(
-                query, headers={"Accept": "application/json;odata=nometadata"}
-            )
-        )
-        tuning_requests = []
-        for entity in entities:
-            entity["kernelNames"] = json.loads(entity["kernelNames"])
-            tuning_requests.append(fromdict(TuningRequest, entity))
-        return tuning_requests
-
-    def find_tuning_request_by_id(self, tuning_id: str) -> TuningRequest:
-        entity = self._tuning_tb.get_entity(partition_key="tuning", row_key=tuning_id)
-        entity["kernelNames"] = json.loads(entity["kernelNames"])
-        return fromdict(TuningRequest, entity)
 
     def find_all_performances(self) -> list[PerformanceRun]:
         entities = list(
@@ -341,18 +437,6 @@ class DatabaseClient:
         kernels = []
         for entity in entities:
             entity["allowedBackends"] = json.loads(entity["allowedBackends"])
-            entity["shape"] = json.loads(entity["shape"])
+            entity["problem"] = json.loads(entity["problem"])
             kernels.append(fromdict(Kernel, entity))
         return kernels
-
-    def find_all_tuning_requests(self) -> list[TuningRequest]:
-        entities = list(
-            self._tuning_tb.list_entities(
-                headers={"Accept": "application/json;odata=nometadata"}
-            )
-        )
-        tuning_requests = []
-        for entity in entities:
-            entity["kernelNames"] = json.loads(entity["kernelNames"])
-            tuning_requests.append(fromdict(TuningRequest, entity))
-        return tuning_requests

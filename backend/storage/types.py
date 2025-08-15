@@ -21,6 +21,21 @@ class PerformanceRun:
 
 
 @dataclass
+class TuningRun(PerformanceRun):
+    completed: bool = False
+    hasArtifact: bool = False
+
+
+@dataclass
+class TuningConfig:
+    _id: str
+    timestamp: datetime
+    run_id: str
+    kernel_name: str
+    result: dict[str, Any]
+
+
+@dataclass
 class BenchmarkRun(PerformanceRun):
     # _id: str
     headSha: str
@@ -28,9 +43,6 @@ class BenchmarkRun(PerformanceRun):
     conclusion: str
     numSteps: int
     steps: list[dict]
-    # blobName: str
-    # timestamp: datetime
-    # changeStats: ChangeStats
     hasArtifact: bool = False
 
 
@@ -43,20 +55,12 @@ class RunArtifact:
 @dataclass
 class Kernel:
     id: str
-    backend: str
     kernelType: str
     name: str
     tag: str
     dtype: str
     allowedBackends: list[str]
-    shape: dict[str, Any]
-
-
-@dataclass
-class TuningRequest:
-    id: str
-    kernelNames: list[str]
-    completed: bool
+    problem: dict[str, Any]
 
 
 @dataclass

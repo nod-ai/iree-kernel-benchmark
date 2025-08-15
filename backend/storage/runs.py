@@ -1,11 +1,16 @@
 import json
+import os
+from typing import Any
 from github import Github, Auth, PullRequest, Repository
 from datetime import datetime, timezone
+import requests
 from globals import TESTING_MODE
+from auth import get_azure_clients, get_gist_token, get_repo, get_github_token
 from storage.artifacts import (
     load_artifact_kernels,
     save_run_artifact,
     compare_artifact_kernels,
+    save_tuning_run_artifact,
 )
 from storage.db import DatabaseClient
 from storage.directory import DirectoryClient
@@ -103,6 +108,18 @@ def update_runs(
             break
 
 
+def update_tuning_runs():
+    db_client, dir_client = get_azure_clients()
+    runs = db_client.query_tuning_runs(("hasArtifact eq false and completed eq true"))
+    for run in runs:
+        print(f"Saving run artifact for run {run._id}")
+        save_tuning_run_artifact(run)
+        db_client.update_tuning_run(run._id, {"hasArtifact": True})
+
+        updated_configs = db_client.find_latest_tuning_configs()
+        update_json_gist(os.getenv("TUNING_GIST_ID"), updated_configs)
+
+
 def update_artifacts(
     repo: Repository.Repository, db_client: DatabaseClient, dir_client: DirectoryClient
 ):
@@ -144,3 +161,144 @@ def update_change_stats(
         )
         change_stats = compare_artifact_kernels(baseline_kernels, new_kernels)
         db_client.update_run(statless_run._id, {"changeStats": change_stats})
+
+
+def trigger_workflow_dispatch(
+    repo_id: str, branch_name: str, workflow_id: str, inputs: dict[str, Any]
+) -> bool:
+    token = get_github_token(repo_id)
+    repo = get_repo(repo_id)
+    repo_name = repo.full_name
+
+    url = f"https://api.github.com/repos/{repo_name}/actions/workflows/{workflow_id}/dispatches"
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"Bearer {token}",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    body = {
+        "ref": branch_name,
+        "inputs": inputs,
+    }
+
+    response = requests.post(url, headers=headers, json=body)
+    if response.status_code != 204:
+        print(f"Workflow failed: {response.json()}")
+        return False
+    print(f"Workflow dispatched successfully: {response.status_code}")
+    return True
+
+
+def upload_json_to_gist(data, filename=None, description=None):
+    github_token = get_gist_token()
+
+    if filename is None:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"data_{timestamp}.json"
+
+    if not filename.endswith(".json"):
+        filename += ".json"
+
+    json_content = json.dumps(data, indent=2)
+
+    gist_data = {
+        "description": description or "Temporary JSON storage",
+        "public": True,
+        "files": {filename: {"content": json_content}},
+    }
+
+    headers = {"Accept": "application/vnd.github.v3+json"}
+
+    headers["Authorization"] = f"token {github_token}"
+
+    response = requests.post(
+        "https://api.github.com/gists", headers=headers, json=gist_data
+    )
+
+    if response.status_code == 201:
+        gist_info = response.json()
+        raw_url = gist_info["files"][filename]["raw_url"]
+
+        return {
+            "raw_url": raw_url,
+            "gist_url": gist_info["html_url"],
+            "gist_id": gist_info["id"],
+            "success": True,
+        }
+    else:
+        return {
+            "success": False,
+            "error": f"Failed to create gist: {response.status_code} - {response.text}",
+        }
+
+
+def update_json_gist(gist_id, data, filename=None, description=None):
+    github_token = get_gist_token()
+
+    # First, get the existing gist to find the filename if not provided
+    headers = {
+        "Accept": "application/vnd.github.v3+json",
+        "Authorization": f"token {github_token}",
+    }
+
+    # Get existing gist details
+    get_response = requests.get(
+        f"https://api.github.com/gists/{gist_id}", headers=headers
+    )
+
+    if get_response.status_code != 200:
+        return {
+            "success": False,
+            "error": f"Failed to retrieve gist: {get_response.status_code} - {get_response.text}",
+        }
+
+    existing_gist = get_response.json()
+
+    # If filename not provided, use the first JSON file from the gist
+    if filename is None:
+        json_files = [f for f in existing_gist["files"].keys() if f.endswith(".json")]
+        if json_files:
+            filename = json_files[0]
+        else:
+            # If no JSON files exist, create a new filename
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"data_{timestamp}.json"
+
+    if not filename.endswith(".json"):
+        filename += ".json"
+
+    json_content = json.dumps(data, indent=2)
+
+    # Prepare update data
+    update_data = {"files": {filename: {"content": json_content}}}
+
+    # Add description if provided
+    if description is not None:
+        update_data["description"] = description
+
+    # Update the gist
+    response = requests.patch(
+        f"https://api.github.com/gists/{gist_id}", headers=headers, json=update_data
+    )
+
+    if response.status_code == 200:
+        gist_info = response.json()
+        raw_url = gist_info["files"][filename]["raw_url"]
+
+        return {
+            "raw_url": raw_url,
+            "gist_url": gist_info["html_url"],
+            "gist_id": gist_info["id"],
+            "filename": filename,
+            "success": True,
+        }
+    else:
+        return {
+            "success": False,
+            "error": f"Failed to update gist: {response.status_code} - {response.text}",
+        }
+
+
+def load_json_from_gist_url(raw_url: str):
+    response = requests.get(raw_url)
+    return response.json()

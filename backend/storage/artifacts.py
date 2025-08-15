@@ -1,9 +1,14 @@
+from datetime import timezone
+import json
+
+from numpy import extract
 from globals import TESTING_MODE
 from .directory import DirectoryClient
 from .db import DatabaseClient
 from .types import *
-from auth import get_github_token
-from github import Repository, Artifact
+from .utils import convert_dict_case, get_nested_files
+from auth import get_azure_clients, get_github_token, get_repo
+from github import Repository, Artifact, WorkflowRun
 from uuid import uuid4
 from pathlib import Path
 import os
@@ -58,17 +63,53 @@ def load_result_csv(backend: str, kernel_type: str, csv_path: str) -> List[Dict]
 
         kernel = {
             "id": str(uuid4()),
-            "backend": backend,
-            "kernelType": kernel_type,
+            "machine": row.get("machine") or "MI325X",
+            "backend": row.get("backend") or backend,
+            "kernelType": row.get("kernel_type") or kernel_type,
             "dtype": dtype,
             "shape": shape,
-            "name": row["name"],
-            "tag": row["tag"],
-            "meanMicroseconds": row["mean_microseconds"],
-            "arithmeticIntensity": row["arithmetic_intensity"],
-            "tflops": row["tflops"],
+            "name": row.get("name"),
+            "tag": row.get("tag"),
+            "meanMicroseconds": row.get("mean_microseconds"),
+            "arithmeticIntensity": row.get("arithmetic_intensity"),
+            "tflops": row.get("tflops"),
         }
         results.append(kernel)
+
+    return results
+
+
+def load_result_json(backend: str, kernel_type: str, json_path: str) -> List[Dict]:
+    with open(json_path, "r") as file:
+        results = json.load(file)
+
+    results = [
+        {
+            **convert_dict_case(result),
+            "backend": backend,
+            "kernelType": kernel_type,
+            "dtype": result["dtype"],
+        }
+        for result in results
+    ]
+
+    return results
+
+
+def load_tuning_result_json(json_path: os.PathLike, run_id: str) -> list[TuningConfig]:
+    with open(json_path, "r") as file:
+        results: dict[str, dict] = json.load(file)
+
+    results = [
+        TuningConfig(
+            _id=str(uuid4()),
+            timestamp=datetime.now(tz=timezone.utc),
+            run_id=run_id,
+            kernel_name=kernel_name,
+            result=result,
+        )
+        for kernel_name, result in results.items()
+    ]
 
     return results
 
@@ -78,31 +119,58 @@ def parse_kernels_from_path(artifact_path: str | Path) -> list[dict]:
 
     results = []
 
-    for kernel_dir in os.listdir(artifact_path):
+    sub_dirs = os.listdir(artifact_path)
+    if "json" in sub_dirs:
+        sub_dirs = os.listdir(artifact_path / "json")
+    elif "csv" in sub_dirs:
+        sub_dirs = os.listdir(artifact_path / "csv")
+
+    for kernel_dir in sub_dirs:
         kernel_type = os.path.basename(kernel_dir)
         kernel_dir_path = artifact_path / kernel_type
 
-        for csv_file in os.listdir(kernel_dir_path):
-            csv_name = os.path.basename(csv_file)
-            csv_file_path = kernel_dir_path / csv_name
-            backend_name = csv_name.split(".")[0].split(f"{kernel_type}_")[1]
+        for result_file in os.listdir(kernel_dir_path):
+            result_fname = os.path.basename(result_file)
+            result_file_path = kernel_dir_path / result_fname
+            backend_name = result_fname.split(".")[0].split(f"{kernel_type}_")[1]
+            file_type = result_fname.split(".")[1]
 
             if backend_name == "wavegqa":
                 continue
 
-            result_data = load_result_csv(backend_name, kernel_type, csv_file_path)
+            if file_type == "csv":
+                result_data = load_result_csv(
+                    backend_name, kernel_type, result_file_path
+                )
+            elif file_type == "json":
+                result_data = load_result_json(
+                    backend_name, kernel_type, result_file_path
+                )
+            else:
+                continue
             results.extend(result_data)
 
     return results
 
 
-def download_artifact_kernels(
-    artifact: Artifact.Artifact, local_path: str = None
-) -> tuple[List[Dict], Path]:
+def parse_tuning_results_from_path(
+    artifact_path: os.PathLike, run_id: str
+) -> list[TuningConfig]:
+    artifact_path = Path(artifact_path)
 
-    kernels = []
+    results: list[TuningConfig] = []
+    for result_json in get_nested_files(artifact_path, "json"):
+        results.extend(load_tuning_result_json(result_json, run_id))
 
-    local_path = local_path or f"./tmp/{artifact.id}"
+    return results
+
+
+def download_artifact(
+    artifact: Artifact.Artifact,
+    local_path: os.PathLike = None,
+    extract_name: str = "benchmark-results",
+) -> Optional[Path]:
+    local_path = Path(local_path) if local_path else Path(f"./tmp/{artifact.id}")
 
     download_url = artifact.archive_download_url
     headers = dict(artifact.raw_headers)
@@ -112,11 +180,10 @@ def download_artifact_kernels(
 
     if response.status_code != 200:
         print("failed to download", artifact.id, download_url, response.json())
-        return []
+        None
 
-    base_path = Path(local_path)
-    zip_path = base_path / "results.zip"
-    extract_path = base_path / "benchmark-results"
+    zip_path = local_path / "results.zip"
+    extract_path = local_path / extract_name
 
     os.makedirs(os.path.dirname(zip_path), exist_ok=True)
     os.makedirs(extract_path, exist_ok=True)
@@ -127,69 +194,48 @@ def download_artifact_kernels(
     with zipfile.ZipFile(zip_path, "r") as zip_ref:
         zip_ref.extractall(extract_path)
 
+    return local_path
+
+
+def download_artifact_kernels(
+    artifact: Artifact.Artifact, local_path: str = None
+) -> tuple[List[Dict], Path]:
+
+    kernels = []
+
+    local_path = download_artifact(
+        artifact, local_path, extract_name="benchmark-results"
+    )
+    if not local_path:
+        return []
+    extract_path = local_path / "benchmark-results"
+
     try:
         kernels = parse_kernels_from_path(extract_path)
-    except Exception:
-        print(f"Failed to load artifact {artifact.url}")
+    except Exception as e:
+        print(f"Failed to load artifact {artifact.url}: {e}")
 
-    return kernels, base_path
+    return kernels, local_path
 
 
-def save_all_artifact_kernels(
-    repo: Repository.Repository, dir_client: DirectoryClient, limit=10
-) -> tuple[List[List[Dict]], List[str]]:
+def download_artifact_tuning_results(
+    artifact: Artifact.Artifact, local_path: os.PathLike = None
+) -> tuple[List[TuningConfig], Path]:
+
     results = []
-    blob_paths = []
 
-    artifacts = repo.get_artifacts()
-    for artifact in artifacts:
-        artifact_kernels, artifact_path = download_artifact_kernels(
-            artifact, f"./tmp/{artifact.id}"
+    base_path = download_artifact(artifact, local_path, extract_name="tuning-results")
+    if not base_path:
+        return []
+
+    try:
+        results = parse_tuning_results_from_path(
+            base_path, run_id=str(artifact.workflow_run.id)
         )
-        results.append(artifact_kernels)
+    except Exception as e:
+        print(f"Failed to load artifact {artifact.url}: {e}")
 
-        blobName = str(artifact.id)
-        blob_paths.append(blobName)
-        try:
-            dir_client.upload(f"{artifact_path}/benchmark-results", blobName)
-        except:
-            print(f"Blob already exists for artifact {artifact.id}. Continuing...")
-
-        shutil.rmtree(artifact_path)
-
-        if len(results) >= limit:
-            return results, blob_paths
-
-    return results, blob_paths
-
-
-def download_all_artifact_kernels(
-    repo: Repository.Repository, limit=10
-) -> List[List[Dict]]:
-    results = []
-
-    artifacts = repo.get_artifacts()
-    for artifact in artifacts:
-        artifact_kernels, artifact_path = download_artifact_kernels(artifact)
-        results.append(artifact_kernels)
-        shutil.rmtree(artifact_path)
-
-        if len(results) >= limit:
-            return results
-
-    return results
-
-
-def download_artifact_kernels_by_run_id(
-    repo: Repository.Repository, run_id
-) -> List[Dict]:
-    run = repo.get_workflow_run(int(run_id))
-    artifacts = run.get_artifacts()
-    for artifact in artifacts:
-        artifact_kernels, artifact_path = download_artifact_kernels(artifact)
-
-        return artifact_kernels
-    return []
+    return results, local_path
 
 
 def save_results_from_local_path(
@@ -201,6 +247,23 @@ def save_results_from_local_path(
     try:
         print(f"Uploading artifacts to azure path {blob_name}")
         dir_client.upload(f"{local_path}/benchmark-results", blob_name)
+        if delete_local:
+            shutil.rmtree(local_path)
+        return blob_name
+    except:
+        print(f"Blob {blob_name} already exists. Skipped upload")
+        return None
+
+
+def save_tuning_results_from_local_path(
+    dir_client: DirectoryClient,
+    local_path: os.PathLike,
+    blob_name: str,
+    delete_local=True,
+):
+    try:
+        print(f"Uploading artifacts to azure path {blob_name}")
+        dir_client.upload(f"{local_path}/tuning-results", blob_name)
         if delete_local:
             shutil.rmtree(local_path)
         return blob_name
@@ -229,6 +292,33 @@ def save_run_artifact(
     return None
 
 
+def save_tuning_run_artifact(tuning_run_data: TuningRun) -> bool:
+    repo = get_repo("bench")
+    db_client, dir_client = get_azure_clients()
+
+    run = repo.get_workflow_run(int(tuning_run_data._id))
+    artifacts = run.get_artifacts()
+
+    for artifact in artifacts:
+        artifact_results, artifact_path = download_artifact_tuning_results(artifact)
+        print(f"Downloaded artifacts to local path {artifact_path}")
+
+        if len(artifact_results) == 0:
+            print("Failed to parse artifact")
+            return None
+
+        db_client.insert_tuning_configs(artifact_results)
+        print(f"Saved {len(artifact_results)} tuning results to database")
+
+        save_tuning_results_from_local_path(
+            dir_client, artifact_path, tuning_run_data.blobName
+        )
+        print(f"Saved {len(artifact_results)} tuning results to blob storage")
+
+    print("No artifact returned by run")
+    return None
+
+
 def load_artifact_kernels(client: DirectoryClient, directory_name: str) -> list[dict]:
     artifact_id = str(uuid4())
     local_path = Path(f"./tmp/{artifact_id}")
@@ -237,45 +327,9 @@ def load_artifact_kernels(client: DirectoryClient, directory_name: str) -> list[
     artifact_path = local_path / "benchmark-results"
     results = parse_kernels_from_path(artifact_path)
 
+    print(local_path)
     shutil.rmtree(local_path)
     return results
-
-
-def fetch_all_artifacts(
-    directory_client: DirectoryClient, db_client: DatabaseClient
-) -> list[RunArtifact]:
-    artifacts = []
-
-    runs = db_client.find_all_runs()
-    for run in runs:
-        run_dir_name = run.blobName
-        kernels = load_artifact_kernels(
-            directory_client, f"{run_dir_name}/benchmark-results"
-        )
-        artifacts.append(RunArtifact(kernels, run))
-
-    return artifacts
-
-
-def fetch_latest_artifact(
-    directory_client: DirectoryClient, db_client: DatabaseClient
-) -> Optional[RunArtifact]:
-    artifacts = fetch_all_artifacts(directory_client, db_client)
-    return artifacts[0] if len(artifacts) > 0 else None
-
-
-def fetch_artifact_by_trigger_id(
-    directory_client: DirectoryClient, db_client: DatabaseClient, trigger_id: str
-) -> Optional[RunArtifact]:
-    runs = db_client.query_runs(f"triggerId eq {trigger_id}")
-    if len(runs) == 0:
-        return None
-
-    run_dir_name = runs[0].blobName
-    kernels = load_artifact_kernels(
-        directory_client, f"{run_dir_name}/benchmark-results"
-    )
-    return RunArtifact(kernels, runs[0])
 
 
 def compare_artifact_kernels(
@@ -326,7 +380,7 @@ def compare_artifact_kernels(
 
 
 def fill_new_kernels(old: List[Dict], new: List[Dict]) -> List[Dict]:
-    new_wave = [k for k in new if "wave" in k["kernelType"]]
-    old_other = [k for k in old if "wave" not in k["kernelType"]]
+    new_wave = [k for k in new if "wave" in k["backend"]]
+    old_other = [k for k in old if "wave" not in k["backend"]]
 
     return new_wave + old_other
