@@ -2,7 +2,7 @@ import argparse
 import torch
 import torch.nn as nn
 
-from iree.turbine.kernel.boo.op_exports.layer_norm import (
+from iree.turbine.kernel.boo.layer_norm_exports.layer_norm import (
     LayerNormSignature,
     Mode,
     LayerNormForward,
@@ -21,20 +21,35 @@ def _inverse_permutation(pi: Sequence[int]) -> list[int]:
     return [y for x, y in sorted({x: i for i, x in enumerate(pi)}.items())]
 
 
-def run_boo(
-    signature: LayerNormSignature,
+def run_fwd(
+    input_shape: tuple[int, ...],
+    normalized_shape: tuple[int, ...],
+    dtype: torch.dtype,
+    eps: float,
+    elementwise_affine: bool,
+    bias: bool,
     num_its: int,
     torch_compile: bool,
     permutation: Optional[Sequence[int]],
-    module: torch.nn.Module,
 ):
-    print(f"Layer norm[{signature.mode.name}]", flush=True)
+    print("*" * 80, flush=True)
+    print(f"Layer norm[fwd]", flush=True)
     print(
-        f"\tinput_shape={signature.input_shape}, normalized_shape={signature.normalized_shape}",
-        flush=True,
+        f"\tinput_shape={input_shape}, normalized_shape={normalized_shape}", flush=True
     )
-    print(f"\tdtypes={signature.dtype}, eps={signature.eps}", flush=True)
+    print(f"\tdtypes={dtype}, eps={eps}", flush=True)
     print(f"\tnum_its={num_its}, torch_compile={torch_compile}", flush=True)
+
+    # Create the boo signature
+    signature = LayerNormSignature(
+        input_shape=input_shape,
+        normalized_shape=normalized_shape,
+        dtype=dtype,
+        eps=eps,
+        elementwise_affine=elementwise_affine,
+        bias=bias,
+        mode=Mode.FORWARD,
+    )
 
     # Get the sample args and model.
     args = list(signature.get_sample_args(device=torch.get_default_device()))
@@ -56,9 +71,9 @@ def run_boo(
             flush=True,
         )
 
-    model = module(signature)
+    model = LayerNormForward(signature)
     if torch_compile:
-        model_c = module(signature)
+        model_c = LayerNormForward(signature)
 
     # Compile IREE.
     print("\n" + ("=" * 40), flush=True)
@@ -94,92 +109,8 @@ def run_boo(
     # Verify correctness.
     torch_r = torch_run.run()
     iree_r = iree_run.run()
-    if isinstance(torch_r, tuple):
-        for i, (t_r, i_r) in enumerate(zip(torch_r, iree_r)):
-            print(f"Numeric error out[{i}]: {rel_error(t_r, i_r):.3e}", flush=True)
-    else:
-        print(f"Numeric error out: {rel_error(torch_r, iree_r):.3e}", flush=True)
-
-
-def run_fwd(
-    input_shape: tuple[int, ...],
-    normalized_shape: tuple[int, ...],
-    dtype: torch.dtype,
-    eps: float,
-    elementwise_affine: bool,
-    bias: bool,
-    num_its: int,
-    torch_compile: bool,
-    permutation: Optional[Sequence[int]],
-):
-    print("*" * 80, flush=True)
-    # Create the boo signature
-    signature = LayerNormSignature(
-        input_shape=input_shape,
-        normalized_shape=normalized_shape,
-        dtype=dtype,
-        eps=eps,
-        elementwise_affine=elementwise_affine,
-        bias=bias,
-        mode=Mode.FORWARD,
-    )
-    run_boo(signature, num_its, torch_compile, permutation, LayerNormForward)
-    print("\n")
-
-
-def run_bwd(
-    input_shape: tuple[int, ...],
-    normalized_shape: tuple[int, ...],
-    dtype: torch.dtype,
-    eps: float,
-    elementwise_affine: bool,
-    bias: bool,
-    num_its: int,
-    torch_compile: bool,
-    permutation: Optional[Sequence[int]],
-):
-    print("*" * 80, flush=True)
-    print("-" * 40, flush=True)
-    input_shape = list(input_shape)
-    normalized_shape = list(normalized_shape)
-    # Create the boo signature for the backward input.
-    signature = LayerNormSignature(
-        input_shape=input_shape,
-        normalized_shape=normalized_shape,
-        dtype=dtype,
-        eps=eps,
-        elementwise_affine=elementwise_affine,
-        bias=bias,
-        mode=Mode.INPUT_BACKWARD,
-    )
-    run_boo(signature, num_its, torch_compile, permutation, LayerNormBackwardInput)
-    if elementwise_affine:
-        print("-" * 40, flush=True)
-        # Create the boo signature for the backward weight.
-        signature = LayerNormSignature(
-            input_shape=input_shape,
-            normalized_shape=normalized_shape,
-            dtype=dtype,
-            eps=eps,
-            elementwise_affine=elementwise_affine,
-            bias=bias,
-            mode=Mode.WEIGHT_BACKWARD,
-        )
-        run_boo(signature, num_its, torch_compile, permutation, LayerNormBackwardWeight)
-    if bias:
-        print("-" * 40, flush=True)
-        # Create the boo signature for the backward bias.
-        signature = LayerNormSignature(
-            input_shape=input_shape,
-            normalized_shape=normalized_shape,
-            dtype=dtype,
-            eps=eps,
-            elementwise_affine=elementwise_affine,
-            bias=bias,
-            mode=Mode.BIAS_BACKWARD,
-        )
-        run_boo(signature, num_its, torch_compile, permutation, LayerNormBackwardBias)
-    print("\n")
+    for i, (t_r, i_r) in enumerate(zip(torch_r, iree_r)):
+        print(f"Numeric error out[{i}]: {rel_error(t_r, i_r):.3e}", flush=True)
 
 
 def main():
@@ -237,30 +168,17 @@ def main():
     )
     parser.add_argument("-c", action="store_true", help="whether to use torch compile")
     args = parser.parse_args()
-    if args.module == "fwd":
-        run_fwd(
-            input_shape=tuple(args.batch_shape + args.normalized_shape),
-            normalized_shape=tuple(args.normalized_shape),
-            dtype=torch_types[args.dtype],
-            eps=args.eps,
-            elementwise_affine=args.elementwise_affine,
-            bias=args.bias,
-            num_its=args.num_its,
-            torch_compile=args.c,
-            permutation=args.input_permutation,
-        )
-    elif args.module == "bwd":
-        run_bwd(
-            input_shape=tuple(args.batch_shape + args.normalized_shape),
-            normalized_shape=tuple(args.normalized_shape),
-            dtype=torch_types[args.dtype],
-            eps=args.eps,
-            elementwise_affine=args.elementwise_affine,
-            bias=args.bias,
-            num_its=args.num_its,
-            torch_compile=args.c,
-            permutation=args.input_permutation,
-        )
+    run_fwd(
+        input_shape=tuple(args.batch_shape + args.normalized_shape),
+        normalized_shape=tuple(args.normalized_shape),
+        dtype=torch_types[args.dtype],
+        eps=args.eps,
+        elementwise_affine=args.elementwise_affine,
+        bias=args.bias,
+        num_its=args.num_its,
+        torch_compile=args.c,
+        permutation=args.input_permutation,
+    )
 
 
 if __name__ == "__main__":

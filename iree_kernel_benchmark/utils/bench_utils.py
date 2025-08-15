@@ -12,89 +12,7 @@ import sys
 import hashlib
 import warnings
 import random
-import torch
-import json
-from typing import Any, List, Tuple, Dict
-from contextlib import contextmanager
-from abc import ABC, abstractmethod
-from dataclasses import dataclass, asdict
-
-
-@dataclass
-class OpConfig(ABC):
-    @abstractmethod
-    def get_name(self) -> str:
-        pass
-
-    @abstractmethod
-    def get_flops(self) -> int:
-        pass
-
-    @abstractmethod
-    def get_byte_count(self) -> int:
-        pass
-
-    @abstractmethod
-    def get_runtime_args(self, backend_name: str) -> List[str]:
-        pass
-
-    def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
-
-    def get_dim_names(self) -> List[str]:
-        return list(self.to_dict().keys())
-
-
-@dataclass
-class BenchmarkResult:
-    index: int
-    machine: str
-    kernel_type: str
-    backend: str
-    tag: str
-    name: str
-    dims: List[str]
-    shape: Dict[str, Any]
-    problem: Dict[str, Any]
-    tuning_config: Dict[str, Any]
-    mean_microseconds: float
-    arithmetic_intensity: float
-    tflops: float
-    ok: bool
-
-
-type ConfigList = List[Tuple[str, OpConfig]]
-
-HIP_TARGETS = {
-    "mi100": "gfx908",
-    "mi210": "gfx90a",
-    "mi250": "gfx90a",
-    "mi300a": "gfx942",
-    "mi300x": "gfx942",
-    "mi308x": "gfx942",
-    "mi325x": "gfx942",
-    "mi350x": "gfx950",
-    "mi355x": "gfx950",
-    "v710": "gfx1101",
-    "w7700": "gfx1101",
-    "w7800": "gfx1100",
-    "w7900": "gfx1100",
-    "rx7700xt": "gfx1101",
-    "rx7800xt": "gfx1101",
-    "rx7900xt": "gfx1100",
-    "rx7900xtx": "gfx1100",
-    "rx9060xt": "gfx1200",
-    "rx9070": "gfx1201",
-    "rx9070xt": "gfx1201",
-    "r9700": "gfx1201",
-}
-
-
-def machine_to_hip_target(machine_name: str):
-    target = HIP_TARGETS.get(machine_name.lower())
-    if target is None:
-        print(f"Could not find valid hip target for machine {machine_name}")
-    return target
+from typing import Any, List, Tuple
 
 
 def generate_md5_hex(file_path):
@@ -103,6 +21,11 @@ def generate_md5_hex(file_path):
         for chunk in iter(lambda: f.read(4096), b""):
             md5.update(chunk)
     return md5.hexdigest()
+
+
+BenchmarkResult = namedtuple(
+    "BenchmarkResult", "benchmark_name time cpu_time iterations user_counters"
+)
 
 
 def run_iree_command(args: Sequence[str] = ()):
@@ -129,85 +52,67 @@ def run_iree_command(args: Sequence[str] = ()):
     return 1, proc.stdout, proc.stderr
 
 
-def unit_to_microseconds(real_time: float, time_unit: str) -> float:
-    unit_conversions = {
-        "s": 1e6,
-        "ms": 1e3,
-        "us": 1,
-        "ns": 1e-3,
-    }
-    assert time_unit in unit_conversions, f"Unsupported time unit: {time_unit}"
-    return real_time * unit_conversions[time_unit]
+def decode_output(bench_lines):
+    benchmark_results = []
+    for line in bench_lines:
+        split = line.split()
+        if len(split) == 0:
+            continue
+        benchmark_name = split[0]
+        time = " ".join(split[1:3])
+        cpu_time = " ".join(split[3:5])
+        iterations = split[5]
+        user_counters = None
+        if len(split) > 5:
+            user_counters = split[6]
+        benchmark_results.append(
+            BenchmarkResult(
+                benchmark_name=benchmark_name,
+                time=time,
+                cpu_time=cpu_time,
+                iterations=iterations,
+                user_counters=user_counters,
+            )
+        )
+    return benchmark_results
 
 
-def write_results_to_csv(results: list[BenchmarkResult], output_filename: os.PathLike):
+def bench_summary_process(ret_value, output):
+    if ret_value == 1:
+        # Output should have already been logged earlier.
+        logging.getLogger().error("Running convolution benchmark failed. Exiting.")
+        return
+
+    bench_lines = output.decode().split("\n")[3:]
+    benchmark_results = decode_output(bench_lines)
+    logging.getLogger().info(benchmark_results)
+    benchmark_mean_time = float(benchmark_results[3].time.split()[0])
+
+    return benchmark_mean_time
+
+
+def write_results_to_csv(
+    results: list[tuple] | list[list] | list[dict], output_filename: str, fieldnames: []
+):
     if len(results) == 0:
         print("No valid results")
         return
 
-    fieldnames = [
-        "index",
-        "machine",
-        "kernel_type",
-        "backend",
-        "tag",
-        "name",
-        *list(results[0].shape.keys()),
-        "mean_microseconds",
-        "arithmetic_intensity",
-        "tflops",
-        "ok",
-    ]
+    fieldnames = fieldnames
 
     with open(output_filename, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames)
-        writer.writeheader()
+        if isinstance(results[0], list) or isinstance(results[0], tuple):
+            writer = csv.writer(f)
+            writer.writerow(fieldnames)
+        elif isinstance(results[0], dict):
+            writer = csv.DictWriter(f, fieldnames)
+            writer.writeheader()
+        else:
+            print("Invalid result format")
+            return
 
         for result in results:
-            writer.writerow(
-                {
-                    "index": result.index,
-                    "tag": result.tag,
-                    "name": result.name,
-                    "machine": result.machine,
-                    "kernel_type": result.kernel_type,
-                    "backend": result.backend,
-                    **result.shape,
-                    "mean_microseconds": result.mean_microseconds,
-                    "arithmetic_intensity": result.arithmetic_intensity,
-                    "tflops": result.tflops,
-                    "ok": result.ok,
-                }
-            )
-
-
-def write_results_to_json(results: list[BenchmarkResult], output_filename: os.PathLike):
-    if len(results) == 0:
-        print("No valid results")
-        return
-
-    output_dir = os.path.dirname(Path(output_filename))
-    if output_dir and not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-
-    results_json = [asdict(result) for result in results]
-    with open(output_filename, "w") as file:
-        json.dump(results_json, file, indent=4)
-
-
-def get_kernel_perf_stats(
-    config: OpConfig, benchmark_mean_time_us: float
-) -> Tuple[float, float]:
-    flops = config.get_flops()
-    byte_count = config.get_byte_count()
-
-    arithmetic_intensity = flops / byte_count
-    if benchmark_mean_time_us == 0:
-        tflops_per_second = 0
-    else:
-        tflops_per_second = (flops / 1e12) / (benchmark_mean_time_us / 1e6)
-
-    return arithmetic_intensity, tflops_per_second
+            writer.writerow(result)
 
 
 def filter_batch(data, b):
@@ -387,37 +292,3 @@ def reduce_configs(
         overflow_tags = next_round_overflow
 
     return selected_configs
-
-
-def load_configs(
-    config_path: os.PathLike, kernel_type: str, backend: str, config_class
-) -> List[Tuple[str, Any]]:
-    try:
-        with open(config_path, "r") as file:
-            config_data = json.load(file)
-    except:
-        return []
-
-    filtered_data = [
-        config
-        for config in config_data
-        if config["kernelType"] == kernel_type and backend in config["allowedBackends"]
-    ]
-
-    config_list = [
-        (str(config["tag"]), config_class(**config["problem"]))
-        for config in filtered_data
-    ]
-
-    return config_list
-
-
-@contextmanager
-def redirect_stderr_to_file(filepath):
-    original_stderr = sys.stderr
-    with open(filepath, "w") as f:
-        sys.stderr = f
-        try:
-            yield
-        finally:
-            sys.stderr = original_stderr

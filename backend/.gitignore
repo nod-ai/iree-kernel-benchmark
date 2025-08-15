@@ -1,6 +1,0 @@
-*.venv
-__pycache__
-test
-tmp
-*.json
-*.pem

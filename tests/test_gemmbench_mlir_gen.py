@@ -1,16 +1,14 @@
 from iree_kernel_benchmark.gemmbench.gemm_utils import (
     GemmConfig,
+    generate_mlir,
     kDynamic,
 )
-from iree_kernel_benchmark.gemmbench.iree_gemm import IREEGemmBenchmark
 from .utils import match_lines
 from iree.compiler import ir
 import pytest
 
 # These tests should contain a small sampling of the actual problem set, enough
 # to exercise most of the code paths in the MLIR generation.
-
-iree_bench = IREEGemmBenchmark("", "", [], "", "")
 
 
 @pytest.fixture(autouse=True)
@@ -31,7 +29,7 @@ def test_n_t_f16_f32_f16():
         accumulator_element_type="f32",
         result_element_type="f16",
     )
-    mlir = iree_bench._generate_mlir(cfg)
+    mlir = generate_mlir(cfg)
     match_lines(
         mlir,
         [
@@ -62,7 +60,7 @@ def test_n_t_f8_f32_f8():
         accumulator_element_type="f32",
         result_element_type="f8E4M3FNUZ",
     )
-    mlir = iree_bench._generate_mlir(cfg)
+    mlir = generate_mlir(cfg)
     match_lines(
         mlir,
         [
@@ -96,7 +94,7 @@ def test_n_t_f16_f32_f16_dynamic_dim_M():
         result_element_type="f16",
         runtime_dim=512,  # Unused, included for correctness
     )
-    mlir = iree_bench._generate_mlir(cfg)
+    mlir = generate_mlir(cfg)
     match_lines(
         mlir,
         [
@@ -132,7 +130,7 @@ def test_t_n_f16_f32_f16_dynamic_dim_N():
         result_element_type="f16",
         runtime_dim=14366,  # Unused, included for correctness
     )
-    mlir = iree_bench._generate_mlir(cfg)
+    mlir = generate_mlir(cfg)
     match_lines(
         mlir,
         [
@@ -168,7 +166,7 @@ def test_n_n_f16_f32_f16_dynamic_dim_K():
         result_element_type="f16",
         runtime_dim=4096,  # Unused, included for correctness
     )
-    mlir = iree_bench._generate_mlir(cfg)
+    mlir = generate_mlir(cfg)
     match_lines(
         mlir,
         [
@@ -197,7 +195,7 @@ def test_n_n_f16_f32_f16_dynamic_dim_M_N():
         result_element_type="f16",
         runtime_dim=512,  # Unused, included for correctness
     )
-    mlir = iree_bench._generate_mlir(cfg)
+    mlir = generate_mlir(cfg)
     match_lines(
         mlir,
         [
@@ -229,7 +227,7 @@ def test_n_t_bf16_f32_bf16():
         accumulator_element_type="f32",
         result_element_type="bf16",
     )
-    mlir = iree_bench._generate_mlir(cfg)
+    mlir = generate_mlir(cfg)
     match_lines(
         mlir,
         [
@@ -262,7 +260,7 @@ def test_t_n_f16_f32_f16():
         accumulator_element_type="f32",
         result_element_type="f16",
     )
-    mlir = iree_bench._generate_mlir(cfg)
+    mlir = generate_mlir(cfg)
     match_lines(
         mlir,
         [
@@ -295,7 +293,7 @@ def test_t_n_bf16_f32_bf16():
         accumulator_element_type="f32",
         result_element_type="bf16",
     )
-    mlir = iree_bench._generate_mlir(cfg)
+    mlir = generate_mlir(cfg)
     match_lines(
         mlir,
         [
@@ -328,7 +326,7 @@ def test_n_n_f16_f32_f16():
         accumulator_element_type="f32",
         result_element_type="f16",
     )
-    mlir = iree_bench._generate_mlir(cfg)
+    mlir = generate_mlir(cfg)
     match_lines(
         mlir,
         [
@@ -356,7 +354,7 @@ def test_n_t_i8_i32_i8():
         accumulator_element_type="i32",
         result_element_type="i8",
     )
-    mlir = iree_bench._generate_mlir(cfg)
+    mlir = generate_mlir(cfg)
     match_lines(
         mlir,
         [
