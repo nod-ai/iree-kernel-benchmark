@@ -110,7 +110,7 @@ def update_runs(
 
 def update_tuning_runs():
     db_client, dir_client = get_azure_clients()
-    runs = db_client.query_tuning_runs(("hasArtifact eq false and completed eq true"))
+    runs = db_client.query_tuning_runs("hasArtifact eq false and completed eq true")
     for run in runs:
         print(f"Saving run artifact for run {run._id}")
         save_tuning_run_artifact(run)
@@ -134,6 +134,7 @@ def update_artifacts(
         save_success = save_run_artifact(repo, completed_run, dir_client)
 
         if save_success:
+            print(f"Updating run_{completed_run._id} in db")
             db_client.update_run(
                 completed_run._id,
                 {

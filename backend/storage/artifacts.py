@@ -277,7 +277,7 @@ def save_tuning_results_from_local_path(
 
 def save_run_artifact(
     repo: Repository.Repository, run_data: BenchmarkRun, dir_client: DirectoryClient
-) -> Optional[os.PathLike]:
+) -> bool:
     run = repo.get_workflow_run(int(run_data._id))
     artifacts = run.get_artifacts()
 
@@ -287,12 +287,13 @@ def save_run_artifact(
 
         if len(artifact_kernels) == 0:
             print("Failed to parse artifact")
-            return None
+            return False
 
         save_results_from_local_path(dir_client, artifact_path, run_data.blobName)
+        return True
 
     print("No artifact returned by run")
-    return None
+    return False
 
 
 def save_tuning_run_artifact(tuning_run_data: TuningRun) -> bool:
