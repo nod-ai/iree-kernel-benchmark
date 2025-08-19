@@ -58,22 +58,19 @@ class WaveUpdateListener:
             "Authorization": f"Bearer {token}",
             "X-GitHub-Api-Version": "2022-11-28",
         }
-        if TESTING_MODE:
-            body = {"ref": "main"}
-        else:
-            body = {
-                "ref": "tuning",
-                "inputs": {
-                    "iterations": str(BENCH_ITERATIONS),
-                    "max_kernels": str(MAX_BENCH_KERNELS),
-                    "selected_backend": "all" if RUN_ALL_BACKENDS else "wave",
-                    "pr_repository": repo_name,
-                    "pr_branch": branch_name,
-                    "pr_headsha": head_sha,
-                },
-            }
-            if metadata:
-                body["inputs"]["metadata"] = json.dumps(metadata)
+        body = {
+            "ref": "kernel-dashboard",
+            "inputs": {
+                "iterations": str(BENCH_ITERATIONS),
+                "max_kernels": str(MAX_BENCH_KERNELS),
+                "selected_backend": "all" if RUN_ALL_BACKENDS else "wave",
+                "pr_repository": repo_name,
+                "pr_branch": branch_name,
+                "pr_headsha": head_sha,
+            },
+        }
+        if metadata:
+            body["inputs"]["metadata"] = json.dumps(metadata)
 
         response = requests.post(url, headers=headers, json=body)
         if response.status_code != 204:

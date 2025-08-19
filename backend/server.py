@@ -123,7 +123,7 @@ def tune_kernels():
 
     dispatch_success = trigger_workflow_dispatch(
         "bench",
-        "tuning",
+        "kernel-dashboard",
         "tune_kernels.yml",
         {
             "config_url": json_url,

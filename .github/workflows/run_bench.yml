@@ -3,7 +3,7 @@ name: Performance
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 9 * * *"
+    - cron: "0 7 * * *"
 
 concurrency:
   # A PR number if a pull request and otherwise the commit hash. This cancels
@@ -46,32 +46,32 @@ jobs:
       - name: Attention - Wave
         run: |
           source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.attentionbench --backend=wave --iterations=5
+          python -m iree_kernel_benchmark.attentionbench --backend=wave --iterations=1
 
       - name: Attention - Wave GQA
         run: |
           source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.attentionbench --backend=wavegqa --iterations=5
+          python -m iree_kernel_benchmark.attentionbench --backend=wavegqa --iterations=1
 
       - name: Attention - IREE
         run: |
           source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.attentionbench --backend=iree --iterations=5
+          python -m iree_kernel_benchmark.attentionbench --backend=iree --iterations=1
 
       - name: Attention - Torch
         run: |
           source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.attentionbench --backend=torch --iterations=5
+          python -m iree_kernel_benchmark.attentionbench --backend=torch --iterations=10
 
       - name: GEMM - Wave
         run: |
           source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.gemmbench --variants=NT --backend=wave --iterations=5
+          python -m iree_kernel_benchmark.gemmbench --variants=NT --backend=wave --iterations=1
 
       - name: GEMM - IREE
         run: |
           source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.gemmbench --backend=iree --iterations=5
+          python -m iree_kernel_benchmark.gemmbench --backend=iree --iterations=1
 
       - name: GEMM - Torch
         run: |
@@ -81,12 +81,12 @@ jobs:
       - name: Convolutions - Wave
         run: |
           source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.convbench --backend=wave --iterations=5
+          python -m iree_kernel_benchmark.convbench --backend=wave --iterations=1
 
       - name: Convolutions - IREE
         run: |
           source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.convbench --backend=iree --iterations=5
+          python -m iree_kernel_benchmark.convbench --backend=iree --iterations=1
 
       - name: Upload benchmark results
         uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
