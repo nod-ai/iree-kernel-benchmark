@@ -1,8 +1,14 @@
 from uuid import uuid4
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, make_response
 from flask_cors import CORS
 import json
 from dataclass_wizard import fromdict, asdict
+from functools import wraps
+import jwt
+from datetime import datetime, timezone, timedelta
+import os
+from werkzeug.security import check_password_hash, generate_password_hash
+from dotenv import load_dotenv
 
 from storage.runs import trigger_workflow_dispatch, upload_json_to_gist
 from storage.rebase import rebase_all
@@ -17,12 +23,89 @@ from storage.artifacts import (
 db_client, directory_client = get_azure_clients()
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, supports_credentials=True)
+
+load_dotenv()
+app.config["SECRET_KEY"] = os.getenv("PEM_FILE")
+app.config["PASSWORD_HASH"] = os.getenv("PASSWORD_HASH")
 
 
 @app.route("/")
 def home():
     return jsonify({"message": "Flask server with CORS is running on port 3000."})
+
+
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = request.headers.get("Authorization")
+
+        if not token:
+            return jsonify({"message": "Token is missing"}), 401
+
+        try:
+            if token.startswith("Bearer "):
+                token = token[7:]
+
+            data = jwt.decode(token, app.config["SECRET_KEY"], algorithms=["HS256"])
+        except jwt.ExpiredSignatureError:
+            return jsonify({"message": "Token has expired"}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({"message": "Token is invalid"}), 401
+
+        return f(*args, **kwargs)
+
+    return decorated
+
+
+@app.route("/auth/login", methods=["POST"])
+def login():
+    data = request.get_json()
+    password = data.get("password")
+
+    if not password:
+        return jsonify({"message": "Password is required"}), 400
+
+    if check_password_hash(app.config["PASSWORD_HASH"], password):
+        token = jwt.encode(
+            {"exp": datetime.now(timezone.utc) + timedelta(minutes=30)},
+            app.config["SECRET_KEY"],
+            algorithm="HS256",
+        )
+
+        response = make_response(jsonify({"message": "Login successful"}))
+        response.set_cookie(
+            "auth_token",
+            token,
+            max_age=30 * 60,
+            httponly=True,
+            secure=True,
+            samesite="Lax",
+        )
+        return response
+
+    return jsonify({"message": "Invalid password"}), 401
+
+
+@app.route("/auth/verify", methods=["GET"])
+def verify():
+    token = request.cookies.get("auth_token")
+
+    if not token:
+        return jsonify({"authenticated": False}), 200
+
+    try:
+        jwt.decode(token, app.config["SECRET_KEY"], algorithms=["HS256"])
+        return jsonify({"authenticated": True}), 200
+    except:
+        return jsonify({"authenticated": False}), 200
+
+
+@app.route("/auth/logout", methods=["POST"])
+def logout():
+    response = make_response(jsonify({"message": "Logout successful"}))
+    response.set_cookie("auth_token", "", expires=0)
+    return response
 
 
 @app.route("/pull_requests")
