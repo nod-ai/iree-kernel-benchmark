@@ -21,6 +21,24 @@ TEST = r"""util.func public @{FUNC_NAME}({FUNC_ARGS}) -> tensor<{OUT_TYPE}> {{{C
 """
 
 
+class ConvTuningSpec(TuningSpec):
+    BLOCK_M: int = 64
+    BLOCK_N: int = 128
+    BLOCK_K: int = 32
+
+    def to_dict(self):
+        return {
+            "BLOCK_M": self.BLOCK_M,
+            "BLOCK_N": self.BLOCK_N,
+            "BLOCK_K": self.BLOCK_K,
+        }
+
+    def load_from_dict(self, obj):
+        self.BLOCK_M = obj["BLOCK_M"]
+        self.BLOCK_N = obj["BLOCK_N"]
+        self.BLOCK_K = obj["BLOCK_K"]
+
+
 @dataclass
 class ConvConfig(OpConfig):
     N: int
@@ -84,16 +102,8 @@ class ConvConfig(OpConfig):
             return f"{n}x{nf}x{h_out}x{w_out}x{self.output_dtype}"
 
     def get_byte_count(self) -> int:
-        dtype_bits_map = {
-            "f32": 32,
-            "f16": 16,
-            "bf16": 16,
-            "f8E4M3FNUZ": 8,
-            "i8": 8,
-            "i32": 32,
-        }
-        bytes_per_input = dtype_bits_map[self.input_dtype] // 8
-        bytes_per_output = dtype_bits_map[self.output_dtype] // 8
+        bytes_per_input = dtype_to_bytes(self.input_dtype)
+        bytes_per_output = dtype_to_bytes(self.output_dtype)
         batch = self.N
         in_h = self.H * self.S + self.P - 1
         in_w = self.W * self.S + self.Q - 1
@@ -115,6 +125,10 @@ class ConvConfig(OpConfig):
             + (k_width * k_height * input_channels * output_channels * bytes_per_input)
         )
         return byte_count
+
+    def get_shared_mem_bytes(self, spec):
+        bytes_per_element = dtype_to_bytes(self.input_dtype)
+        return 200 * bytes_per_element
 
     def get_flops(self) -> int:
         batch = self.N
@@ -148,10 +162,8 @@ class ConvConfig(OpConfig):
 
         return runtime_args
 
+    def decode_op(self) -> tuple[str, str]:
+        if self.OP.startswith("conv_2d_"):
+            return "conv_2d", self.OP[len("conv_2d_") :]
 
-@dataclass
-class ConvTuningSpec(TuningSpec):
-    BLOCK_M: int
-    BLOCK_N: int
-    BLOCK_K: int
-    ELEMS_PER_THREAD: int
+        raise ValueError(f"Unsupported op: {self.OP}")

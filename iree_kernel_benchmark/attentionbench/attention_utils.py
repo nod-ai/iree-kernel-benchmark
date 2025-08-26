@@ -3,6 +3,8 @@ from dataclasses import dataclass
 from typing import Optional
 from enum import Enum
 from typing import Optional
+from sympy import symbols
+from wave_lang.kernel.wave.constraints import MMAType
 
 
 class IntrinsicType(Enum):
@@ -49,7 +51,7 @@ class IntrinsicType(Enum):
 def get_intrinsic_string(intrinsic: IntrinsicType):
     match intrinsic:
         case IntrinsicType.VMFMA_F32_32x32x16_F16:
-            return f"#iree_gpu.virtual_mma_layout<intrinsic = {intrinsic.name}>"
+            return f"#iree_gpu.virtual_mma_layout<{intrinsic.name}>"
         case _:
             return f"#iree_gpu.mma_layout<{intrinsic.name}>"
 
@@ -134,16 +136,58 @@ class IREEAttentionTuningSpec:
 
 @dataclass
 class AttentionBMNKTuningSpec(TuningSpec):
-    BLOCK_B: int
-    BLOCK_M: int
-    BLOCK_N: int
-    BLOCK_K2: int
+    BLOCK_B: int = 1
+    BLOCK_M: int = 128
+    BLOCK_N: int = 64
+    BLOCK_K2: int = 64
+
+    mfma_variant: Tuple[MMAType]
+
+    def to_dict(self):
+        return {
+            "BLOCK_B": self.BLOCK_B,
+            "BLOCK_M": self.BLOCK_M,
+            "BLOCK_N": self.BLOCK_N,
+            "BLOCK_K2": self.BLOCK_K2,
+            "mfma_variant": [mfma_type.name for mfma_type in self.mfma_variant],
+        }
+
+    def load_from_dict(self, obj):
+        self.BLOCK_B = obj["BLOCK_B"]
+        self.BLOCK_M = obj["BLOCK_M"]
+        self.BLOCK_N = obj["BLOCK_N"]
+        self.BLOCK_K2 = obj["BLOCK_K2"]
+        self.mfma_variant = tuple(
+            MMAType[mfma_name] for mfma_name in obj["mfma_variant"]
+        )
 
 
 @dataclass
 class AttentionBSHDTuningSpec(TuningSpec):
-    BLOCK_B: int
-    BLOCK_H: int
-    BLOCK_N_Q: int
-    BLOCK_D_KV: int
-    BLOCK_N_KV: int
+    BLOCK_B: int = 1
+    BLOCK_H: int = 1
+    BLOCK_N_Q: int = 128
+    BLOCK_D_KV: int = 64
+    BLOCK_N_KV: int = 64
+
+    mfma_variant: Tuple[MMAType]
+
+    def to_dict(self):
+        return {
+            "BLOCK_B": self.BLOCK_B,
+            "BLOCK_H": self.BLOCK_H,
+            "BLOCK_N_Q": self.BLOCK_N_Q,
+            "BLOCK_D_KV": self.BLOCK_D_KV,
+            "BLOCK_N_KV": self.BLOCK_N_KV,
+            "mfma_variant": [mfma_type.name for mfma_type in self.mfma_variant],
+        }
+
+    def load_from_dict(self, obj):
+        self.BLOCK_B = obj["BLOCK_B"]
+        self.BLOCK_H = obj["BLOCK_H"]
+        self.BLOCK_N_Q = obj["BLOCK_N_Q"]
+        self.BLOCK_D_KV = obj["BLOCK_D_KV"]
+        self.BLOCK_N_KV = obj["BLOCK_N_KV"]
+        self.mfma_variant = tuple(
+            MMAType[mfma_name] for mfma_name in obj["mfma_variant"]
+        )

@@ -1,26 +1,55 @@
-import os
-from tqdm import tqdm
 from multiprocessing import Pool, cpu_count, Manager
 import logging
-import itertools
+from typing import Literal
 from pathlib import Path
-import csv
+import json
 import argparse
 import sys
-import re
-from collections import OrderedDict
-
 from wave_lang.kernel.wave.constraints import MMAType
-from ..utils import *
-from .conv_utils import *
-from .problems import get_conv_configs, get_tk_conv_configs, get_conv_test_configs
 
-from .wave_conv import WaveConvBenchmark
-from .iree_conv import IREEConvBenchmark
+from .attentionbench.attention_config import AttentionConfigBMNK
+from .convbench.conv_utils import ConvConfig
+from .gemmbench.gemm_utils import GemmConfig
 
-BACKEND_TO_CONV_BENCH = {
-    "wave": WaveConvBenchmark,
-    "iree": IREEConvBenchmark,
+from .utils import *
+
+from .gemmbench import (
+    GEMM_BENCH,
+    get_default_gemm_configs,
+    get_gemm_tuning,
+)
+from .attentionbench import (
+    ATTENTION_BENCH,
+    get_default_attention_configs,
+    get_attention_tuning,
+)
+from .convbench import (
+    CONV_BENCH,
+    get_default_conv_configs,
+    get_conv_tuning,
+)
+
+BENCHMARKS: dict[str, dict[str, KernelBenchmark]] = {}
+BENCHMARKS.update(GEMM_BENCH)
+BENCHMARKS.update(ATTENTION_BENCH)
+BENCHMARKS.update(CONV_BENCH)
+
+LOAD_PROBLEMS = {
+    "gemm": get_default_gemm_configs,
+    "attention": get_default_attention_configs,
+    "conv": get_default_conv_configs,
+}
+
+TUNING_CONFIGS = {
+    "gemm": get_gemm_tuning,
+    "attention": get_attention_tuning,
+    "conv": get_conv_tuning,
+}
+
+CONFIG_CLASSES = {
+    "gemm": GemmConfig,
+    "attention": AttentionConfigBMNK,
+    "conv": ConvConfig,
 }
 
 if __name__ == "__main__":
@@ -44,22 +73,6 @@ if __name__ == "__main__":
         type=str,
         default="mi325x",
     )
-    parser.add_argument(
-        "--Xiree_compile",
-        nargs="+",
-        default=[],
-        help="Extra command line arguments passed to the IREE compiler. The flags need to be specified without the `--` or `-`.",
-    )
-    parser.add_argument(
-        "--filter-config",
-        help="Only execute configs matching the provided regex",
-        type=str,
-    )
-    parser.add_argument(
-        "--roofline",
-        help="Comma seperated csv file list to generate roofline plot with",
-        default=None,
-    )
     parser.add_argument("--plot", help="location to save plot", default=None)
     parser.add_argument(
         "--batch", help="roofline on certain batch", type=int, default=None
@@ -67,10 +80,16 @@ if __name__ == "__main__":
     parser.add_argument("--dtype", help="roofline on certain dtype", default=None)
     parser.add_argument("--model", help="roofline on certain model", default=None)
     parser.add_argument(
+        "--kernel_type",
+        type=str,
+        required=True,
+        help="Kernel Type (eg: attention, gemm, conv, etc.)",
+    )
+    parser.add_argument(
         "--backend",
-        choices=["iree", "wave", "wavegqa", "torch"],
-        default="iree",
-        help="Backend to run kernels",
+        type=str,
+        required=True,
+        help="Backend to run kernels (eg: wave, iree, torch, etc.)",
     )
     parser.add_argument(
         "--dump_dir",
@@ -102,6 +121,9 @@ if __name__ == "__main__":
         help="Path to json file with tuned results.",
     )
     parser.add_argument(
+        "--title", type=str, default=None, help="Title of run for save path"
+    )
+    parser.add_argument(
         "--max_kernels",
         type=int,
         default=None,
@@ -114,41 +136,31 @@ if __name__ == "__main__":
     args = parser.parse_args()
     logging.basicConfig(level=args.log_level)
 
-    if args.roofline:
-        roofline(args.roofline, args.plot, args.batch, args.dtype, args.model)
-        sys.exit()
+    kernel_type = str(args.kernel_type)
+    backend_name = str(args.backend)
 
-    backend_name = args.backend
+    mfma_config = (MMAType.F32_32x32x16_K8_F16, MMAType.F32_32x32x16_K8_F16)
 
-    configs = []
+    configs: list[tuple[str, OpConfig]] = []
     if args.load_problems:
         configs = load_configs(
-            args.load_problems,
-            "conv",
-            backend_name,
-            ConvConfig,
+            args.load_problems, kernel_type, backend_name, CONFIG_CLASSES[kernel_type]
         )
         if args.tune and len(configs) == 0:
             exit(0)
 
     if len(configs) == 0:
-        configs = get_tk_conv_configs()
-
-    if args.filter_config is not None:
-        filter_regex = re.compile(args.filter_config)
-        configs = list(
-            filter(lambda config: filter_regex.match(config[1].get_name()), configs)
-        )
+        configs = LOAD_PROBLEMS[kernel_type](kernel_type, backend_name)
 
     repo_root = Path(__file__).parent.parent
     kernel_dir = repo_root / "kernels"
     dump_dir = Path(args.dump_dir) if args.dump_dir else None
-    kernel_dir.mkdir(parents=True, exist_ok=True)
     device = args.device
+    kernel_dir.mkdir(parents=True, exist_ok=True)
 
     bench_params = {
         "backend": backend_name,
-        "kernel_type": "conv",
+        "kernel_type": kernel_type,
         "device": device,
         "machine": args.machine,
         "configs": configs,
@@ -158,29 +170,40 @@ if __name__ == "__main__":
         "num_iterations": args.iterations,
     }
 
-    bench: KernelBenchmark = BACKEND_TO_CONV_BENCH[backend_name](**bench_params)
+    if kernel_type not in BENCHMARKS:
+        print(f"Kernel Type {kernel_type} is currently unsupported.")
+        exit(1)
+
+    if backend_name not in BENCHMARKS[kernel_type]:
+        print(
+            f"Backend {backend_name} is currently unsupported for {kernel_type} benchmarking."
+        )
+        exit(1)
+
+    bench: KernelBenchmark = BENCHMARKS[kernel_type][backend_name](**bench_params)
     bench.reduce_configs(args.max_kernels)
-    print(f"Generated {len(bench.configs)} gemm configs.")
+    print(
+        f"Generated {len(bench.configs)} {kernel_type} configs for backend {backend_name}."
+    )
+
+    tuning_config = TUNING_CONFIGS[kernel_type](kernel_type, backend_name)
+    tuning_spec_class, tiling_constraints, mfma_configs = tuning_config
 
     if args.tune:
-        mfma_configs: List[MMAType] = [
-            MMAType.F32_16x16x16_F16,
-        ]
-        tiling_constraints: List[TuningConstraint] = [
-            TuningConstraint(name="BLOCK_M", min=16, max=256, step=8),
-            TuningConstraint(name="BLOCK_N", min=16, max=256, step=8),
-            TuningConstraint(name="BLOCK_K", min=16, max=128, step=4),
-            TuningConstraint(name="ELEMS_PER_THREAD", min=4, max=4, step=1),
-        ]
-        bench.tune_kernels(
-            mfma_configs, tiling_constraints, ConvTuningSpec, num_trials=args.num_trials
-        )
+        # bench.tune_kernels(
+        #     mfma_configs,
+        #     tiling_constraints,
+        #     tuning_spec_class,
+        #     num_trials=args.num_trials,
+        # )
+        bench.tune_scheduling(max_iterations=args.num_trials)
+
     else:
         if args.use_tuned:
-            bench.load_tuned_results(args.use_tuned, ConvTuningSpec)
+            bench.load_tuned_results(args.use_tuned, tuning_spec_class)
 
-        if backend_name in ["iree", "wave"]:
+        if backend_name in ["torch"]:
+            bench.benchmark_kernels_extern()
+        else:
             bench.compile_kernels()
             bench.benchmark_kernels()
-        else:
-            bench.benchmark_kernels_extern()

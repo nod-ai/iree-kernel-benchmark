@@ -14,10 +14,31 @@ import warnings
 import random
 import torch
 import json
-from typing import Any, List, Tuple, Dict
+from typing import Any, List, Tuple, Dict, Type
 from contextlib import contextmanager
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, asdict
+import iree.runtime as ireert
+
+import sympy
+import wave_lang.kernel.lang as tkl
+from wave_lang.kernel._support.indexing import index_symbol
+
+
+class TuningSpec(ABC):
+    def __init__(self, obj: dict[str, Any]):
+        self.load_from_dict(obj)
+
+    def hyperparams(self) -> dict[tkl.IndexSymbol, int]:
+        return {index_symbol(attr): val for attr, val in self.__dict__.items()}
+
+    @abstractmethod
+    def to_dict(self) -> dict[str, Any]:
+        pass
+
+    @abstractmethod
+    def load_from_dict(self, obj: dict[str, Any]):
+        pass
 
 
 @dataclass
@@ -36,6 +57,10 @@ class OpConfig(ABC):
 
     @abstractmethod
     def get_runtime_args(self, backend_name: str) -> List[str]:
+        pass
+
+    @abstractmethod
+    def get_shared_mem_bytes(self, spec: Dict[str, Any]) -> int:
         pass
 
     def to_dict(self) -> Dict[str, Any]:
@@ -181,18 +206,23 @@ def write_results_to_csv(results: list[BenchmarkResult], output_filename: os.Pat
             )
 
 
+def write_to_json_file(data: Any, output_filename: os.PathLike, indent=4):
+    output_dir = os.path.dirname(Path(output_filename))
+    if output_dir and not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    with open(output_filename, "w") as file:
+        json.dump(data, file, indent=indent)
+
+
 def write_results_to_json(results: list[BenchmarkResult], output_filename: os.PathLike):
     if len(results) == 0:
         print("No valid results")
         return
 
-    output_dir = os.path.dirname(Path(output_filename))
-    if output_dir and not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-
     results_json = [asdict(result) for result in results]
-    with open(output_filename, "w") as file:
-        json.dump(results_json, file, indent=4)
+
+    write_to_json_file(results_json, output_filename)
 
 
 def get_kernel_perf_stats(
@@ -391,7 +421,7 @@ def reduce_configs(
 
 def load_configs(
     config_path: os.PathLike, kernel_type: str, backend: str, config_class
-) -> List[Tuple[str, Any]]:
+) -> List[Tuple[str, OpConfig]]:
     try:
         with open(config_path, "r") as file:
             config_data = json.load(file)
@@ -410,6 +440,67 @@ def load_configs(
     ]
 
     return config_list
+
+
+def bench_kernel_ireert(
+    vmfb_filename: os.PathLike,
+    iree_args: List[str],
+    num_iterations: int = 3,
+    device: str = None,
+) -> Tuple[float, bool]:
+
+    # print(
+    #     f'iree-benchmark-module --device={device} --module={vmfb_filename} {" ".join(iree_args)}'
+    # )
+
+    extra_flags = {}
+    func_name = None
+    inputs = []
+    for flag in iree_args:
+        split_key_value = flag[2:].split("=")
+        key = split_key_value[0]
+        value = "=".join(split_key_value[1:])
+        if key == "function":
+            func_name = value
+            continue
+        if key == "input":
+            inputs.append(value)
+            continue
+        extra_flags[key] = value
+
+    try:
+        bench_results = ireert.benchmark.benchmark_module(
+            vmfb_filename,
+            entry_function=func_name,
+            inputs=inputs,
+            device=device,
+            device_allocator="caching",
+            benchmark_repetitions=num_iterations,
+            **extra_flags,
+        )
+    except Exception as e:
+        print(e)
+        return 0, False
+
+    times = []
+    for bench_result in bench_results:
+        bench_name = bench_result.benchmark_name
+        if bench_name.split("/")[-1] == "real_time":
+            time_and_unit = bench_result.time.split(" ")
+            assert (
+                len(time_and_unit) == 2
+            ), "expected the benchmark time to be the time and unit separated by a space."
+            time_us = unit_to_microseconds(
+                real_time=float(time_and_unit[0]),
+                time_unit=time_and_unit[1],
+            )
+            times.append(time_us)
+
+    if len(times) == 0:
+        return 0, False
+
+    benchmark_mean_time_us = sum(times) / float(len(times))
+    return benchmark_mean_time_us, True
 
 
 @contextmanager

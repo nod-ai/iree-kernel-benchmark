@@ -30,6 +30,31 @@ from wave_lang.kernel.wave.scheduling.schedule_enums import SchedulingType
 
 class WaveAttentionMHABenchmark(KernelBenchmark):
     @override
+    def load_kernel(self, config, mfma_variant=None, spec=None):
+        try:
+            if not mfma_variant:
+                mfma_variant = (
+                    MMAType.F32_32x32x16_K8_F16,
+                    MMAType.F32_32x32x8_F16,
+                )
+
+            base_attention, hyperparams, dynamic_symbols = get_vanilla_attention_kernel(
+                shape=bmnk1k2_to_attention_attributes(config),
+                mfma_variant=mfma_variant,
+                dynamic_dims=False,
+            )
+
+            if spec:
+                hyperparams.update(spec.hyperparams())
+
+            hyperparams.update(get_default_scheduling_params())
+
+            return base_attention, hyperparams
+
+        except:
+            return None
+
+    @override
     def compile_kernel(
         self,
         config: AttentionConfigBMNK,
@@ -65,7 +90,8 @@ class WaveAttentionMHABenchmark(KernelBenchmark):
                 iree_launch_async=False,
                 backend="rocm",
                 target=self.target,
-                print_ir_after_all=self.dump_dir is not None,
+                use_buffer_ops=True,
+                # print_ir_after_all=self.dump_dir is not None,
             )
 
             if self.dump_dir:
@@ -125,7 +151,7 @@ class WaveAttentionGQABenchmark(KernelBenchmark):
                 iree_launch_async=False,
                 backend="rocm",
                 target=self.target,
-                print_ir_after_all=self.dump_dir is not None,
+                # print_ir_after_all=self.dump_dir is not None,
             )
 
             if self.dump_dir:

@@ -3,7 +3,9 @@ from typing import Union, Optional, Literal
 import math
 from abc import ABC, abstractmethod
 
-from ..utils.template import OpConfig
+from .attention_utils import AttentionBMNKTuningSpec, AttentionBSHDTuningSpec
+
+from ..utils import dtype_to_bytes, OpConfig
 
 
 @dataclass
@@ -31,15 +33,7 @@ class AttentionConfigBMNK(OpConfig):
         return f"{self.B}x{self.M}x{self.N}x{self.dtype}"
 
     def get_byte_count(self) -> int:
-        dtype_bits_map = {
-            "f32": 32,
-            "f16": 16,
-            "bf16": 16,
-            "f8E4M3FNUZ": 8,
-            "i8": 8,
-            "i32": 32,
-        }
-        bytes_per_element = dtype_bits_map[self.dtype] // 8
+        bytes_per_element = dtype_to_bytes(self.dtype)
         element_count = (
             (self.B * self.M * self.K1)
             + (self.B * self.K2 * self.K1)
@@ -48,6 +42,18 @@ class AttentionConfigBMNK(OpConfig):
         )
         byte_count = element_count * bytes_per_element
         return byte_count
+
+    def get_shared_mem_bytes(self, spec: AttentionBMNKTuningSpec):
+        bytes_per_element = dtype_to_bytes(self.dtype)
+        max_element_count = max(
+            [
+                spec.BLOCK_B * spec.BLOCK_M * self.K1,
+                spec.BLOCK_B * spec.BLOCK_K2 * self.K1,
+                spec.BLOCK_B * spec.BLOCK_K2 * spec.BLOCK_N,
+                spec.BLOCK_B * spec.BLOCK_M * spec.BLOCK_N,
+            ]
+        )
+        return max_element_count * bytes_per_element
 
     def get_flops(self) -> int:
         qk_matmul_flops = 2 * self.B * self.M * self.K2 * self.K1
@@ -101,15 +107,7 @@ class AttentionConfigBSHD(OpConfig):
         return f"{self.B}x{self.N_Q}x{self.H}x{self.D_KV}x{self.dtype}"
 
     def get_byte_count(self) -> int:
-        dtype_bits_map = {
-            "f32": 32,
-            "f16": 16,
-            "bf16": 16,
-            "f8E4M3FNUZ": 8,
-            "i8": 8,
-            "i32": 32,
-        }
-        bytes_per_element = dtype_bits_map[self.dtype] // 8
+        bytes_per_element = dtype_to_bytes(self.dtype)
         element_count = (
             (self.B * self.N_Q * self.H * self.D_Q)  # Query
             + (self.B * self.N_KV * self.H_KV * self.D_Q)  # Key
@@ -118,6 +116,18 @@ class AttentionConfigBSHD(OpConfig):
         )
         byte_count = element_count * bytes_per_element
         return byte_count
+
+    def get_shared_mem_bytes(self, spec: AttentionBSHDTuningSpec):
+        bytes_per_element = dtype_to_bytes(self.dtype)
+        max_element_count = max(
+            [
+                spec.BLOCK_B * spec.BLOCK_N_Q * spec.BLOCK_H * self.D_Q,
+                spec.BLOCK_B * spec.BLOCK_N_KV * spec.BLOCK_H * self.D_Q,
+                spec.BLOCK_B * spec.BLOCK_N_KV * spec.BLOCK_H * spec.BLOCK_D_KV,
+                spec.BLOCK_B * spec.BLOCK_N_Q * spec.BLOCK_H * spec.BLOCK_D_KV,
+            ]
+        )
+        return max_element_count * bytes_per_element
 
     def get_flops(self) -> int:
         # QK matmul: (B, N_Q, H, D_Q) x (B, N_KV, H_KV, D_Q) -> (B, H, N_Q, N_KV)

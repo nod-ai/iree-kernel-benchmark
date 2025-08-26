@@ -10,9 +10,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Callable, Type
 from wave_lang.kernel.wave.constraints import MMAType
 
-from iree_kernel_benchmark.utils.wave_utils import TuningSpec
-from .parallel import ParallelProgressManager
-from .bench_utils import OpConfig, get_kernel_perf_stats
+from ..parallel import ParallelProgressManager
+from ..bench_utils import OpConfig, get_kernel_perf_stats, TuningSpec
 
 
 @dataclass
@@ -110,6 +109,9 @@ def tune_config_worker(wargs: TuningWorkerConfig):
 
         tuning_spec = wargs.tuning_class(**tuning_spec_params)
 
+        shared_mem_constraint = kernel.get_shared_mem_bytes(tuning_spec) - 65536
+        trial.set_user_attr("constraint", (shared_mem_constraint,))
+
         mfma_config = mfma_configs[
             trial.suggest_categorical("MFMA_INDEX", list(range(len(mfma_configs))))
         ]
@@ -128,7 +130,7 @@ def tune_config_worker(wargs: TuningWorkerConfig):
                 mlir_path,
                 vmfb_path,
                 mfma_variant=mfma_config,
-                spec=tuning_spec if wargs.num_trials > 0 else None,
+                spec=tuning_spec,
             )
             if not compile_success:
                 raise Exception(f"Compiling kernel {config_name} failed")
@@ -153,8 +155,22 @@ def tune_config_worker(wargs: TuningWorkerConfig):
 
         return runtime
 
+    def constraints(trial: optuna.Trial):
+        return trial.user_attrs["constraint"]
+
     optuna.logging.set_verbosity(optuna.logging.WARNING)
-    study = optuna.create_study(direction="minimize")
+    sampler = optuna.samplers.NSGAIISampler(constraints_func=constraints)
+    study = optuna.create_study(direction="minimize", sampler=sampler)
+
+    # Add default tuning spec to study
+    for i in range(len(mfma_configs)):
+        study.enqueue_trial(
+            {
+                **wargs.tuning_class().hyperparams(),
+                "MFMA_INDEX": i,
+            }
+        )
+
     study.optimize(
         objective,
         n_trials=wargs.num_trials,

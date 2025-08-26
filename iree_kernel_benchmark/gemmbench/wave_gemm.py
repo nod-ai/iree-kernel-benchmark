@@ -22,7 +22,6 @@ class WaveGemmBenchmark(KernelBenchmark):
         mlir_path,
         vmfb_path,
         extra_compiler_args=...,
-        mfma_variant=None,
         spec=None,
     ):
         try:
@@ -45,7 +44,8 @@ class WaveGemmBenchmark(KernelBenchmark):
                 mfma_variant=mfma_variant,
             )
 
-            if spec:
+            if hyperparams:
+                spec = GemmTuningSpec(spec)
                 hyperparams.update(spec.hyperparams())
             hyperparams.update(get_default_scheduling_params())
 
@@ -56,9 +56,7 @@ class WaveGemmBenchmark(KernelBenchmark):
                 run_bench=False,
                 target=self.target,
                 schedule=SchedulingType.PREFETCH,
-                use_buffer_load_ops=True,
-                use_buffer_store_ops=True,
-                use_stride_cache_swizzle=True,
+                use_buffer_ops=True,
                 iree_launch_async=False,
             )
 

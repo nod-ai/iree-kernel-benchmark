@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Optional, Tuple, override
 
 from iree_kernel_benchmark.utils.template import OpConfig
+from wave_lang.kernel.wave.constraints import MMAType
 from ..utils import *
 from iree.compiler import ir
 
@@ -21,6 +22,31 @@ def num_bytes(dtype: str) -> int:
         "i32": 4,
     }
     return dtype_to_bytes[dtype]
+
+
+class GemmTuningSpec(TuningSpec):
+    BLOCK_M: int = 128
+    BLOCK_N: int = 256
+    BLOCK_K: int = 64
+    GROUP_SIZE_M: int = 8
+
+    mfma_variant: MMAType
+
+    def to_dict(self):
+        return {
+            "BLOCK_M": self.BLOCK_M,
+            "BLOCK_N": self.BLOCK_N,
+            "BLOCK_K": self.BLOCK_K,
+            "GROUP_SIZE_M": self.GROUP_SIZE_M,
+            "mfma_variant": self.mfma_variant.name,
+        }
+
+    def load_from_dict(self, obj):
+        self.BLOCK_M = obj["BLOCK_M"]
+        self.BLOCK_N = obj["BLOCK_N"]
+        self.BLOCK_K = obj["BLOCK_K"]
+        self.GROUP_SIZE_M = obj["GROUP_SIZE_M"]
+        self.mfma_variant = MMAType[obj["mfma_variant"]]
 
 
 @dataclass
@@ -89,6 +115,17 @@ class GemmConfig(OpConfig):
         byte_count_output = (M * N) * result_bytes_per_element
         return byte_count_input + byte_count_output
 
+    def get_shared_mem_bytes(self, spec):
+        spec = GemmTuningSpec(spec)
+
+        return max(
+            [
+                spec.BLOCK_M * spec.BLOCK_K,
+                spec.BLOCK_K * spec.BLOCK_N,
+                spec.BLOCK_M * spec.BLOCK_N,
+            ]
+        )
+
     @override
     def get_flops(self) -> int:
         M, N, K = self.get_runtime_dims()
@@ -123,11 +160,3 @@ class GemmConfig(OpConfig):
             runtime_args += ["--function=main"]
 
         return runtime_args
-
-
-@dataclass
-class GemmTuningSpec(TuningSpec):
-    BLOCK_M: int
-    BLOCK_N: int
-    BLOCK_K: int
-    GROUP_SIZE_M: int

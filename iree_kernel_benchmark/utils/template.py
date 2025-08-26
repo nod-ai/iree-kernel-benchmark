@@ -1,12 +1,7 @@
-from collections import defaultdict
-import math
+import datetime
 import os
-import random
-import optuna
 from tqdm import tqdm
 from multiprocessing import Pool, cpu_count, Manager
-import threading
-from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, field
 import itertools
 import pandas as pd
@@ -14,15 +9,18 @@ import time
 import json
 from os import PathLike
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Type
+from typing import Any, Dict, List, Optional, Tuple, Type, override
 
+from wave_lang.kernel.wave.wave import LaunchableWave
 from wave_lang.kernel.wave.constraints import MMAType
-import iree.runtime as ireert
 
-from .tuning import TuningConstraint, tune_kernels_parallel
+from .tuning import tune_kernel_schedule, TuningConstraint, tune_kernels_parallel
+
 from .bench_utils import (
     BenchmarkResult,
+    bench_kernel_ireert,
     machine_to_hip_target,
+    redirect_stderr_to_file,
     unit_to_microseconds,
     get_kernel_perf_stats,
     run_iree_command,
@@ -31,9 +29,9 @@ from .bench_utils import (
     OpConfig,
     ConfigList,
     write_results_to_json,
+    write_to_json_file,
 )
-from .parallel import ParallelProgressManager
-from .wave_utils import TuningSpec
+from .bench_utils import TuningSpec
 
 
 @dataclass
@@ -48,8 +46,7 @@ class KernelBenchmark:
     dump_dir: Optional[Path] = None
     debug: bool = False
 
-    mfma_configs: Dict[str, Tuple[MMAType]] = field(default_factory=dict)
-    specs: Dict[str, TuningSpec] = field(default_factory=dict)
+    hyperparams: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
     machine: str = "MI325X"
     target: str = field(init=False)
@@ -70,7 +67,15 @@ class KernelBenchmark:
         mfma_variant: Optional[Tuple[MMAType]] = None,
         spec: Optional[TuningSpec] = None,
     ) -> bool:
-        pass
+        return False
+
+    def load_kernel(
+        self,
+        config: OpConfig,
+        mfma_variant: Optional[Tuple[MMAType]] = None,
+        spec: Optional[TuningSpec] = None,
+    ) -> Optional[LaunchableWave]:
+        return None
 
     def bench_kernel(
         self,
@@ -80,54 +85,12 @@ class KernelBenchmark:
         device: str = None,
         debug: bool = False,
     ) -> Tuple[float, bool]:
-
-        extra_flags = {}
-        func_name = None
-        inputs = []
-        for flag in config.get_runtime_args(self.backend):
-            split_key_value = flag[2:].split("=")
-            key = split_key_value[0]
-            value = "=".join(split_key_value[1:])
-            if key == "function":
-                func_name = value
-                continue
-            if key == "input":
-                inputs.append(value)
-                continue
-            extra_flags[key] = value
-
-        try:
-            bench_results = ireert.benchmark.benchmark_module(
-                vmfb_filename,
-                entry_function=func_name,
-                inputs=inputs,
-                device=device or self.device,
-                device_allocator="caching",
-                benchmark_repetitions=num_iterations,
-                **extra_flags,
-            )
-        except:
-            return 0, False
-
-        times = []
-        for bench_result in bench_results:
-            bench_name = bench_result.benchmark_name
-            if bench_name.split("/")[-1] == "real_time":
-                time_and_unit = bench_result.time.split(" ")
-                assert (
-                    len(time_and_unit) == 2
-                ), "expected the benchmark time to be the time and unit separated by a space."
-                time_us = unit_to_microseconds(
-                    real_time=float(time_and_unit[0]),
-                    time_unit=time_and_unit[1],
-                )
-                times.append(time_us)
-
-        if len(times) == 0:
-            return 0, False
-
-        benchmark_mean_time_us = sum(times) / float(len(times))
-        return benchmark_mean_time_us, True
+        return bench_kernel_ireert(
+            vmfb_filename,
+            config.get_runtime_args(self.backend),
+            num_iterations,
+            device or self.device,
+        )
 
     def _log(self, *args):
         if self.debug:
@@ -136,7 +99,9 @@ class KernelBenchmark:
     def reduce_configs(self, max_kernels: int = None, seed: int = 42):
         self.configs = reduce_configs(self.configs, max_kernels, seed)
 
-    def load_tuned_results(self, result_path: PathLike, spec_class_type):
+    def load_tuned_results(
+        self, result_path: PathLike, spec_class_type: Type[TuningSpec]
+    ):
         with open(result_path, "r") as file:
             tuned_data: dict[str, dict] = json.load(file)
 
@@ -147,11 +112,7 @@ class KernelBenchmark:
             return mma_types
 
         self.specs = {
-            kernel_name: (spec_class_type(**tune_result["block_sizes"]))
-            for kernel_name, tune_result in tuned_data.items()
-        }
-        self.mfma_configs = {
-            kernel_name: to_mma(tune_result["mfma_variant"])
+            kernel_name: tune_result["hyperparams"]
             for kernel_name, tune_result in tuned_data.items()
         }
 
@@ -205,8 +166,7 @@ class KernelBenchmark:
                     mlir_path,
                     vmfb_path,
                     [],
-                    self.mfma_configs.get(config.get_name()),
-                    self.specs.get(config.get_name()),
+                    self.hyperparams.get(config.get_name()),
                 ),
                 compilation_targets,
             )
@@ -228,7 +188,7 @@ class KernelBenchmark:
                     tqdm(
                         pool.istarmap(self.compile_kernel, compile_args_generator()),
                         total=len(self.configs),
-                        desc="Compiling Attention Kernels",
+                        desc=f"Compiling {self.kernel_type.capitalize()} Kernels",
                     )
                 )
             vmfb_dict = shared_vmfb_dict
@@ -271,9 +231,7 @@ class KernelBenchmark:
                 config, benchmark_mean_time_us
             )
 
-            tuning_config = self.specs.get(config.get_name())
-            if tuning_config:
-                tuning_config = asdict(tuning_config)
+            tuning_config = self.hyperparams.get(config.get_name())
 
             results.append(
                 BenchmarkResult(
@@ -334,6 +292,41 @@ class KernelBenchmark:
             )
 
         return self.save_results(results)
+
+    def tune_scheduling(self, max_iterations=100):
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_dir = Path(f"results/tuning/{self.kernel_type}")
+        output_path = (
+            output_dir / f"{self.kernel_type}_{self.backend}_schedule_tuned.json"
+        )
+
+        results = {}
+
+        for tag, config in tqdm(self.configs, desc="Tuning Scheduling"):
+            print(f"Tuning scheduling for kernel {config.get_name()}")
+            result, runtime_us = tune_kernel_schedule(
+                config,
+                run_name=timestamp,
+                load_kernel_func=self.load_kernel,
+                compile_kernel_func=self.compile_kernel,
+                bench_kernel_func=self.bench_kernel,
+                kernel_dir=self.kernel_dir,
+                max_iterations=max_iterations,
+                extra_compile_options={},
+            )
+            arithmetic_intensity, tflops_per_second = get_kernel_perf_stats(
+                config, runtime_us
+            )
+            results[config.get_name()] = {
+                "result": result,
+                "mean_microseconds": runtime_us,
+                "arithmetic_intensity": arithmetic_intensity,
+                "tflops": tflops_per_second,
+                "problem": asdict(config),
+            }
+            write_to_json_file(results, output_path)
+
+        return results
 
     def tune_kernels(
         self,

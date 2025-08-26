@@ -23,7 +23,7 @@ class WaveConvBenchmark(KernelBenchmark):
         spec=None,
     ):
         try:
-            op_type, layout = self._decode_op(config.OP)
+            op_type, layout = config.decode_op()
 
             in_h = config.H * config.S + config.P - 1
             in_w = config.W * config.S + config.Q - 1
@@ -65,12 +65,6 @@ class WaveConvBenchmark(KernelBenchmark):
         except Exception as e:
             print(f"Failed to compile {config.get_name()}: {e}")
             return False
-
-    def _decode_op(self, op: str) -> tuple[str, str]:
-        if op.startswith("conv_2d_"):
-            return "conv_2d", op[len("conv_2d_") :]
-
-        raise ValueError(f"Unsupported op: {op}")
 
     def _convert_dtype(self, dtype: str):
         dtypes = {
