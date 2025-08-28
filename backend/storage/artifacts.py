@@ -79,7 +79,7 @@ def load_result_csv(backend: str, kernel_type: str, csv_path: str) -> List[Dict]
     return results
 
 
-def load_result_json(backend: str, kernel_type: str, json_path: str) -> List[Dict]:
+def load_result_json(json_path: str) -> List[Dict]:
     with open(json_path, "r") as file:
         results = json.load(file)
 
@@ -87,8 +87,6 @@ def load_result_json(backend: str, kernel_type: str, json_path: str) -> List[Dic
         {
             **convert_dict_case(result),
             "id": str(uuid4()),
-            "backend": backend,
-            "kernelType": kernel_type,
             "dtype": result["shape"].get("dtype") or result["shape"].get("input_dtype"),
         }
         for result in results
@@ -135,20 +133,17 @@ def parse_kernels_from_path(artifact_path: str | Path) -> list[dict]:
         for result_file in os.listdir(kernel_dir_path):
             result_fname = os.path.basename(result_file)
             result_file_path = kernel_dir_path / result_fname
-            backend_name = result_fname.split(".")[0].split(f"{kernel_type}_")[1]
             file_type = result_fname.split(".")[1]
 
-            if backend_name == "wavegqa":
-                continue
-
             if file_type == "csv":
+                backend_name = result_fname.split(".")[0].split(f"{kernel_type}_")[1]
+                if backend_name == "wavegqa":
+                    continue
                 result_data = load_result_csv(
                     backend_name, kernel_type, result_file_path
                 )
             elif file_type == "json":
-                result_data = load_result_json(
-                    backend_name, kernel_type, result_file_path
-                )
+                result_data = load_result_json(result_file_path)
             else:
                 continue
             results.extend(result_data)
