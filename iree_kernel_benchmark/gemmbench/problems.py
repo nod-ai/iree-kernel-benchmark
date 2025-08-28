@@ -4,9 +4,13 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+from pprint import pprint
+import pandas as pd
 from .gemm_utils import GemmConfig, num_bytes, kDynamic
 
 import re
+
+from ..utils.clustering import KernelConfigurationClustering
 
 
 def get_default_accumulator_element_type(operand_element_type: str) -> str:
@@ -970,6 +974,117 @@ def cai(dtype: str) -> list[GemmConfig]:
         )
         for shape in shapes
     ]
+
+    return configs
+
+
+def get_b200_gemm_configs(backend: str) -> list[tuple[str, GemmConfig]]:
+    def parse_b200_dtype(dtype: str):
+        dtype = dtype.split("_")[0]
+        if "f8" in dtype and backend == "wave":
+            dtype = "f8E4M3FN"
+        return dtype
+
+    gemm_df = pd.read_csv("b200_gemms.csv")
+    configs: list[tuple[str, GemmConfig]] = []
+
+    for index, row in gemm_df.iterrows():
+        if row["Batch Count"] > 1:
+            continue
+
+        input_dtype = parse_b200_dtype(row["A Type"])
+        accumulator_dtype = parse_b200_dtype(row["C Type"])
+        result_dtype = parse_b200_dtype(row["D Type"])
+
+        tA = row["Transpose A"]
+        tB = row["Transpose B"]
+
+        if backend == "wave":
+            if input_dtype == "f32":
+                continue
+
+        configs.append(
+            (
+                row["Subworkload"],
+                GemmConfig(
+                    M=row["M"],
+                    N=row["N"],
+                    K=row["K"],
+                    tA=tA,
+                    tB=tB,
+                    operand_element_type=input_dtype,
+                    accumulator_element_type=accumulator_dtype,
+                    result_element_type=result_dtype,
+                ),
+            )
+        )
+
+    def extract_features(g: GemmConfig) -> tuple:
+        return (g.M, g.N, g.K, g.tA + g.tB, g.operand_element_type)
+
+    def hash_features(feature_list: tuple) -> str:
+        return "x".join(map(str, feature_list))
+
+    # clustering
+    config_shapes = [extract_features(g) for tag, g in configs]
+    clusterer = KernelConfigurationClustering(
+        scaling_method="minmax", clustering_method="kmeans", n_clusters=8
+    )
+    clusterer.fit(config_shapes)
+    representatives = clusterer.get_representatives()
+    representative_ids = {hash_features(shape) for shape in representatives}
+
+    unique_mappings = {rep_id: None for rep_id in representative_ids}
+    for tag, kernel in configs:
+        kernel_id = hash_features(extract_features(kernel))
+        if kernel_id in unique_mappings:
+            unique_mappings[kernel_id] = (tag, kernel)
+
+    configs = list(unique_mappings.values())
+
+    return configs
+
+
+def get_b200_gemm_configs_time(backend: str) -> list[tuple[str, float, GemmConfig]]:
+    def parse_b200_dtype(dtype: str):
+        dtype = dtype.split("_")[0]
+        if "f8" in dtype:
+            dtype = "f8E4M3FN"
+        return dtype
+
+    gemm_df = pd.read_csv("b200_gemms.csv")
+    configs = []
+
+    for index, row in gemm_df.iterrows():
+        if row["Batch Count"] > 1:
+            continue
+
+        input_dtype = parse_b200_dtype(row["A Type"])
+        accumulator_dtype = parse_b200_dtype(row["C Type"])
+        result_dtype = parse_b200_dtype(row["D Type"])
+
+        tA = row["Transpose A"]
+        tB = row["Transpose B"]
+
+        if backend == "wave" and (tA + tB != "NT" or "f8" in input_dtype):
+            continue
+
+        configs.append(
+            (
+                row["Subworkload"],
+                float(row["Kernel Time (us)"]),
+                GemmConfig(
+                    M=row["M"],
+                    N=row["N"],
+                    K=row["K"],
+                    tA=tA,
+                    tB=tB,
+                    operand_element_type=input_dtype,
+                    accumulator_element_type=accumulator_dtype,
+                    result_element_type=result_dtype,
+                ),
+            )
+        )
 
     return configs
 

@@ -166,6 +166,10 @@ def unit_to_microseconds(real_time: float, time_unit: str) -> float:
 
 
 def write_results_to_csv(results: list[BenchmarkResult], output_filename: os.PathLike):
+    output_dir = os.path.dirname(Path(output_filename))
+    if output_dir and not os.path.exists(output_dir):
+        os.makedirs(output_dir, exist_ok=True)
+
     if len(results) == 0:
         print("No valid results")
         return
@@ -209,7 +213,7 @@ def write_results_to_csv(results: list[BenchmarkResult], output_filename: os.Pat
 def write_to_json_file(data: Any, output_filename: os.PathLike, indent=4):
     output_dir = os.path.dirname(Path(output_filename))
     if output_dir and not os.path.exists(output_dir):
-        os.makedirs(output_dir)
+        os.makedirs(output_dir, exist_ok=True)
 
     with open(output_filename, "w") as file:
         json.dump(data, file, indent=indent)
@@ -232,7 +236,7 @@ def get_kernel_perf_stats(
     byte_count = config.get_byte_count()
 
     arithmetic_intensity = flops / byte_count
-    if benchmark_mean_time_us == 0:
+    if benchmark_mean_time_us <= 0:
         tflops_per_second = 0
     else:
         tflops_per_second = (flops / 1e12) / (benchmark_mean_time_us / 1e6)

@@ -6,10 +6,12 @@ from .gemm_utils import GemmTuningSpec
 from .iree_gemm import IREEGemmBenchmark
 from .wave_gemm import WaveGemmBenchmark
 from .torch_gemm import TorchGemmBenchmark
-from .problems import get_gemm_configs, get_tk_gemm_configs
+from .hipblaslt_gemm import HipBLASLtGemmBenchmark
+from .problems import get_gemm_configs, get_tk_gemm_configs, get_b200_gemm_configs
 
 
 def get_default_gemm_configs(kernel_type: str, backend_name: str):
+    return get_b200_gemm_configs(backend_name)
     if backend_name == "iree":
         configs = get_gemm_configs("f16", backend_name, False)
     else:
@@ -32,7 +34,7 @@ def get_gemm_tuning(kernel_type: str, backend_name: str):
         TuningConstraint(name="BLOCK_K", min=16, max=128, step=4),
         TuningConstraint(name="ELEMS_PER_THREAD", min=4, max=4, step=1),
     ]
-    return tiling_constraints, mfma_configs
+    return GemmTuningSpec, tiling_constraints, mfma_configs
 
 
 GEMM_BENCH = {
@@ -40,5 +42,6 @@ GEMM_BENCH = {
         "wave": WaveGemmBenchmark,
         "iree": IREEGemmBenchmark,
         "torch": TorchGemmBenchmark,
+        "hipblaslt": HipBLASLtGemmBenchmark,
     }
 }

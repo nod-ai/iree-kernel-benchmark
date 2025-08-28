@@ -26,7 +26,7 @@ def get_conv_tuning(kernel_type: str, backend_name: str):
         TuningConstraint(name="BLOCK_K", min=16, max=128, step=4),
         TuningConstraint(name="ELEMS_PER_THREAD", min=4, max=4, step=1),
     ]
-    return tiling_constraints, mfma_configs
+    return ConvTuningSpec, tiling_constraints, mfma_configs
 
 
 CONV_BENCH = {

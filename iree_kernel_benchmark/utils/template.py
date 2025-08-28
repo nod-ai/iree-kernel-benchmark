@@ -128,9 +128,6 @@ class KernelBenchmark:
         output_csv_path = output_csv_dir / f"{output_base}.csv"
         output_json_path = output_json_dir / f"{output_base}.json"
 
-        os.makedirs(output_csv_dir, exist_ok=True)
-        os.makedirs(output_json_dir, exist_ok=True)
-
         write_results_to_csv(results, output_csv_path)
         self._log(f"Results written to {output_csv_path}")
 

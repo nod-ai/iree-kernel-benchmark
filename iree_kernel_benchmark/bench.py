@@ -190,19 +190,19 @@ if __name__ == "__main__":
     tuning_spec_class, tiling_constraints, mfma_configs = tuning_config
 
     if args.tune:
-        # bench.tune_kernels(
-        #     mfma_configs,
-        #     tiling_constraints,
-        #     tuning_spec_class,
-        #     num_trials=args.num_trials,
-        # )
-        bench.tune_scheduling(max_iterations=args.num_trials)
+        bench.tune_kernels(
+            mfma_configs,
+            tiling_constraints,
+            tuning_spec_class,
+            num_trials=args.num_trials,
+        )
+        # bench.tune_scheduling(max_iterations=args.num_trials)
 
     else:
         if args.use_tuned:
             bench.load_tuned_results(args.use_tuned, tuning_spec_class)
 
-        if backend_name in ["torch"]:
+        if backend_name in ["torch", "hipblaslt"]:
             bench.benchmark_kernels_extern()
         else:
             bench.compile_kernels()

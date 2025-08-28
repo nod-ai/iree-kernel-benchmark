@@ -141,7 +141,7 @@ class AttentionBMNKTuningSpec(TuningSpec):
     BLOCK_N: int = 64
     BLOCK_K2: int = 64
 
-    mfma_variant: Tuple[MMAType]
+    # mfma_variant: Tuple[MMAType]
 
     def to_dict(self):
         return {
@@ -149,7 +149,7 @@ class AttentionBMNKTuningSpec(TuningSpec):
             "BLOCK_M": self.BLOCK_M,
             "BLOCK_N": self.BLOCK_N,
             "BLOCK_K2": self.BLOCK_K2,
-            "mfma_variant": [mfma_type.name for mfma_type in self.mfma_variant],
+            # "mfma_variant": [mfma_type.name for mfma_type in self.mfma_variant],
         }
 
     def load_from_dict(self, obj):
@@ -157,9 +157,9 @@ class AttentionBMNKTuningSpec(TuningSpec):
         self.BLOCK_M = obj["BLOCK_M"]
         self.BLOCK_N = obj["BLOCK_N"]
         self.BLOCK_K2 = obj["BLOCK_K2"]
-        self.mfma_variant = tuple(
-            MMAType[mfma_name] for mfma_name in obj["mfma_variant"]
-        )
+        # self.mfma_variant = tuple(
+        #     MMAType[mfma_name] for mfma_name in obj["mfma_variant"]
+        # )
 
 
 @dataclass
@@ -170,7 +170,7 @@ class AttentionBSHDTuningSpec(TuningSpec):
     BLOCK_D_KV: int = 64
     BLOCK_N_KV: int = 64
 
-    mfma_variant: Tuple[MMAType]
+    # mfma_variant: Tuple[MMAType]
 
     def to_dict(self):
         return {
@@ -179,7 +179,7 @@ class AttentionBSHDTuningSpec(TuningSpec):
             "BLOCK_N_Q": self.BLOCK_N_Q,
             "BLOCK_D_KV": self.BLOCK_D_KV,
             "BLOCK_N_KV": self.BLOCK_N_KV,
-            "mfma_variant": [mfma_type.name for mfma_type in self.mfma_variant],
+            # "mfma_variant": [mfma_type.name for mfma_type in self.mfma_variant],
         }
 
     def load_from_dict(self, obj):
@@ -188,6 +188,6 @@ class AttentionBSHDTuningSpec(TuningSpec):
         self.BLOCK_N_Q = obj["BLOCK_N_Q"]
         self.BLOCK_D_KV = obj["BLOCK_D_KV"]
         self.BLOCK_N_KV = obj["BLOCK_N_KV"]
-        self.mfma_variant = tuple(
-            MMAType[mfma_name] for mfma_name in obj["mfma_variant"]
-        )
+        # self.mfma_variant = tuple(
+        #     MMAType[mfma_name] for mfma_name in obj["mfma_variant"]
+        # )
