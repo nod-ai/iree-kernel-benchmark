@@ -151,6 +151,9 @@ class IREEModule(Run):
         else:
             print(exported.mlir_module, flush=True)
 
+        exported.import_to("full")
+        print(exported.mlir_module)
+
         # Compile the module.
         iree_device = get_device_from_torch(device)
         ireecc_args = list(iree_device.compile_target_flags) + [
@@ -159,7 +162,13 @@ class IREEModule(Run):
         ]
         if single_dispatch:
             ireecc_args += [
-                "--iree-preprocessing-pass-pipeline=builtin.module(util.func(iree-preprocessing-make-single-dispatch))"
+                "--iree-preprocessing-pass-pipeline=builtin.module(util.func(iree-preprocessing-make-single-dispatch))",
+                "--iree-codegen-llvmgpu-use-vector-distribution",
+                # "--mlir-print-ir-before=iree-llvmgpu-lower-executable-target",
+                # "--mlir-print-ir-before=iree-llvmgpu-select-lowering-strategy",
+                "--iree-codegen-llvmgpu-early-tile-and-fuse-matmul",
+                # "--debug-only=iree-llvmgpu-kernel-config"
+                # "--mlir-print-ir-after-all"
             ]
         driver_to_backend = {
             "hip": "rocm",
