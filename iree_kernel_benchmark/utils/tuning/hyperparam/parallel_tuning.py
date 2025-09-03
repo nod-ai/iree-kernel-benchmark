@@ -187,32 +187,92 @@ class ParallelTuner:
         # Create message queue for worker communication
         message_queue = Queue()
 
-        # Create and start worker processes
-        processes = []
+        # Create work queue with all benchmarks
+        work_queue = Queue()
         for i, bench in enumerate(benches):
-            device_id = i % num_workers
-            context = TuningContext(
-                bench=bench,
-                device_id=device_id,
-                num_iterations=num_iterations,
-                num_trials=num_trials,
-                debug=debug,
-                worker_id=i,
-            )
+            work_queue.put((i, bench))
 
-            p = Process(
-                target=worker_process,
-                args=(context, self.tuning_paradigm, message_queue),
-            )
-            p.start()
-            processes.append(p)
+        # Available GPU queue
+        available_gpus = Queue()
+        for gpu_id in range(num_workers):
+            available_gpus.put(gpu_id)
+
+        # Track active processes
+        active_processes = {}
+        processes_lock = threading.Lock()
 
         # Start threads for progress monitoring and display refresh
         stop_event = threading.Event()
         completed_workers = 0
 
-        def message_handler():
+        def worker_launcher():
+            """Launch workers as GPUs become available."""
+            while not stop_event.is_set():
+                try:
+                    # Check if there's work to do and a GPU available
+                    if work_queue.empty():
+                        break
+
+                    # Wait for an available GPU (with timeout to check stop_event)
+                    try:
+                        gpu_id = available_gpus.get(timeout=0.1)
+                    except queue.Empty:
+                        continue
+
+                    # Get next work item
+                    try:
+                        worker_id, bench = work_queue.get_nowait()
+                    except queue.Empty:
+                        # No more work, return GPU to pool
+                        available_gpus.put(gpu_id)
+                        break
+
+                    # Create context with assigned GPU
+                    context = TuningContext(
+                        bench=bench,
+                        device_id=gpu_id,
+                        num_iterations=num_iterations,
+                        num_trials=num_trials,
+                        debug=debug,
+                        worker_id=worker_id,
+                    )
+
+                    # Start worker process
+                    p = Process(
+                        target=worker_process,
+                        args=(context, self.tuning_paradigm, message_queue),
+                    )
+                    p.start()
+
+                    with processes_lock:
+                        active_processes[(worker_id, gpu_id)] = p
+
+                except Exception as e:
+                    print(f"Error launching worker: {e}")
+
+        def process_monitor():
+            """Monitor processes and free GPUs when they complete."""
             nonlocal completed_workers
+            while not stop_event.is_set() or active_processes:
+                completed = []
+                with processes_lock:
+                    for (worker_id, gpu_id), process in active_processes.items():
+                        if not process.is_alive():
+                            process.join()
+                            completed.append((worker_id, gpu_id))
+
+                # Remove completed processes and free their GPUs
+                for worker_id, gpu_id in completed:
+                    with processes_lock:
+                        del active_processes[(worker_id, gpu_id)]
+                    available_gpus.put(gpu_id)
+                    completed_workers += 1
+
+                time.sleep(0.1)
+
+        def message_handler():
+            """Handle messages from worker processes."""
+            worker_completed_count = 0
             while not stop_event.is_set() or not message_queue.empty():
                 try:
                     msg: WorkerMessage = message_queue.get(timeout=0.1)
@@ -230,8 +290,8 @@ class ParallelTuner:
                         )
 
                         if update.is_final:
-                            completed_workers += 1
-                            progress_state["total_completed"] = completed_workers
+                            worker_completed_count += 1
+                            progress_state["total_completed"] = worker_completed_count
 
                     elif msg.type == "result":
                         result = msg.data
@@ -243,20 +303,29 @@ class ParallelTuner:
                     print(f"Error handling message: {e}")
 
         def refresh_display():
+            """Refresh the progress display."""
             while not stop_event.is_set():
                 progress_manager.refresh_display()
                 time.sleep(0.5)
 
-        # Start handler threads
+        # Start all handler threads
+        launcher_thread = threading.Thread(target=worker_launcher)
+        monitor_thread = threading.Thread(target=process_monitor)
         message_thread = threading.Thread(target=message_handler)
         refresh_thread = threading.Thread(target=refresh_display)
+
+        launcher_thread.start()
+        monitor_thread.start()
         message_thread.start()
         refresh_thread.start()
 
         try:
+            # Wait for all work to be assigned
+            launcher_thread.join()
+
             # Wait for all processes to complete
-            for p in processes:
-                p.join()
+            while active_processes:
+                time.sleep(0.1)
 
             # Give message handler time to process remaining messages
             time.sleep(1)
@@ -264,6 +333,7 @@ class ParallelTuner:
         finally:
             # Cleanup
             stop_event.set()
+            monitor_thread.join()
             message_thread.join()
             refresh_thread.join()
             progress_manager.close()
