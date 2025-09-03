@@ -3,8 +3,6 @@ from typing import Union, Optional, Literal
 import math
 from abc import ABC, abstractmethod
 
-from .attention_utils import AttentionBMNKTuningSpec, AttentionBSHDTuningSpec
-
 from ..utils import dtype_to_bytes, OpConfig
 
 
@@ -43,7 +41,7 @@ class AttentionConfigBMNK(OpConfig):
         byte_count = element_count * bytes_per_element
         return byte_count
 
-    def get_shared_mem_bytes(self, spec: AttentionBMNKTuningSpec):
+    def get_shared_mem_bytes(self, spec):
         bytes_per_element = dtype_to_bytes(self.dtype)
         max_element_count = max(
             [
@@ -117,7 +115,7 @@ class AttentionConfigBSHD(OpConfig):
         byte_count = element_count * bytes_per_element
         return byte_count
 
-    def get_shared_mem_bytes(self, spec: AttentionBSHDTuningSpec):
+    def get_shared_mem_bytes(self, spec):
         bytes_per_element = dtype_to_bytes(self.dtype)
         max_element_count = max(
             [

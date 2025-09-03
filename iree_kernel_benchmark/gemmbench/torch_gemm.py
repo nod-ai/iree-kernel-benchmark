@@ -1,19 +1,14 @@
-from dataclasses import asdict
-from typing import Optional, override
+from typing import override
 import torch
 
 from iree_kernel_benchmark.utils.template import KernelBenchmark
-from iree_kernel_benchmark.utils.wave_utils import DTYPE_TO_TORCH, dtype_to_torch
+from iree_kernel_benchmark.utils.wave_utils import dtype_to_torch
 from .gemm_utils import GemmConfig
-from wave_lang.kernel.wave.utils.torch_utils import (
-    device_randn,
-    device_zeros,
-    device_ones,
-)
-import time
 
 
 class TorchGemmBenchmark(KernelBenchmark):
+    config: GemmConfig
+
     def _clear_mem(self, *tensors):
         for tensor in tensors:
             del tensor
@@ -21,20 +16,20 @@ class TorchGemmBenchmark(KernelBenchmark):
             torch.cuda.empty_cache()
 
     @override
-    def bench_kernel(
-        self, config: GemmConfig, vmfb_filename, num_iterations=3, debug=False
-    ):
+    def run_bench(self, device, num_iterations=1):
+        config = self.config
+
         transposeA = config.tA == "T"
         transposeB = config.tB == "T"
 
         shape_a = (config.K, config.M) if transposeA else (config.M, config.K)
         shape_b = (config.N, config.K) if transposeB else (config.K, config.N)
 
-        a_base = device_randn(
-            shape_a, dtype=dtype_to_torch(config.operand_element_type)
+        a_base = torch.rand(
+            shape_a, dtype=dtype_to_torch(config.operand_element_type), device=device
         )
-        b_base = device_randn(
-            shape_b, dtype=dtype_to_torch(config.operand_element_type)
+        b_base = torch.rand(
+            shape_b, dtype=dtype_to_torch(config.operand_element_type), device=device
         )
 
         self._clear_mem()

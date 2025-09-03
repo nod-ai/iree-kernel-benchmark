@@ -1,4 +1,3 @@
-import math
 import os
 import json
 import threading
@@ -7,56 +6,31 @@ from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass
 from multiprocessing import Process, Queue, cpu_count
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Callable, Type
+from typing import (
+    Any,
+    Dict,
+    List,
+    Optional,
+    Tuple,
+    Callable,
+    Type,
+    override,
+)
 import queue
 
-import optuna
-from wave_lang.kernel.wave.constraints import MMAType
-
+from ...template import KernelBenchmark
 from ...parallel import ParallelProgressManager
-from ...bench_utils import OpConfig, get_kernel_perf_stats, TuningSpec
-
-
-@dataclass
-class TuningConstraint:
-    """Represents a tuning parameter constraint."""
-
-    name: str
-    min: int
-    max: int
-    step: int
-    exponential: bool = False
-
-    def get_range(self) -> list[int]:
-        range = []
-        curr = self.min
-        while curr <= self.max:
-            range.append(curr)
-            if self.exponential:
-                curr *= self.step
-            else:
-                if curr == 1 and self.step > 1:
-                    curr += self.step - 1
-                else:
-                    curr += self.step
-        return range
+from ...bench_utils import BenchmarkResult, OpConfig
 
 
 @dataclass
 class TuningContext:
     """Context object containing all necessary information for tuning."""
 
-    kernel: OpConfig
-    config_tag: str
+    bench: KernelBenchmark
     device_id: int
-    mfma_configs: List[Tuple[MMAType]]
-    tiling_constraints: List[TuningConstraint]
-    tuning_class: Type[TuningSpec]
-    kernel_dir: os.PathLike
     num_iterations: int
     num_trials: int
-    compile_kernel_func: Callable
-    bench_kernel_func: Callable
     debug: bool = False
     worker_id: int = 0
 
@@ -65,32 +39,11 @@ class TuningContext:
 class TuningResult:
     """Result of a tuning run."""
 
-    runtime: float
-    spec: Optional[TuningSpec]
-    mfma_config: Optional[Tuple[MMAType]]
-    config_name: str
-    kernel: Optional[OpConfig] = None
-    worker_id: int = 0
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert result to dictionary format."""
-        if self.spec and self.mfma_config and self.kernel:
-            arithmetic_intensity, tflops_per_second = get_kernel_perf_stats(
-                self.kernel, self.runtime
-            )
-            return {
-                "block_sizes": asdict(self.spec),
-                "mfma_variant": (
-                    [mfma.name for mfma in self.mfma_config]
-                    if isinstance(self.mfma_config, (list, tuple))
-                    else [self.mfma_config.name]
-                ),
-                "mean_microseconds": self.runtime,
-                "arithmetic_intensity": arithmetic_intensity,
-                "tflops": tflops_per_second,
-                "problem": asdict(self.kernel),
-            }
-        return None
+    name: str
+    benchmark: BenchmarkResult
+    improvement: bool
+    speedup: float
+    hyperparams: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -117,9 +70,37 @@ class WorkerMessage:
 class TuningParadigm(ABC):
     """Abstract base class for different tuning paradigms."""
 
-    @abstractmethod
     def tune(self, context: TuningContext, progress_callback: Callable) -> TuningResult:
         """Run the tuning process and return the best result."""
+        config = context.bench.config
+
+        base_result = self._benchmark(context)
+        tuned_result = self._tune(context, progress_callback)
+
+        base_runtime = base_result.mean_microseconds
+        tuned_runtime = tuned_result.mean_microseconds
+
+        if not tuned_result.ok or base_runtime < tuned_runtime:
+            best_result = base_result
+            improvement = False
+            speedup = 0
+        else:
+            best_result = tuned_result
+            improvement = True
+            speedup = base_runtime / tuned_runtime
+
+        return TuningResult(
+            name=config.get_name(),
+            benchmark=best_result,
+            improvement=improvement,
+            speedup=speedup,
+            hyperparams=best_result.tuning_config,
+        )
+
+    @abstractmethod
+    def _tune(
+        self, context: TuningContext, progress_callback: Callable
+    ) -> BenchmarkResult:
         pass
 
     @abstractmethod
@@ -127,51 +108,23 @@ class TuningParadigm(ABC):
         """Return the name of this tuning paradigm."""
         pass
 
-    def _compile_and_benchmark(
+    def _benchmark(
         self,
         context: TuningContext,
-        tuning_spec: TuningSpec,
-        mfma_config: Tuple[MMAType],
-    ) -> float:
+        param_values: Optional[Dict[str, int]] = None,
+    ) -> BenchmarkResult:
         """Compile and benchmark a kernel configuration."""
-        config_name = context.kernel.get_name()
+        bench = context.bench
 
-        # Setup paths
-        mlir_dir = context.kernel_dir / "mlir"
-        vmfb_dir = context.kernel_dir / "vmfb"
-        os.makedirs(mlir_dir, exist_ok=True)
-        os.makedirs(vmfb_dir, exist_ok=True)
+        bench.tuning_spec.clear()
+        if param_values:
+            for name, val in param_values.items():
+                bench.tuning_spec.set_parameter(name, val)
 
-        mlir_path = mlir_dir / f"{config_name}.mlir"
-        vmfb_path = vmfb_dir / f"{config_name}.vmfb"
-
-        try:
-            # Compile kernel
-            compile_success = context.compile_kernel_func(
-                context.kernel,
-                mlir_path,
-                vmfb_path,
-                mfma_variant=mfma_config,
-                spec=tuning_spec,
-            )
-            if not compile_success:
-                raise Exception(f"Compiling kernel {config_name} failed")
-
-            # Benchmark kernel
-            runtime, bench_success = context.bench_kernel_func(
-                context.kernel,
-                vmfb_path,
-                num_iterations=context.num_iterations,
-                device=f"hip://{context.device_id}",
-                debug=context.debug,
-            )
-            if not bench_success:
-                raise Exception(f"Benchmarking kernel {config_name} failed")
-
-            return runtime
-
-        except Exception:
-            return math.inf
+        bench_result = bench.run_bench(
+            f"hip://{context.device_id}", context.num_iterations
+        )
+        return bench_result
 
 
 def worker_process(
@@ -184,10 +137,9 @@ def worker_process(
 
     try:
         result = tuning_paradigm.tune(context, progress_callback)
-        if result.spec:
+        if result.hyperparams:
             message_queue.put(WorkerMessage(type="result", data=result))
     except Exception as e:
-        # Send final progress on error
         message_queue.put(
             WorkerMessage(
                 type="progress",
@@ -215,13 +167,7 @@ class ParallelTuner:
 
     def tune_kernels(
         self,
-        configs: List[Tuple[str, OpConfig]],
-        mfma_configs: List[Tuple[MMAType]],
-        tiling_constraints: List[TuningConstraint],
-        tuning_class: Type[TuningSpec],
-        compile_kernel_func: Callable,
-        bench_kernel_func: Callable,
-        kernel_dir: os.PathLike,
+        benches: List[KernelBenchmark],
         tuning_result_path: os.PathLike,
         num_iterations: int = 1,
         num_trials: int = 100,
@@ -231,7 +177,7 @@ class ParallelTuner:
         """Run parallel tuning for multiple kernel configurations."""
         os.makedirs(os.path.dirname(tuning_result_path), exist_ok=True)
 
-        total_configs = len(configs)
+        total_configs = len(benches)
         num_workers = min(self.num_gpus, total_configs)
 
         # Setup progress manager
@@ -243,20 +189,13 @@ class ParallelTuner:
 
         # Create and start worker processes
         processes = []
-        for i, (config_tag, kernel) in enumerate(configs):
+        for i, bench in enumerate(benches):
             device_id = i % num_workers
             context = TuningContext(
-                kernel=kernel,
-                config_tag=config_tag,
+                bench=bench,
                 device_id=device_id,
-                mfma_configs=mfma_configs,
-                tiling_constraints=tiling_constraints,
-                tuning_class=tuning_class,
-                kernel_dir=kernel_dir,
                 num_iterations=num_iterations,
                 num_trials=num_trials,
-                compile_kernel_func=compile_kernel_func,
-                bench_kernel_func=bench_kernel_func,
                 debug=debug,
                 worker_id=i,
             )
@@ -276,10 +215,10 @@ class ParallelTuner:
             nonlocal completed_workers
             while not stop_event.is_set() or not message_queue.empty():
                 try:
-                    msg = message_queue.get(timeout=0.1)
+                    msg: WorkerMessage = message_queue.get(timeout=0.1)
 
                     if msg.type == "progress":
-                        update = msg.data
+                        update: ProgressUpdate = msg.data
                         progress_state = progress_manager.get_shared_state()
                         progress_state.update(
                             {
@@ -338,9 +277,9 @@ class ParallelTuner:
 
     def _save_result(self, result: TuningResult, tuning_result_path: os.PathLike):
         """Save tuning result to file."""
-        result_dict = result.to_dict()
+        result_dict = asdict(result)
         if result_dict:
             with self.results_lock:
-                self.results[result.config_name] = result_dict
+                self.results[result.name] = result_dict
                 with open(tuning_result_path, "w") as file:
                     json.dump(self.results, file, indent=4)

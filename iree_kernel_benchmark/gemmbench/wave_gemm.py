@@ -1,3 +1,9 @@
+from ..utils.tuning.hyperparam import (
+    TuningParameter,
+    CategoricalBounds,
+    IntegerBounds,
+)
+from ..utils.template import WaveKernelBenchmark, WaveKernel
 from ..utils import *
 from .gemm_utils import GemmConfig, GemmTuningSpec
 from pathlib import Path
@@ -14,109 +20,102 @@ from wave_lang.kernel.wave.templates.gemm import get_gemm_kernel
 from wave_lang.kernel.wave.templates.reordered_gemm import get_reordered_matmul
 
 
-def get_block_size(default: int, upper_bound: int):
-    block_size = min(default, upper_bound)
-    exp = int(np.log2(block_size))
-    block_size_pow2 = pow(2, exp)
-    return max(1, block_size_pow2)
+# def get_block_size(default: int, upper_bound: int):
+#     block_size = min(default, upper_bound)
+#     exp = int(np.log2(block_size))
+#     block_size_pow2 = pow(2, exp)
+#     return max(1, block_size_pow2)
 
 
-class WaveGemmBenchmark(KernelBenchmark):
+class WaveGemmBenchmark(WaveKernelBenchmark):
+    config: GemmConfig
+
+    def __post_init__(self):
+        super().__post_init__()
+
+        use_quantized = "f8" in self.config.operand_element_type
+
+        if use_quantized:
+            mfma_options = [
+                (
+                    MMAType.F32_32x32x16_F8,
+                    MMAType.F32_32x32x16_K8_F16,
+                )
+            ]
+        else:
+            mfma_options = [
+                (
+                    MMAType.F32_32x32x16_K8_F16,
+                    MMAType.F32_32x32x16_K8_F16,
+                )
+            ]
+
+        self.mfma_variant = TuningParameter(
+            "MFMA_VARIANT",
+            CategoricalBounds(mfma_options),
+            initial_value=0,
+            include_hyperparam=False,
+        )
+        self.BLOCK_M = TuningParameter(
+            "BLOCK_M", IntegerBounds(min=16, max=256, step=8), initial_value=128
+        )
+        self.BLOCK_N = TuningParameter(
+            "BLOCK_N", IntegerBounds(min=16, max=256, step=8), initial_value=256
+        )
+        self.BLOCK_K = TuningParameter(
+            "BLOCK_K", IntegerBounds(min=16, max=128, step=4), initial_value=64
+        )
+        self.GROUP_SIZE_M = TuningParameter(
+            "GROUP_SIZE_M", IntegerBounds(min=8, max=16, step=8), initial_value=8
+        )
+
     @override
-    def compile_kernel(
-        self,
-        config: GemmConfig,
-        mlir_path,
-        vmfb_path,
-        extra_compiler_args=...,
-        spec=None,
-        mfma_variant=None,
-    ):
-        try:
-            use_quantized = "f8" in config.operand_element_type
+    def load_wave_kernel(self):
+        config = self.config
 
-            if not mfma_variant:
-                if use_quantized:
-                    mfma_variant = (
-                        MMAType.F32_32x32x16_K8_F16,
-                        MMAType.F32_32x32x16_F8,
-                    )
-                else:
-                    mfma_variant = (
-                        MMAType.F32_32x32x16_K8_F16,
-                        MMAType.F32_32x32x16_K8_F16,
-                    )
+        input_dtype = dtype_to_torch(config.operand_element_type)
+        output_dtype = dtype_to_torch(config.result_element_type)
+        quant_dtype = None
+        if "f8" in config.operand_element_type:
+            quant_dtype = input_dtype
+            input_dtype = dtype_to_torch("f16")
 
-            BLOCK_M = get_block_size(128, config.M)
-            BLOCK_N = get_block_size(256, config.N)
-            BLOCK_K = get_block_size(64, config.K)
-            GROUP_SIZE_M = 8
+        tA, tB = config.tA, config.tB
 
-            # print(BLOCK_M, BLOCK_N, BLOCK_K)
+        base_gemm, hyperparams = get_reordered_matmul(
+            config.M,
+            config.N,
+            config.K,
+            self.BLOCK_M,
+            self.BLOCK_N,
+            self.BLOCK_K,
+            self.GROUP_SIZE_M,
+            mfma_variant=self.mfma_variant,
+            input_dtype=input_dtype,
+            output_dtype=output_dtype,
+            quantized_dtype=quant_dtype,
+            tA=tA,
+            tB=tB,
+        )
 
-            input_dtype = dtype_to_torch(config.operand_element_type)
-            output_dtype = dtype_to_torch(config.result_element_type)
-            quant_dtype = None
-            if "f8" in config.operand_element_type:
-                quant_dtype = input_dtype
-                input_dtype = dtype_to_torch("f16")
+        hyperparams.update(get_default_scheduling_params())
 
-            tA, tB = config.tA, config.tB
+        return WaveKernel(launchable=base_gemm, hyperparams=hyperparams)
 
-            base_gemm, hyperparams = get_reordered_matmul(
-                config.M,
-                config.N,
-                config.K,
-                BLOCK_M,
-                BLOCK_N,
-                BLOCK_K,
-                GROUP_SIZE_M,
-                mfma_variant=mfma_variant,
-                input_dtype=input_dtype,
-                output_dtype=output_dtype,
-                quant_dtype=quant_dtype,
-                tA=tA,
-                tB=tB,
-            )
+    @override
+    def get_compile_options(self):
+        tA = self.config.tA
+        tB = self.config.tB
 
-            use_scheduling = (
-                SchedulingType.PREFETCH if tA + tB == "NT" else SchedulingType.NONE
-            )
+        use_scheduling = SchedulingType.PREFETCH
 
-            if spec:
-                spec = GemmTuningSpec(spec)
-                hyperparams.update(spec.hyperparams())
-            hyperparams.update(get_default_scheduling_params())
-
-            compile_options = WaveCompileOptions(
-                subs=hyperparams,
-                canonicalize=True,
-                create_vmfb_file=vmfb_path,
-                run_bench=False,
-                target=self.target,
-                schedule=use_scheduling,
-                use_buffer_ops=True,
-                iree_launch_async=False,
-                multi_buffer_count=(
-                    2
-                    if use_scheduling
-                    in [SchedulingType.FOUR_STAGE, SchedulingType.MODULO]
-                    else None
-                ),
-            )
-
-            if self.dump_dir:
-                dump_file = self.dump_dir / "wave" / (config.get_name() + ".debug.mlir")
-                with redirect_stderr_to_file(dump_file):
-                    result = wave_compile(compile_options, base_gemm)
-            else:
-                result = wave_compile(compile_options, base_gemm)
-
-            with open(mlir_path, "w") as mlir_out:
-                mlir_out.write(result.asm)
-
-            return True
-
-        except Exception as e:
-            print(f"Failed to compile {config.get_name()}: {e}")
-            return False
+        return WaveCompileOptions(
+            canonicalize=True,
+            schedule=use_scheduling,
+            use_buffer_ops=True,
+            multi_buffer_count=(
+                2
+                if use_scheduling in [SchedulingType.FOUR_STAGE, SchedulingType.MODULO]
+                else None
+            ),
+        )

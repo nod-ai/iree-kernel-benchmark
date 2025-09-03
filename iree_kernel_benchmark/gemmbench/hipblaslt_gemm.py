@@ -7,6 +7,8 @@ from .gemm_utils import GemmConfig
 
 
 class HipBLASLtGemmBenchmark(KernelBenchmark):
+    config: GemmConfig
+
     def _parse_output(self, output: str) -> Optional[float]:
         # Look for the average time line
         avg_time_pattern = r"Average time:\s*([\d.]+)\s*μs"
@@ -24,9 +26,10 @@ class HipBLASLtGemmBenchmark(KernelBenchmark):
         return None
 
     @override
-    def bench_kernel(
-        self, config: GemmConfig, vmfb_filename, num_iterations=3, debug=False
-    ) -> Tuple[float, bool]:
+    def run_bench(self, device, num_iterations=1):
+        debug = False
+        config = self.config
+
         cmd = [
             "./hipblaslt/build/gemm_benchmark",
             "-M",
@@ -53,9 +56,6 @@ class HipBLASLtGemmBenchmark(KernelBenchmark):
                 output_dtype,
             ]
         )
-
-        # if debug:
-        #     print(f"Running command: {' '.join(cmd)}")
 
         try:
             # Run the executable

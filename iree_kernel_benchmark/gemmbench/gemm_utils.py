@@ -146,17 +146,25 @@ class GemmConfig(OpConfig):
     def get_runtime_args(self, backend_name):
         inp1 = self.get_inp1()
         inp2 = self.get_inp2()
-
-        runtime_args = [
-            f"--input={inp1}",
-            f"--input={inp2}",
-        ]
+        out_shape = self.get_out()
 
         if backend_name == "wave":
-            out_shape = self.get_out()
+            if "f8" in self.operand_element_type:
+                inp1 = "x".join(inp1.split("x")[:-1] + ["f16"])
+                inp2 = "x".join(inp2.split("x")[:-1] + ["f16"])
             out_shape = "x".join(out_shape.split("x")[:-1] + ["f32"])
-            runtime_args += [f"--input={out_shape}", "--function=isolated_benchmark"]
+
+            runtime_args = [
+                f"--input={inp1}",
+                f"--input={inp2}",
+                f"--input={out_shape}",
+                "--function=isolated_benchmark",
+            ]
         else:
-            runtime_args += ["--function=main"]
+            runtime_args = [
+                f"--input={inp1}",
+                f"--input={inp2}",
+                "--function=main",
+            ]
 
         return runtime_args

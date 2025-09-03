@@ -1,24 +1,13 @@
-from dataclasses import asdict
-from ..utils import *
-from pathlib import Path
-from typing import Optional, override
-from .conv_utils import ConvConfig
-import traceback
-
-import wave_lang.kernel.lang as tkl
-from wave_lang.kernel.wave.templates.conv import get_igemm_conv2d
-from wave_lang.kernel.wave.compile import wave_compile, WaveCompileOptions
-from wave_lang.kernel.wave.scheduling.schedule_enums import SchedulingType
-from wave_lang.kernel.wave.utils.torch_utils import (
-    device_randn,
-    device_zeros,
-    device_ones,
-)
-
 import torch
+from typing import override
+
+from .conv_utils import ConvConfig
+from ..utils import *
 
 
 class TorchConvBenchmark(KernelBenchmark):
+    config: ConvConfig
+
     def _clear_mem(self, *tensors):
         for tensor in tensors:
             del tensor
@@ -26,9 +15,9 @@ class TorchConvBenchmark(KernelBenchmark):
             torch.cuda.empty_cache()
 
     @override
-    def bench_kernel(
-        self, config: ConvConfig, vmfb_filename, num_iterations=3, debug=False
-    ):
+    def run_bench(self, device, num_iterations=1):
+        config = self.config
+
         operation = config.OP
         dtype = dtype_to_torch(config.input_dtype)
 
@@ -51,8 +40,8 @@ class TorchConvBenchmark(KernelBenchmark):
         input_shape = (batch_size, num_channels, input_height, input_width)
         weight_shape = (filter_batch_size, num_channels, filter_height, filter_width)
 
-        input = device_randn(input_shape, dtype=dtype)
-        weight = device_randn(weight_shape, dtype=dtype)
+        input = torch.randn(input_shape, dtype=dtype, device=device)
+        weight = torch.randn(weight_shape, dtype=dtype, device=device)
 
         self._clear_mem()
         try:

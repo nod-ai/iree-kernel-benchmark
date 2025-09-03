@@ -1,4 +1,6 @@
 from typing import override
+
+from ..utils.template import IREEKernelBenchmark
 from ..utils import *
 from .gemm_utils import GemmConfig, kDynamic
 import os
@@ -7,7 +9,9 @@ from iree.compiler import ir
 from iree.compiler.dialects import arith, func, linalg, tensor
 
 
-class IREEGemmBenchmark(KernelBenchmark):
+class IREEGemmBenchmark(IREEKernelBenchmark):
+    config: GemmConfig
+
     def _convert_dtype_to_mlir(self, dtype: str) -> ir.Type:
         dtypes = {
             "i8": lambda: ir.IntegerType.get_signless(8),
@@ -53,19 +57,14 @@ class IREEGemmBenchmark(KernelBenchmark):
             if tA == "T":
                 arg0_type = ir.RankedTensorType.get([K, M], operand_element_type)
                 arg0_M_idx = 1
-                arg1_type = ir.RankedTensorType.get([K, N], operand_element_type)
-                arg1_N_idx = 1
-            # Transpose B
-            elif tB == "T":
+            else:
                 arg0_type = ir.RankedTensorType.get([M, K], operand_element_type)
                 arg0_M_idx = 0
+            # Transpose B
+            if tB == "T":
                 arg1_type = ir.RankedTensorType.get([N, K], operand_element_type)
                 arg1_N_idx = 0
-            # "Normal" path (can't transpose both)
             else:
-                assert tA == "N" and tB == "N"
-                arg0_type = ir.RankedTensorType.get([M, K], operand_element_type)
-                arg0_M_idx = 0
                 arg1_type = ir.RankedTensorType.get([K, N], operand_element_type)
                 arg1_N_idx = 1
             result_type = ir.RankedTensorType.get([M, N], result_element_type)
@@ -135,15 +134,9 @@ class IREEGemmBenchmark(KernelBenchmark):
             return f"{module}"
 
     @override
-    def compile_kernel(
-        self,
-        config: GemmConfig,
-        mlir_path,
-        vmfb_path,
-        extra_compiler_args=...,
-        mfma_variant=None,
-        spec=None,
-    ):
+    def compile_to_vmfb(self, mlir_path, vmfb_path):
+        config = self.config
+
         with ir.Context():
             mlir_content = self._generate_mlir(config)
 
@@ -157,7 +150,7 @@ class IREEGemmBenchmark(KernelBenchmark):
             f"{mlir_path}",
             "-o",
             f"{vmfb_path}",
-        ] + extra_compiler_args
+        ]
 
         if self.target == "host_cpu":
             exec_args += [

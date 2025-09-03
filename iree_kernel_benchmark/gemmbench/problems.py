@@ -1019,6 +1019,8 @@ def get_b200_gemm_configs(backend: str) -> list[tuple[str, GemmConfig]]:
             )
         )
 
+    return configs
+
     def extract_features(g: GemmConfig) -> tuple:
         return (g.M, g.N, g.K, g.tA + g.tB, g.operand_element_type)
 
@@ -1045,48 +1047,48 @@ def get_b200_gemm_configs(backend: str) -> list[tuple[str, GemmConfig]]:
     return configs
 
 
-def get_b200_gemm_configs_time(backend: str) -> list[tuple[str, float, GemmConfig]]:
-    def parse_b200_dtype(dtype: str):
-        dtype = dtype.split("_")[0]
-        if "f8" in dtype:
-            dtype = "f8E4M3FN"
-        return dtype
+# def get_b200_gemm_configs_time(backend: str) -> list[tuple[str, float, GemmConfig]]:
+#     def parse_b200_dtype(dtype: str):
+#         dtype = dtype.split("_")[0]
+#         if "f8" in dtype:
+#             dtype = "f8E4M3FN"
+#         return dtype
 
-    gemm_df = pd.read_csv("b200_gemms.csv")
-    configs = []
+#     gemm_df = pd.read_csv("b200_gemms.csv")
+#     configs = []
 
-    for index, row in gemm_df.iterrows():
-        if row["Batch Count"] > 1:
-            continue
+#     for index, row in gemm_df.iterrows():
+#         if row["Batch Count"] > 1:
+#             continue
 
-        input_dtype = parse_b200_dtype(row["A Type"])
-        accumulator_dtype = parse_b200_dtype(row["C Type"])
-        result_dtype = parse_b200_dtype(row["D Type"])
+#         input_dtype = parse_b200_dtype(row["A Type"])
+#         accumulator_dtype = parse_b200_dtype(row["C Type"])
+#         result_dtype = parse_b200_dtype(row["D Type"])
 
-        tA = row["Transpose A"]
-        tB = row["Transpose B"]
+#         tA = row["Transpose A"]
+#         tB = row["Transpose B"]
 
-        if backend == "wave" and (tA + tB != "NT" or "f8" in input_dtype):
-            continue
+#         if backend == "wave" and (tA + tB != "NT" or "f8" in input_dtype):
+#             continue
 
-        configs.append(
-            (
-                row["Subworkload"],
-                float(row["Kernel Time (us)"]),
-                GemmConfig(
-                    M=row["M"],
-                    N=row["N"],
-                    K=row["K"],
-                    tA=tA,
-                    tB=tB,
-                    operand_element_type=input_dtype,
-                    accumulator_element_type=accumulator_dtype,
-                    result_element_type=result_dtype,
-                ),
-            )
-        )
+#         configs.append(
+#             (
+#                 row["Subworkload"],
+#                 float(row["Kernel Time (us)"]),
+#                 GemmConfig(
+#                     M=row["M"],
+#                     N=row["N"],
+#                     K=row["K"],
+#                     tA=tA,
+#                     tB=tB,
+#                     operand_element_type=input_dtype,
+#                     accumulator_element_type=accumulator_dtype,
+#                     result_element_type=result_dtype,
+#                 ),
+#             )
+#         )
 
-    return configs
+#     return configs
 
 
 def get_gemm_configs(
@@ -1121,6 +1123,13 @@ def get_gemm_configs(
     all_configs += [("cai", x) for x in cai_configs]
 
     return all_configs
+
+
+def get_gemm_comparison() -> list[tuple[str, GemmConfig]]:
+    return [
+        ("comparison", GemmConfig(512, 512, 512, "N", "T", "f16", "f16", "f32")),
+        ("comparison", GemmConfig(512, 512, 512, "N", "T", "bf16", "bf16", "f32")),
+    ]
 
 
 def get_tk_gemm_configs(

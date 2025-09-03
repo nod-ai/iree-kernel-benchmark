@@ -3,7 +3,7 @@ import logging
 import subprocess
 from pathlib import Path
 import csv
-from typing import Sequence
+from typing import Optional, Sequence
 from collections import namedtuple, defaultdict
 import matplotlib.pyplot as plt
 from itertools import cycle
@@ -23,22 +23,6 @@ import iree.runtime as ireert
 import sympy
 import wave_lang.kernel.lang as tkl
 from wave_lang.kernel._support.indexing import index_symbol
-
-
-class TuningSpec(ABC):
-    def __init__(self, obj: dict[str, Any]):
-        self.load_from_dict(obj)
-
-    def hyperparams(self) -> dict[tkl.IndexSymbol, int]:
-        return {index_symbol(attr): val for attr, val in self.__dict__.items()}
-
-    @abstractmethod
-    def to_dict(self) -> dict[str, Any]:
-        pass
-
-    @abstractmethod
-    def load_from_dict(self, obj: dict[str, Any]):
-        pass
 
 
 @dataclass
@@ -72,7 +56,6 @@ class OpConfig(ABC):
 
 @dataclass
 class BenchmarkResult:
-    index: int
     machine: str
     kernel_type: str
     backend: str
@@ -81,7 +64,7 @@ class BenchmarkResult:
     dims: List[str]
     shape: Dict[str, Any]
     problem: Dict[str, Any]
-    tuning_config: Dict[str, Any]
+    tuning_config: Optional[Dict[str, Any]]
     mean_microseconds: float
     arithmetic_intensity: float
     tflops: float
@@ -195,7 +178,6 @@ def write_results_to_csv(results: list[BenchmarkResult], output_filename: os.Pat
         for result in results:
             writer.writerow(
                 {
-                    "index": result.index,
                     "tag": result.tag,
                     "name": result.name,
                     "machine": result.machine,

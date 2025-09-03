@@ -1,4 +1,5 @@
-from .utils import *
+from .parameters import CategoricalBounds, IntegerBounds
+from .parallel_tuning import *
 import math
 from typing import Callable
 import optuna
@@ -10,97 +11,71 @@ class BayesianTuningParadigm(TuningParadigm):
     def get_name(self) -> str:
         return "Optuna NSGA-II"
 
-    def tune(self, context: TuningContext, progress_callback: Callable) -> TuningResult:
+    @override
+    def _tune(
+        self, context: TuningContext, progress_callback: Callable
+    ) -> BenchmarkResult:
         """Run Optuna-based tuning."""
-        best_result = TuningResult(
-            runtime=math.inf,
-            spec=None,
-            mfma_config=context.mfma_configs[0],
-            config_name=context.kernel.get_name(),
-            kernel=context.kernel,
-            worker_id=context.worker_id,
-        )
 
+        bench = context.bench
+        best_result = bench.get_bench_result(math.inf, False)
         trial_count = 0
 
         def objective(trial: optuna.Trial):
             nonlocal best_result, trial_count
 
-            # Update progress
             progress_callback(
                 ProgressUpdate(
                     device_id=context.device_id,
                     completed=trial_count,
                     total=context.num_trials,
-                    current=context.kernel.get_name(),
+                    current=bench.config.get_name(),
                     active=True,
                     worker_id=context.worker_id,
                 )
             )
             trial_count += 1
 
-            # Suggest block sizes
-            block_sizes = [
-                trial.suggest_int(
-                    constraint.name,
-                    constraint.min,
-                    constraint.max,
-                    step=constraint.step,
-                )
-                for constraint in context.tiling_constraints
+            params = bench.tuning_spec.params()
+            integer_constraints = [
+                (p.name, p.bounds)
+                for p in params
+                if isinstance(p.bounds, IntegerBounds)
+            ]
+            categorical_constraints = [
+                (p.name, p.bounds)
+                for p in params
+                if isinstance(p.bounds, CategoricalBounds)
             ]
 
-            # Create tuning spec
-            tuning_spec_params = {
-                constraint.name: block_sizes[i]
-                for i, constraint in enumerate(context.tiling_constraints)
+            # Suggest block sizes
+            int_constraint_values = {
+                name: trial.suggest_int(
+                    name,
+                    bounds.min,
+                    bounds.max,
+                    step=bounds.step,
+                )
+                for name, bounds in integer_constraints
             }
-            tuning_spec = context.tuning_class(**tuning_spec_params)
+            cat_constraint_values = {
+                name: trial.suggest_categorical(name, bounds.get_range())
+                for name, bounds in categorical_constraints
+            }
 
-            # Check shared memory constraint
-            shared_mem_constraint = (
-                context.kernel.get_shared_mem_bytes(tuning_spec) - 65536
+            curr_result = self._benchmark(
+                context, int_constraint_values | cat_constraint_values
             )
-            trial.set_user_attr("constraint", (shared_mem_constraint,))
-
-            # Select MFMA config
-            mfma_index = trial.suggest_categorical(
-                "MFMA_INDEX", list(range(len(context.mfma_configs)))
-            )
-            mfma_config = context.mfma_configs[mfma_index]
-
-            # Compile and benchmark
-            runtime = self._compile_and_benchmark(context, tuning_spec, mfma_config)
 
             # Update best result if improved
-            if runtime < best_result.runtime:
-                best_result = TuningResult(
-                    runtime=runtime,
-                    spec=tuning_spec,
-                    mfma_config=mfma_config,
-                    config_name=context.kernel.get_name(),
-                    kernel=context.kernel,
-                    worker_id=context.worker_id,
-                )
+            if curr_result.mean_microseconds < best_result.mean_microseconds:
+                best_result = curr_result
 
-            return runtime
-
-        def constraints(trial: optuna.Trial):
-            return trial.user_attrs["constraint"]
+            return curr_result.mean_microseconds
 
         # Configure and run Optuna study
         optuna.logging.set_verbosity(optuna.logging.WARNING)
-        sampler = optuna.samplers.NSGAIISampler(constraints_func=constraints)
-        study = optuna.create_study(direction="minimize", sampler=sampler)
-
-        # Add default tuning specs
-        for i in range(len(context.mfma_configs)):
-            study.enqueue_trial(
-                {
-                    **context.tuning_class().hyperparams(),
-                    "MFMA_INDEX": i,
-                }
-            )
+        study = optuna.create_study(direction="minimize")
 
         study.optimize(
             objective,

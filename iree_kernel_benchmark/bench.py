@@ -12,21 +12,19 @@ from .convbench.conv_utils import ConvConfig
 from .gemmbench.gemm_utils import GemmConfig
 
 from .utils import *
+from .utils.runner import BenchmarkRunner
 
 from .gemmbench import (
     GEMM_BENCH,
     get_default_gemm_configs,
-    get_gemm_tuning,
 )
 from .attentionbench import (
     ATTENTION_BENCH,
     get_default_attention_configs,
-    get_attention_tuning,
 )
 from .convbench import (
     CONV_BENCH,
     get_default_conv_configs,
-    get_conv_tuning,
 )
 
 BENCHMARKS: dict[str, dict[str, KernelBenchmark]] = {}
@@ -38,12 +36,6 @@ LOAD_PROBLEMS = {
     "gemm": get_default_gemm_configs,
     "attention": get_default_attention_configs,
     "conv": get_default_conv_configs,
-}
-
-TUNING_CONFIGS = {
-    "gemm": get_gemm_tuning,
-    "attention": get_attention_tuning,
-    "conv": get_conv_tuning,
 }
 
 CONFIG_CLASSES = {
@@ -158,18 +150,6 @@ if __name__ == "__main__":
     device = args.device
     kernel_dir.mkdir(parents=True, exist_ok=True)
 
-    bench_params = {
-        "backend": backend_name,
-        "kernel_type": kernel_type,
-        "device": device,
-        "machine": args.machine,
-        "configs": configs,
-        "kernel_dir": kernel_dir,
-        "dump_dir": dump_dir,
-        "debug": True,
-        "num_iterations": args.iterations,
-    }
-
     if kernel_type not in BENCHMARKS:
         print(f"Kernel Type {kernel_type} is currently unsupported.")
         exit(1)
@@ -180,30 +160,29 @@ if __name__ == "__main__":
         )
         exit(1)
 
-    bench: KernelBenchmark = BENCHMARKS[kernel_type][backend_name](**bench_params)
+    bench = BenchmarkRunner(
+        backend=backend_name,
+        kernel_type=kernel_type,
+        device=device,
+        machine=args.machine,
+        configs=configs,
+        kernel_dir=kernel_dir,
+        dump_dir=dump_dir,
+        debug=True,
+        num_iterations=args.iterations,
+    )
     bench.reduce_configs(args.max_kernels)
     print(
         f"Generated {len(bench.configs)} {kernel_type} configs for backend {backend_name}."
     )
 
-    tuning_config = TUNING_CONFIGS[kernel_type](kernel_type, backend_name)
-    tuning_spec_class, tiling_constraints, mfma_configs = tuning_config
-
     if args.tune:
         bench.tune_kernels(
-            mfma_configs,
-            tiling_constraints,
-            tuning_spec_class,
             num_trials=args.num_trials,
         )
         # bench.tune_scheduling(max_iterations=args.num_trials)
 
     else:
         if args.use_tuned:
-            bench.load_tuned_results(args.use_tuned, tuning_spec_class)
-
-        if backend_name in ["torch", "hipblaslt"]:
-            bench.benchmark_kernels_extern()
-        else:
-            bench.compile_kernels()
-            bench.benchmark_kernels()
+            bench.load_tuned_results(args.use_tuned)
+        bench.benchmark_kernels()

@@ -1,21 +1,16 @@
-from typing import Optional, override
+from typing import override
 import torch
 
 from ..utils import *
 from .attention_config import (
-    AttentionAttributes,
     AttentionConfigBMNK,
     bmnk1k2_to_attention_attributes,
 )
-from wave_lang.kernel.wave.utils.torch_utils import (
-    device_randn,
-    device_zeros,
-    device_ones,
-)
-import time
 
 
 class TorchAttentionBenchmark(KernelBenchmark):
+    config: AttentionConfigBMNK
+
     def _clear_mem(self, *tensors):
         for tensor in tensors:
             del tensor
@@ -23,19 +18,17 @@ class TorchAttentionBenchmark(KernelBenchmark):
             torch.cuda.empty_cache()
 
     @override
-    def bench_kernel(
-        self, config: AttentionConfigBMNK, vmfb_filename, num_iterations=3, debug=False
-    ):
-
+    def run_bench(self, device, num_iterations=1):
+        config = self.config
         shape = bmnk1k2_to_attention_attributes(config)
 
         q_shape = (shape.num_query_heads, shape.query_seq_len, shape.head_size)
         k_shape = (shape.num_query_heads, shape.kv_seq_len, shape.head_size)
         v_shape = (shape.num_query_heads, shape.kv_seq_len, shape.head_size_kv)
 
-        q = device_randn(q_shape, dtype=dtype_to_torch(config.dtype))
-        k = device_randn(k_shape, dtype=dtype_to_torch(config.dtype))
-        v = device_randn(v_shape, dtype=dtype_to_torch(config.dtype))
+        q = torch.randn(q_shape, dtype=dtype_to_torch(config.dtype), device=device)
+        k = torch.randn(k_shape, dtype=dtype_to_torch(config.dtype), device=device)
+        v = torch.randn(v_shape, dtype=dtype_to_torch(config.dtype), device=device)
 
         self._clear_mem()
         try:

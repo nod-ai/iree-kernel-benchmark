@@ -1,21 +1,21 @@
+from ..utils.tuning.hyperparam import (
+    TuningParameter,
+    CategoricalBounds,
+    IntegerBounds,
+)
+from ..utils.template import WaveKernel, WaveKernelBenchmark
 from ..utils import *
 from .attention_config import (
-    AttentionAttributes,
     AttentionConfigBMNK,
     AttentionConfigBSHD,
     bmnk1k2_to_attention_attributes,
     bshd_to_attention_attributes,
 )
-from .attention_utils import (
-    AttentionBMNKTuningSpec,
-    AttentionBSHDTuningSpec,
-)
-from pathlib import Path
-from typing import Optional, override
+from typing import override
 
 from wave_lang.kernel.lang.global_symbols import *
 from wave_lang.kernel.wave.constraints import MMAType
-from wave_lang.kernel.wave.compile import wave_compile, WaveCompileOptions
+from wave_lang.kernel.wave.compile import WaveCompileOptions
 from wave_lang.kernel.wave.utils.general_utils import (
     get_default_scheduling_params,
 )
@@ -28,144 +28,116 @@ from wave_lang.kernel.wave.templates.gqa_vanilla_attention import (
 from wave_lang.kernel.wave.scheduling.schedule_enums import SchedulingType
 
 
-class WaveAttentionMHABenchmark(KernelBenchmark):
+class WaveAttentionMHABenchmark(WaveKernelBenchmark):
+    config: AttentionConfigBMNK
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.mfma_variant = TuningParameter(
+            "MFMA_VARIANT",
+            CategoricalBounds(
+                [
+                    (MMAType.F32_32x32x16_K8_F16, MMAType.F32_32x32x8_F16),
+                    (MMAType.F32_16x16x32_K8_F16, MMAType.F32_16x16x16_F16),
+                    (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
+                    (MMAType.F32_32x32x8_F16, MMAType.F32_32x32x8_F16),
+                ]
+            ),
+            initial_value=0,
+            include_hyperparam=False,
+        )
+        self.BLOCK_B = TuningParameter("BLOCK_B", IntegerBounds(min=1, max=1, step=1))
+        self.BLOCK_H = TuningParameter("BLOCK_H", IntegerBounds(min=1, max=2, step=1))
+        self.BLOCK_N_Q = TuningParameter(
+            "BLOCK_N_Q", IntegerBounds(min=16, max=128, step=16)
+        )
+        self.BLOCK_D_KV = TuningParameter(
+            "BLOCK_D_KV", IntegerBounds(min=16, max=128, step=16)
+        )
+        self.BLOCK_N_KV = TuningParameter(
+            "BLOCK_N_KV", IntegerBounds(min=16, max=64, step=16)
+        )
+
     @override
-    def load_kernel(self, config, mfma_variant=None, spec=None):
-        try:
-            if not mfma_variant:
-                mfma_variant = (
-                    MMAType.F32_32x32x16_K8_F16,
-                    MMAType.F32_32x32x8_F16,
-                )
+    def load_wave_kernel(self):
+        config = self.config
 
-            base_attention, hyperparams, dynamic_symbols = get_vanilla_attention_kernel(
-                shape=bmnk1k2_to_attention_attributes(config),
-                mfma_variant=mfma_variant,
-                dynamic_dims=False,
-            )
+        base_attention, hyperparams, dynamic_symbols = get_vanilla_attention_kernel(
+            shape=bmnk1k2_to_attention_attributes(config),
+            mfma_variant=self.mfma_variant,
+            dynamic_dims=False,
+        )
 
-            if spec:
-                hyperparams.update(spec.hyperparams())
+        hyperparams.update(self.tuning_spec.hyperparams())
+        hyperparams.update(get_default_scheduling_params())
 
-            hyperparams.update(get_default_scheduling_params())
-
-            return base_attention, hyperparams
-
-        except:
-            return None
+        return WaveKernel(
+            launchable=base_attention,
+            hyperparams=hyperparams,
+            dynamic_symbols=dynamic_symbols,
+        )
 
     @override
-    def compile_kernel(
-        self,
-        config: AttentionConfigBMNK,
-        mlir_path,
-        vmfb_path,
-        extra_compiler_args=...,
-        mfma_variant=None,
-        spec=None,
-    ):
-        try:
-            if not mfma_variant:
-                mfma_variant = (
-                    MMAType.F32_32x32x16_K8_F16,
-                    MMAType.F32_32x32x8_F16,
-                )
-
-            base_attention, hyperparams, dynamic_symbols = get_vanilla_attention_kernel(
-                shape=bmnk1k2_to_attention_attributes(config),
-                mfma_variant=mfma_variant,
-                dynamic_dims=False,
-            )
-
-            if spec:
-                hyperparams.update(spec.hyperparams())
-
-            hyperparams.update(get_default_scheduling_params())
-
-            compile_options = WaveCompileOptions(
-                subs=hyperparams,
-                schedule=SchedulingType.NONE,
-                canonicalize=True,
-                create_vmfb_file=vmfb_path,
-                iree_launch_async=False,
-                backend="rocm",
-                target=self.target,
-                use_buffer_ops=True,
-                # print_ir_after_all=self.dump_dir is not None,
-            )
-
-            if self.dump_dir:
-                dump_file = self.dump_dir / "wave" / (config.get_name() + ".debug.mlir")
-                with redirect_stderr_to_file(dump_file):
-                    result = wave_compile(compile_options, base_attention)
-            else:
-                result = wave_compile(compile_options, base_attention)
-
-            with open(mlir_path, "w") as mlir_out:
-                mlir_out.write(result.asm)
-
-            return True
-
-        except Exception as e:
-            print(f"Failed to compile {config.get_name()}: {e}")
-            return False
+    def get_compile_options(self):
+        return WaveCompileOptions(
+            schedule=SchedulingType.NONE,
+            canonicalize=True,
+            use_buffer_ops=True,
+        )
 
 
-class WaveAttentionGQABenchmark(KernelBenchmark):
+class WaveAttentionGQABenchmark(WaveKernelBenchmark):
+    config: AttentionConfigBSHD
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.mfma_variant = TuningParameter(
+            "MFMA_VARIANT",
+            CategoricalBounds(
+                [
+                    (MMAType.F32_32x32x16_K8_F16, MMAType.F32_32x32x8_F16),
+                    (MMAType.F32_16x16x32_K8_F16, MMAType.F32_16x16x16_F16),
+                    (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
+                    (MMAType.F32_32x32x8_F16, MMAType.F32_32x32x8_F16),
+                ]
+            ),
+            initial_value=0,
+            include_hyperparam=False,
+        )
+        self.BLOCK_B = TuningParameter("BLOCK_B", IntegerBounds(min=1, max=1, step=1))
+        self.BLOCK_M = TuningParameter(
+            "BLOCK_M", IntegerBounds(min=32, max=256, step=8)
+        )
+        self.BLOCK_N = TuningParameter(
+            "BLOCK_N", IntegerBounds(min=16, max=128, step=4)
+        )
+        self.BLOCK_K2 = TuningParameter(
+            "BLOCK_K2", IntegerBounds(min=32, max=256, step=8)
+        )
+
     @override
-    def compile_kernel(
-        self,
-        config: AttentionConfigBSHD,
-        mlir_path,
-        vmfb_path,
-        extra_compiler_args=...,
-        mfma_variant=None,
-        spec=None,
-    ):
-        try:
-            if not mfma_variant:
-                mfma_variant = (
-                    MMAType.F32_32x32x16_K8_F16,
-                    MMAType.F32_32x32x8_F16,
-                )
+    def load_wave_kernel(self):
+        config = self.config
 
-            base_attention, hyperparams, dynamic_symbols = (
-                get_gqa_bshd_attention_kernel(
-                    shape=bshd_to_attention_attributes(config),
-                    mfma_variant=mfma_variant,
-                    input_dtype=dtype_to_torch(config.dtype),
-                    output_dtype=dtype_to_torch("f32"),
-                )
-            )
+        base_attention, hyperparams, dynamic_symbols = get_gqa_bshd_attention_kernel(
+            shape=bshd_to_attention_attributes(config),
+            mfma_variant=self.mfma_variant,
+            input_dtype=dtype_to_torch(config.dtype),
+            output_dtype=dtype_to_torch("f32"),
+        )
 
-            if spec:
-                hyperparams.update(spec.hyperparams())
-            hyperparams.update(get_default_scheduling_params())
+        hyperparams.update(self.tuning_spec.hyperparams())
+        hyperparams.update(get_default_scheduling_params())
 
-            compile_options = WaveCompileOptions(
-                subs=hyperparams,
-                schedule=SchedulingType.NONE,
-                dynamic_symbols=dynamic_symbols,
-                canonicalize=True,
-                create_vmfb_file=vmfb_path,
-                iree_launch_async=False,
-                backend="rocm",
-                target=self.target,
-                # print_ir_after_all=self.dump_dir is not None,
-            )
+        return WaveKernel(
+            launchable=base_attention,
+            hyperparams=hyperparams,
+            dynamic_symbols=dynamic_symbols,
+        )
 
-            if self.dump_dir:
-                dump_file = self.dump_dir / "wave" / (config.get_name() + ".debug.mlir")
-                with redirect_stderr_to_file(dump_file):
-                    result = wave_compile(compile_options, base_attention)
-            else:
-                result = wave_compile(compile_options, base_attention)
-
-            with open(mlir_path, "w") as mlir_out:
-                mlir_out.write(result.asm)
-
-            return True
-
-        except Exception as e:
-            print(f"Failed to compile {config.get_name()}: {e}")
-            return False
+    def get_compile_options(self):
+        return WaveCompileOptions(
+            schedule=SchedulingType.NONE,
+            canonicalize=True,
+            iree_launch_async=False,
+        )

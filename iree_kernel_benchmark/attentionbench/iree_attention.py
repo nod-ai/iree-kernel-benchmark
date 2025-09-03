@@ -1,11 +1,15 @@
 from dataclasses import asdict
+
+from ..utils.template import IREEKernelBenchmark
 from ..utils import *
 from .attention_config import AttentionConfigBMNK
 from .attention_utils import IREEAttentionTuningSpec, IntrinsicType
 from typing import Optional, override
 
 
-class IREEAttentionBenchmark(KernelBenchmark):
+class IREEAttentionBenchmark(IREEKernelBenchmark):
+    config: AttentionConfigBMNK
+
     def _generate_attention_mlir_iree(
         self,
         config: AttentionConfigBMNK,
@@ -54,25 +58,17 @@ return %O : !O
         return mlir_template
 
     @override
-    def compile_kernel(
-        self,
-        config: AttentionConfigBMNK,
-        mlir_path,
-        vmfb_path,
-        extra_compiler_args=...,
-        mfma_variant=None,
-        spec=None,
-    ):
-        if not spec:
-            spec = IREEAttentionTuningSpec(
-                [1, 128, 0, 0, 0],
-                [0, 0, 0, 0, 32],
-                4,
-                1,
-                IntrinsicType.VMFMA_F32_32x32x16_F16,
-                2,
-                True,
-            )
+    def compile_to_vmfb(self, mlir_path, vmfb_path):
+        config = self.config
+        spec = IREEAttentionTuningSpec(
+            [1, 128, 0, 0, 0],
+            [0, 0, 0, 0, 32],
+            4,
+            1,
+            IntrinsicType.VMFMA_F32_32x32x16_F16,
+            2,
+            True,
+        )
 
         mlir_content = self._generate_attention_mlir_iree(config, spec)
 
@@ -94,7 +90,7 @@ return %O : !O
             # Device: MI300x
             f"--iree-hip-target={self.target}",
             "--mlir-print-ir-after-all",
-        ] + extra_compiler_args
+        ]
         if self.dump_dir:
             os.makedirs(self.dump_dir / "iree", exist_ok=True)
             dump_file = self.dump_dir / "iree" / (config.get_name() + ".debug.mlir")

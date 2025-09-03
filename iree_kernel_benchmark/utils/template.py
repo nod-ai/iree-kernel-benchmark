@@ -1,144 +1,144 @@
-import datetime
+from abc import ABC, ABCMeta, abstractmethod
+import math
 import os
-from tqdm import tqdm
-from multiprocessing import Pool, cpu_count, Manager
+import traceback
+from sympy import Symbol
 from dataclasses import asdict, dataclass, field
-import itertools
-import pandas as pd
-import time
-import json
 from os import PathLike
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Type, override
+from typing import Any, Dict, List, Optional, Tuple
 
+from wave_lang.kernel.wave.compile import wave_compile
+from wave_lang.kernel.wave.compile_options import WaveCompileOptions
 from wave_lang.kernel.wave.wave import LaunchableWave
-from wave_lang.kernel.wave.constraints import MMAType
-
-from .tuning import tune_kernel_schedule, TuningConstraint, tune_kernels_parallel
 
 from .bench_utils import (
     BenchmarkResult,
     bench_kernel_ireert,
+    get_kernel_perf_stats,
     machine_to_hip_target,
     redirect_stderr_to_file,
-    unit_to_microseconds,
-    get_kernel_perf_stats,
-    run_iree_command,
-    write_results_to_csv,
-    reduce_configs,
     OpConfig,
-    ConfigList,
-    write_results_to_json,
-    write_to_json_file,
 )
-from .bench_utils import TuningSpec
+from .tuning.hyperparam.parameters import TuningParameter, TuningSpec
+
+
+class TuningParameterDescriptor:
+    """Descriptor to handle tuning parameter access and assignment."""
+
+    def __init__(self, name: str):
+        self.name = name
+        self.param_name = None
+
+    def __get__(self, instance, owner):
+        if instance is None:
+            return self
+        return instance._tuning_spec.get_parameter_value(self.param_name)
+
+    def __set__(self, instance, value):
+        if isinstance(value, TuningParameter):
+            self.param_name = value.name
+            instance._tuning_spec.add_parameter(self.param_name, value)
+        else:
+            raise TypeError(f"Invalid type for tuning parameter: {type(value)}")
+
+
+class KernelBenchmarkMeta(ABCMeta):
+    """Metaclass to automatically detect TuningParameter assignments."""
+
+    def __new__(cls, name, bases, attrs):
+        for key, value in list(attrs.items()):
+            if isinstance(value, TuningParameter):
+                attrs[key] = TuningParameterDescriptor(key)
+            elif isinstance(value, (Tuple, List)):
+                if len(value) > 0 and isinstance(value[0], TuningParameter):
+                    for param in value:
+                        attrs[param.name] = param
+
+        return super().__new__(cls, name, bases, attrs)
 
 
 @dataclass
-class KernelBenchmark:
+class KernelBenchmark(ABC, metaclass=KernelBenchmarkMeta):
+    tag: str
     backend: str
     kernel_type: str
-    configs: ConfigList
-    device: str
-
-    kernel_dir: Path
-
-    dump_dir: Optional[Path] = None
-    debug: bool = False
-
-    hyperparams: Dict[str, Dict[str, Any]] = field(default_factory=dict)
-
-    machine: str = "MI325X"
-    target: str = field(init=False)
-    num_iterations: int = 3
-
-    _vmfb_dict: Dict[str, Tuple[str, OpConfig]] = field(default_factory=dict)
+    machine: str
+    config: OpConfig
 
     def __post_init__(self):
+        self._tuning_spec = TuningSpec()
+
+    def __setattr__(self, name, value):
+        if isinstance(value, TuningParameter):
+            if not hasattr(self.__class__, name):
+                setattr(self.__class__, name, TuningParameterDescriptor(name))
+        object.__setattr__(self, name, value)
+
+    def get_bench_result(self, runtime_us: float, ok: bool):
+        arithmetic_intensity, tflops_per_second = get_kernel_perf_stats(
+            self.config, runtime_us if ok else math.inf
+        )
+
+        tuning_config = self._tuning_spec.to_dict() or None
+
+        return BenchmarkResult(
+            machine=self.machine,
+            kernel_type=self.kernel_type,
+            backend=self.backend,
+            tag=self.tag,
+            name=self.config.get_name(),
+            dims=self.config.get_dim_names(),
+            shape=self.config.to_dict(),
+            problem=asdict(self.config),
+            tuning_config=tuning_config,
+            mean_microseconds=round(runtime_us, 4),
+            arithmetic_intensity=round(arithmetic_intensity, 4),
+            tflops=round(tflops_per_second, 4),
+            ok=ok,
+        )
+
+    @property
+    def tuning_spec(self):
+        return self._tuning_spec
+
+    def load_tuning_spec(self, new_spec: TuningSpec):
+        self._tuning_spec = new_spec
+
+    def load_tuned_config(self, obj: dict[str, Any]):
+        self.tuning_spec.load_from_dict(obj)
+
+    @abstractmethod
+    def run_bench(self, device: str, num_iterations: int = 1) -> BenchmarkResult:
+        pass
+
+
+@dataclass
+class IREEKernelBenchmark(KernelBenchmark):
+    kernel_dir: Path
+    dump_dir: Optional[Path]
+
+    def __post_init__(self):
+        super().__post_init__()
         self.machine = self.machine.upper()
         self.target = machine_to_hip_target(self.machine)
 
-    def compile_kernel(
-        self,
-        config: OpConfig,
-        mlir_path: Path,
-        vmfb_path: Path,
-        extra_compiler_args: List[str] = [],
-        mfma_variant: Optional[Tuple[MMAType]] = None,
-        spec: Optional[TuningSpec] = None,
-    ) -> bool:
-        return False
+    @abstractmethod
+    def compile_to_vmfb(self, mlir_path: Path, vmfb_path: Path) -> bool:
+        pass
 
-    def load_kernel(
-        self,
-        config: OpConfig,
-        mfma_variant: Optional[Tuple[MMAType]] = None,
-        spec: Optional[TuningSpec] = None,
-    ) -> Optional[LaunchableWave]:
-        return None
-
-    def bench_kernel(
-        self,
-        config: OpConfig,
-        vmfb_filename: PathLike,
-        num_iterations: int = 3,
-        device: str = None,
-        debug: bool = False,
-    ) -> Tuple[float, bool]:
-        return bench_kernel_ireert(
+    def bench_vmfb(
+        self, vmfb_filename: PathLike, device: str, num_iterations: int = 3
+    ) -> BenchmarkResult:
+        runtime_us, ok = bench_kernel_ireert(
             vmfb_filename,
-            config.get_runtime_args(self.backend),
+            self.config.get_runtime_args(self.backend),
             num_iterations,
-            device or self.device,
+            device,
         )
+        return self.get_bench_result(runtime_us, ok)
 
-    def _log(self, *args):
-        if self.debug:
-            print(*args)
-
-    def reduce_configs(self, max_kernels: int = None, seed: int = 42):
-        self.configs = reduce_configs(self.configs, max_kernels, seed)
-
-    def load_tuned_results(
-        self, result_path: PathLike, spec_class_type: Type[TuningSpec]
-    ):
-        with open(result_path, "r") as file:
-            tuned_data: dict[str, dict] = json.load(file)
-
-        def to_mma(str_config: list[str]) -> tuple[MMAType] | MMAType:
-            mma_types = tuple([MMAType[mma_name] for mma_name in str_config])
-            if len(mma_types) == 1:
-                return mma_types[0]
-            return mma_types
-
-        self.specs = {
-            kernel_name: tune_result["hyperparams"]
-            for kernel_name, tune_result in tuned_data.items()
-        }
-
-    def save_results(self, results: List[BenchmarkResult]):
-        if len(results) == 0:
-            return None
-
-        output_base = f"{self.kernel_type}_{self.backend}"
-
-        output_csv_dir = Path(f"results/csv/{self.kernel_type}")
-        output_json_dir = Path(f"results/json/{self.kernel_type}")
-
-        output_csv_path = output_csv_dir / f"{output_base}.csv"
-        output_json_path = output_json_dir / f"{output_base}.json"
-
-        write_results_to_csv(results, output_csv_path)
-        self._log(f"Results written to {output_csv_path}")
-
-        write_results_to_json(results, output_json_path)
-        self._log(f"Results written to {output_json_path}")
-
-        return pd.read_csv(output_csv_path)
-
-    def compile_kernels(self):
-        vmfb_dict = {}
-
+    def run_bench(self, device, num_iterations=1):
         local_kernel_dir = self.kernel_dir / self.kernel_type / self.backend
         mlir_dir = local_kernel_dir / "mlir"
         vmfb_dir = local_kernel_dir / "vmfb"
@@ -146,211 +146,62 @@ class KernelBenchmark:
         os.makedirs(mlir_dir, exist_ok=True)
         os.makedirs(vmfb_dir, exist_ok=True)
 
-        compilation_targets: List[Tuple] = [
-            (
-                tag,
-                config,
-                mlir_dir / f"{config.get_name()}.mlir",
-                vmfb_dir / f"{config.get_name()}.vmfb",
-            )
-            for tag, config in self.configs
-        ]
+        mlir_path = mlir_dir / f"{self.config.get_name()}.mlir"
+        vmfb_path = vmfb_dir / f"{self.config.get_name()}.vmfb"
 
-        def compile_args_generator():
-            return itertools.starmap(
-                lambda tag, config, mlir_path, vmfb_path: (
-                    config,
-                    mlir_path,
-                    vmfb_path,
-                    [],
-                    self.hyperparams.get(config.get_name()),
-                ),
-                compilation_targets,
-            )
+        compile_success = self.compile_to_vmfb(mlir_path, vmfb_path)
+        if not compile_success:
+            return self.get_bench_result(0, False)
 
-        compilation_results: List[bool] = []
+        return self.bench_vmfb(vmfb_path, device, num_iterations)
 
-        if len(self.configs) < 5:
-            compilation_results = [
-                self.compile_kernel(*args) for args in compile_args_generator()
-            ]
-        else:
-            num_cpus = max(1, cpu_count() - 20)
-            self._log(f"Using {num_cpus} CPUs for parallel processing.")
-            manager = Manager()
-            shared_vmfb_dict = manager.dict()
 
-            with Pool(num_cpus) as pool:
-                compilation_results = list(
-                    tqdm(
-                        pool.istarmap(self.compile_kernel, compile_args_generator()),
-                        total=len(self.configs),
-                        desc=f"Compiling {self.kernel_type.capitalize()} Kernels",
-                    )
+@dataclass
+class WaveKernel:
+    launchable: LaunchableWave
+    hyperparams: Dict[Symbol, Any]
+    dynamic_symbols: List[Symbol] = field(default_factory=list)
+
+
+@dataclass
+class WaveKernelBenchmark(IREEKernelBenchmark):
+    @abstractmethod
+    def load_wave_kernel(self) -> WaveKernel:
+        pass
+
+    @abstractmethod
+    def get_compile_options(self) -> WaveCompileOptions:
+        pass
+
+    def compile_to_vmfb(self, mlir_path, vmfb_path):
+        try:
+            kernel = self.load_wave_kernel()
+            compile_options = self.get_compile_options()
+
+            compile_options.create_vmfb_file = vmfb_path
+            compile_options.subs = kernel.hyperparams
+            compile_options.dynamic_symbols = kernel.dynamic_symbols
+            compile_options.iree_launch_async = False
+            compile_options.run_bench = False
+            compile_options.backend = "rocm"
+            compile_options.target = self.target
+
+            if self.dump_dir:
+                dump_file = (
+                    self.dump_dir / "wave" / (self.config.get_name() + ".debug.mlir")
                 )
-            vmfb_dict = shared_vmfb_dict
-
-        error_count = 0
-        for i, compilation_success in enumerate(compilation_results):
-            if compilation_success:
-                tag, config, mlir_path, vmfb_path = compilation_targets[i]
-                vmfb_dict[str(vmfb_path)] = (tag, config)
+                with redirect_stderr_to_file(dump_file):
+                    compile_options.mlir_print_ir_after_all = True
+                    result = wave_compile(compile_options, kernel.launchable)
             else:
-                error_count += 1
+                result = wave_compile(compile_options, kernel.launchable)
 
-        self._log(
-            f"{len(self.configs) - error_count} Success, {error_count} Failed out of {len(self.configs)} configs"
-        )
-        self._log("Compilation process completed.")
+            with open(mlir_path, "w") as mlir_out:
+                mlir_out.write(result.asm)
 
-        self._vmfb_dict = dict(vmfb_dict)
+            return True
 
-    def benchmark_kernels(self):
-        bench_items = (
-            tqdm(self._vmfb_dict.items(), desc="Benchmarking Attention Kernels")
-            if self.debug
-            else self._vmfb_dict.items()
-        )
-
-        results = []
-
-        for index, (vmfb_filename, value) in enumerate(bench_items):
-            tag, config = value
-
-            benchmark_mean_time_us, ok = self.bench_kernel(
-                config,
-                vmfb_filename,
-                num_iterations=self.num_iterations,
-                debug=self.debug,
-            )
-
-            arithmetic_intensity, tflops_per_second = get_kernel_perf_stats(
-                config, benchmark_mean_time_us
-            )
-
-            tuning_config = self.hyperparams.get(config.get_name())
-
-            results.append(
-                BenchmarkResult(
-                    index=index,
-                    machine=self.machine,
-                    kernel_type=self.kernel_type,
-                    backend=self.backend,
-                    tag=tag,
-                    name=config.get_name(),
-                    dims=config.get_dim_names(),
-                    shape=config.to_dict(),
-                    problem=asdict(config),
-                    tuning_config=tuning_config,
-                    mean_microseconds=round(benchmark_mean_time_us, 4),
-                    arithmetic_intensity=round(arithmetic_intensity, 4),
-                    tflops=round(tflops_per_second, 4),
-                    ok=ok,
-                )
-            )
-
-        return self.save_results(results)
-
-    def benchmark_kernels_extern(self):
-        bench_items = (
-            tqdm(self.configs, desc="Benchmarking Attention Kernels")
-            if self.debug
-            else self.configs
-        )
-
-        results = []
-
-        for index, (tag, config) in enumerate(bench_items):
-            benchmark_mean_time_us, ok = self.bench_kernel(
-                config, "", self.num_iterations, self.debug
-            )
-
-            arithmetic_intensity, tflops_per_second = get_kernel_perf_stats(
-                config, benchmark_mean_time_us
-            )
-
-            results.append(
-                BenchmarkResult(
-                    index=index,
-                    machine=self.machine,
-                    kernel_type=self.kernel_type,
-                    backend=self.backend,
-                    tag=tag,
-                    name=config.get_name(),
-                    dims=config.get_dim_names(),
-                    shape=config.to_dict(),
-                    problem=asdict(config),
-                    tuning_config=None,
-                    mean_microseconds=round(benchmark_mean_time_us, 4),
-                    arithmetic_intensity=round(arithmetic_intensity, 4),
-                    tflops=round(tflops_per_second, 4),
-                    ok=ok,
-                )
-            )
-
-        return self.save_results(results)
-
-    def tune_scheduling(self, max_iterations=100):
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_dir = Path(f"results/tuning/{self.kernel_type}")
-        output_path = (
-            output_dir / f"{self.kernel_type}_{self.backend}_schedule_tuned.json"
-        )
-
-        results = {}
-
-        for tag, config in tqdm(self.configs, desc="Tuning Scheduling"):
-            print(f"Tuning scheduling for kernel {config.get_name()}")
-            result, runtime_us = tune_kernel_schedule(
-                config,
-                run_name=timestamp,
-                load_kernel_func=self.load_kernel,
-                compile_kernel_func=self.compile_kernel,
-                bench_kernel_func=self.bench_kernel,
-                kernel_dir=self.kernel_dir,
-                max_iterations=max_iterations,
-                extra_compile_options={},
-            )
-            arithmetic_intensity, tflops_per_second = get_kernel_perf_stats(
-                config, runtime_us
-            )
-            results[config.get_name()] = {
-                "result": result,
-                "mean_microseconds": runtime_us,
-                "arithmetic_intensity": arithmetic_intensity,
-                "tflops": tflops_per_second,
-                "problem": asdict(config),
-            }
-            write_to_json_file(results, output_path)
-
-        return results
-
-    def tune_kernels(
-        self,
-        mfma_configs: List[Tuple[MMAType]],
-        tiling_constraints: List[TuningConstraint],
-        tuning_class: Type[TuningSpec],
-        num_trials: int = 100,
-    ):
-        tuning_dir = Path(f"results/tuning")
-        tuning_result_basename = f"{self.kernel_type}_{self.backend}_tuned_results.json"
-        tuning_result_path = tuning_dir / self.kernel_type / tuning_result_basename
-
-        local_kernel_dir = self.kernel_dir / self.kernel_type / self.backend
-
-        tune_kernels_parallel(
-            self.configs,
-            mfma_configs,
-            tiling_constraints,
-            tuning_class,
-            self.compile_kernel,
-            self.bench_kernel,
-            local_kernel_dir,
-            tuning_result_path,
-            self.num_iterations,
-            num_trials,
-            self.debug,
-            save_results=True,
-        )
-
-        print(f"Saved results to {tuning_result_path}")
+        except Exception as e:
+            print(f"Failed to compile {self.config.get_name()}: {e}")
+            traceback.print_exception(e)
+            return False

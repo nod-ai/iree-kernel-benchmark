@@ -1,9 +1,12 @@
+from ..utils.template import IREEKernelBenchmark
 from ..utils import *
 from .conv_utils import *
 from typing import Optional
 
 
-class IREEConvBenchmark(KernelBenchmark):
+class IREEConvBenchmark(IREEKernelBenchmark):
+    config: ConvConfig
+
     def _generate_mlir(self, config: ConvConfig):
         n = config.N
         h = config.H
@@ -64,15 +67,9 @@ class IREEConvBenchmark(KernelBenchmark):
         )
         return mlir
 
-    def compile_kernel(
-        self,
-        config,
-        mlir_path,
-        vmfb_path,
-        extra_compiler_args=...,
-        mfma_variant=None,
-        spec=None,
-    ):
+    def compile_to_vmfb(self, mlir_path, vmfb_path):
+        config = self.config
+
         # Name with tag is used for filenames so that duplicate configs with
         # different tags will not clobber eachother.
         if self.dump_dir:
@@ -98,7 +95,7 @@ class IREEConvBenchmark(KernelBenchmark):
             "--iree-hal-target-device=hip",
             # Device: MI300x
             f"--iree-hip-target={self.target}",
-        ] + extra_compiler_args
+        ]
 
         if self.dump_dir:
             os.makedirs(self.dump_dir / "iree", exist_ok=True)
