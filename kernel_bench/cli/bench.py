@@ -5,43 +5,9 @@ import argparse
 from kernel_bench.utils.device_utils import HIP_TARGETS
 from wave_lang.kernel.wave.constraints import MMAType
 
-from kernel_bench.core.template import KernelBenchmark
 from kernel_bench.core.runner import BenchmarkRunner
 from kernel_bench.core.utils import OpConfig, load_configs
-
-from kernel_bench.kernels.attention.attention_config import AttentionConfigBMNK
-from kernel_bench.kernels.conv.conv_utils import ConvConfig
-from kernel_bench.kernels.gemm.gemm_utils import GemmConfig
-
-from kernel_bench.kernels.gemm import (
-    GEMM_BENCH,
-    get_default_gemm_configs,
-)
-from kernel_bench.kernels.attention import (
-    ATTENTION_BENCH,
-    get_default_attention_configs,
-)
-from kernel_bench.kernels.conv import (
-    CONV_BENCH,
-    get_default_conv_configs,
-)
-
-BENCHMARKS: dict[str, dict[str, KernelBenchmark]] = {}
-BENCHMARKS.update(GEMM_BENCH)
-BENCHMARKS.update(ATTENTION_BENCH)
-BENCHMARKS.update(CONV_BENCH)
-
-LOAD_PROBLEMS = {
-    "gemm": get_default_gemm_configs,
-    "attention": get_default_attention_configs,
-    "conv": get_default_conv_configs,
-}
-
-CONFIG_CLASSES = {
-    "gemm": GemmConfig,
-    "attention": AttentionConfigBMNK,
-    "conv": ConvConfig,
-}
+from kernel_bench.core.base import LOAD_PROBLEMS, BENCHMARKS, CONFIG_CLASSES
 
 if __name__ == "__main__":
     os.environ["WAVE_CACHE_ON"] = "0"
@@ -146,10 +112,10 @@ if __name__ == "__main__":
     if len(configs) == 0:
         configs = LOAD_PROBLEMS[kernel_type](kernel_type, backend_name)
 
-    kernel_dir = Path("kernels")
+    kernel_dir = Path("results/kernels")
+    kernel_dir.mkdir(parents=True, exist_ok=True)
     dump_dir = Path(args.dump_dir) if args.dump_dir else None
     device = args.device
-    kernel_dir.mkdir(parents=True, exist_ok=True)
 
     if kernel_type not in BENCHMARKS:
         print(f"Kernel Type {kernel_type} is currently unsupported.")

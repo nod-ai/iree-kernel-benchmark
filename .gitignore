@@ -27,9 +27,5 @@ test_venv*/
 *.venv/
 
 # Bench Artifacts
-attention/
-conv/
-gemm/
 results/
-kernels/
 dump/
