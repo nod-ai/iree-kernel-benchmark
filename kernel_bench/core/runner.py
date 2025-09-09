@@ -65,22 +65,24 @@ class BenchmarkRunner:
         with open(result_path, "r") as file:
             tuned_data: dict[str, dict] = json.load(file)
 
-        speedups = [
-            tune_result["speedup"]
-            for tune_result in tuned_data.values()
+        tuned_data = {
+            kernel_name: tune_result
+            for kernel_name, tune_result in tuned_data.items()
             if tune_result["improvement"]
-        ]
+        }
+
+        speedups = [tune_result["speedup"] for tune_result in tuned_data.values()]
         avg_speedup = sum(speedups) / len(speedups)
         avg_speedup_percent = (avg_speedup - 1) * 100
         print(
             f"Loading tuned config with average speedup of +{avg_speedup_percent:.2f}%"
         )
 
-        self.specs = {
-            kernel_name: tune_result["hyperparams"]
-            for kernel_name, tune_result in tuned_data.items()
-            if tune_result["improvement"]
-        }
+        self.configs = [
+            (tag, config)
+            for tag, config in self.configs
+            if config.get_name() in tuned_data.keys()
+        ]
 
     def save_results(self, results: List[BenchmarkResult]):
         if len(results) == 0:
