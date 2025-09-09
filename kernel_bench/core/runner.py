@@ -84,6 +84,12 @@ class BenchmarkRunner:
             if config.get_name() in tuned_data.keys()
         ]
 
+        self.specs = {
+            kernel_name: tune_result["hyperparams"]
+            for kernel_name, tune_result in tuned_data.items()
+            if tune_result["improvement"]
+        }
+
     def save_results(self, results: List[BenchmarkResult]):
         if len(results) == 0:
             return None
