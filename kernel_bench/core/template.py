@@ -103,7 +103,9 @@ class KernelBenchmark(ABC):
         self.tuning_spec.load_from_dict(obj)
 
     @abstractmethod
-    def run_bench(self, device: str, num_iterations: int = 1) -> BenchmarkResult:
+    def run_bench(
+        self, device: str, num_iterations: int = 1, timeout: Optional[float] = None
+    ) -> BenchmarkResult:
         pass
 
 
@@ -122,17 +124,22 @@ class IREEKernelBenchmark(KernelBenchmark):
         pass
 
     def bench_vmfb(
-        self, vmfb_filename: PathLike, device: str, num_iterations: int = 3
+        self,
+        vmfb_filename: PathLike,
+        device: str,
+        num_iterations: int = 3,
+        timeout: Optional[float] = None,
     ) -> BenchmarkResult:
         runtime_us, ok = bench_kernel_ireert(
             vmfb_filename,
             self.config.get_runtime_args(self.backend),
             num_iterations,
             device,
+            timeout,
         )
         return self.get_bench_result(runtime_us, ok)
 
-    def run_bench(self, device, num_iterations=1):
+    def run_bench(self, device, num_iterations=1, timeout=None):
         local_kernel_dir = self.kernel_dir / self.kernel_type / self.backend
         mlir_dir = local_kernel_dir / "mlir"
         vmfb_dir = local_kernel_dir / "vmfb"
@@ -147,7 +154,7 @@ class IREEKernelBenchmark(KernelBenchmark):
         if not compile_success:
             return self.get_bench_result(0, False)
 
-        return self.bench_vmfb(vmfb_path, device, num_iterations)
+        return self.bench_vmfb(vmfb_path, device, num_iterations, timeout)
 
 
 @dataclass

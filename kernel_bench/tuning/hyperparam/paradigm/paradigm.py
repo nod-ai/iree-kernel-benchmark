@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass
 import math
+import time
 from typing import (
     Any,
     Dict,
@@ -43,6 +44,8 @@ class TuningParadigm(ABC):
 
     def tune(self, context: TuningContext, progress_callback: Callable) -> TuningResult:
         """Run the tuning process and return the best result."""
+
+        self.base_exec_time = None
 
         bench = context.bench
         context.bench = create_benchmark(
@@ -97,7 +100,7 @@ class TuningParadigm(ABC):
         if total:
             self.progress.total = total
         if active is not None:
-            self.active = active
+            self.progress.active = active
         self.progress_callback(self.progress)
 
     @abstractmethod
@@ -128,9 +131,19 @@ class TuningParadigm(ABC):
             if not sat:
                 return bench.get_bench_result(math.inf, False)
 
+        # Cap benchmark runtime
+        if self.base_exec_time:
+            bench_timeout = self.base_exec_time * 5
+        else:
+            bench_timeout = None
+
+        start_exec_time = time.time()
         bench_result = bench.run_bench(
-            f"hip://{context.device_id}", context.num_iterations
+            f"hip://{context.device_id}", context.num_iterations, timeout=bench_timeout
         )
+        if not self.base_exec_time:
+            self.base_exec_time = time.time() - start_exec_time
+
         if not bench_result.ok:
             bench_result.mean_microseconds = math.inf
             bench_result.tflops = 0

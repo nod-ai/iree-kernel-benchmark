@@ -1,7 +1,7 @@
 import os
 import logging
 import subprocess
-from typing import Sequence
+from typing import Optional, Sequence
 from typing import List, Tuple
 import iree.runtime as ireert
 from kernel_bench.core.utils import unit_to_microseconds
@@ -11,7 +11,8 @@ def bench_kernel_ireert(
     vmfb_filename: os.PathLike,
     iree_args: List[str],
     num_iterations: int = 3,
-    device: str = None,
+    device: Optional[str] = None,
+    timeout: Optional[float] = None,
 ) -> Tuple[float, bool]:
 
     # print(
@@ -38,6 +39,7 @@ def bench_kernel_ireert(
             vmfb_filename,
             entry_function=func_name,
             inputs=inputs,
+            timeout=timeout,
             device=device,
             device_allocator="caching",
             benchmark_repetitions=num_iterations,
