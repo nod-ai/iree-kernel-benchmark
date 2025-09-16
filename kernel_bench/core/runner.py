@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional, Tuple, Type
 from wave_lang.kernel.wave.constraints import MMAType
 
 from kernel_bench.tuning.hyperparam.paradigm.bayesian import BayesianTuningParadigm
+from kernel_bench.tuning.hyperparam.paradigm.tree import MultiPassTreeTuner
 from kernel_bench.tuning.hyperparam.parallel_tuning import ParallelTuner
 from kernel_bench.tuning import tune_kernel_schedule
 from .utils import (
@@ -25,7 +26,7 @@ from .utils import (
     write_to_json_file,
 )
 from .template import KernelBenchmark, IREEKernelBenchmark, WaveKernelBenchmark
-from kernel_bench.core.base import BENCHMARKS
+from kernel_bench.core.base import BENCHMARKS, create_benchmark
 
 
 @dataclass
@@ -84,11 +85,11 @@ class BenchmarkRunner:
             if config.get_name() in tuned_data.keys()
         ]
 
-        self.specs = {
-            kernel_name: tune_result["hyperparams"]
-            for kernel_name, tune_result in tuned_data.items()
-            if tune_result["improvement"]
-        }
+        # self.specs = {
+        #     kernel_name: tune_result["hyperparams"]
+        #     for kernel_name, tune_result in tuned_data.items()
+        #     if tune_result["improvement"]
+        # }
 
     def save_results(self, results: List[BenchmarkResult]):
         if len(results) == 0:
@@ -126,7 +127,7 @@ class BenchmarkRunner:
                     "dump_dir": self.dump_dir,
                 }
             )
-        bench: KernelBenchmark = BENCHMARKS[self.kernel_type][self.backend](**kwargs)
+        bench = create_benchmark(self.kernel_type, self.backend, kwargs)
 
         tuned_config = self.specs.get(config.get_name())
         if tuned_config:
@@ -308,7 +309,8 @@ class BenchmarkRunner:
         tuning_result_basename = f"{self.kernel_type}_{self.backend}_tuned_results.json"
         tuning_result_path = tuning_dir / self.kernel_type / tuning_result_basename
 
-        tuning_paradigm = BayesianTuningParadigm()
+        # tuning_paradigm = BayesianTuningParadigm()
+        tuning_paradigm = MultiPassTreeTuner()
         tuner = ParallelTuner(tuning_paradigm)
         tuner.tune_kernels(
             benches=self._benches,

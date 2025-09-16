@@ -4,7 +4,7 @@ from kernel_bench.tuning.hyperparam import (
     IntegerBounds,
 )
 from kernel_bench.core.template import WaveKernel, WaveKernelBenchmark
-from kernel_bench.utils.device_utils import dtype_to_torch
+from kernel_bench.utils.device_utils import dtype_to_bytes, dtype_to_torch
 from wave_lang.kernel.wave.templates.quantized_attention import (
     get_brevitas_pertensor_fp8_attention_kernel,
 )
@@ -29,15 +29,16 @@ from wave_lang.kernel.wave.templates.gqa_vanilla_attention import (
     get_gqa_bshd_attention_kernel,
 )
 from wave_lang.kernel.wave.scheduling.schedule_enums import SchedulingType
+import wave_lang.kernel.lang as tkl
 
 
 class WaveAttentionMHABenchmark(WaveKernelBenchmark):
     config: AttentionConfigBMNK
 
-    def __post_init__(self):
-        super().__post_init__()
+    def setup_parameters(self):
+        config = self.config
 
-        if "f8" in self.config.dtype:
+        if "f8" in config.dtype:
             mfma_bounds = CategoricalBounds(
                 [
                     (MMAType.F32_32x32x16_F8, MMAType.F32_32x32x16_K4_F8),
@@ -54,20 +55,27 @@ class WaveAttentionMHABenchmark(WaveKernelBenchmark):
                 ]
             )
 
-        self.mfma_variant = TuningParameter(
-            "MFMA_VARIANT", mfma_bounds, initial_value=0, include_hyperparam=False
+        self.mfma_variant = self.add_param(
+            "mfma_variant", mfma_bounds, initial_value=0, include_hyperparam=False
         )
-        self.BLOCK_B = TuningParameter("BLOCK_B", IntegerBounds(min=1, max=1, step=1))
-        self.BLOCK_H = TuningParameter("BLOCK_H", IntegerBounds(min=1, max=2, step=1))
-        self.BLOCK_N_Q = TuningParameter(
-            "BLOCK_N_Q", IntegerBounds(min=16, max=128, step=16)
-        )
-        self.BLOCK_D_KV = TuningParameter(
-            "BLOCK_D_KV", IntegerBounds(min=16, max=128, step=16)
-        )
-        self.BLOCK_N_KV = TuningParameter(
-            "BLOCK_N_KV", IntegerBounds(min=16, max=64, step=16)
-        )
+        self.BLOCK_B = self.add_param("BLOCK_B", IntegerBounds(min=1, max=config.B))
+        self.BLOCK_M = self.add_param("BLOCK_M", IntegerBounds(min=32, max=config.M))
+        self.BLOCK_N = self.add_param("BLOCK_N", IntegerBounds(min=32, max=config.N))
+        self.BLOCK_K2 = self.add_param("BLOCK_K2", IntegerBounds(min=32, max=config.K2))
+
+        bytes_per_el = dtype_to_bytes(config.dtype)
+        memory_constraint = (
+            self.BLOCK_B * self.BLOCK_N * (self.BLOCK_K2 + 4) * bytes_per_el
+            + self.BLOCK_B * self.BLOCK_K2 * (64 + 4) * bytes_per_el
+        ) - 65536
+        self.add_constraint(memory_constraint, "memory_limit")
+
+        # wg_x, wg_y, wg_z = (
+        #     config.M // self.BLOCK_M,
+        #     config.N // self.BLOCK_N,
+        #     config.B // self.BLOCK_B,
+        # )
+        # num_workgroups = wg_x * wg_y * wg_z
 
     @override
     def load_wave_kernel(self):
@@ -78,18 +86,18 @@ class WaveAttentionMHABenchmark(WaveKernelBenchmark):
                 get_brevitas_pertensor_fp8_attention_kernel(
                     shape=bmnk1k2_to_attention_attributes(config),
                     f8_dtype=dtype_to_torch(config.dtype, self.target),
-                    mfma_variant=self.mfma_variant,
+                    mfma_variant=self.mfma_variant.value,
                     dynamic_dims=False,
                 )
             )
         else:
             base_attention, hyperparams, dynamic_symbols = get_vanilla_attention_kernel(
                 shape=bmnk1k2_to_attention_attributes(config),
-                mfma_variant=self.mfma_variant,
+                mfma_variant=self.mfma_variant.value,
                 dynamic_dims=False,
             )
 
-        hyperparams.update(self.tuning_spec.hyperparams())
+        hyperparams.update(self._tuning_spec.hyperparams())
         hyperparams.update(get_default_scheduling_params())
 
         return WaveKernel(
@@ -110,9 +118,8 @@ class WaveAttentionMHABenchmark(WaveKernelBenchmark):
 class WaveAttentionGQABenchmark(WaveKernelBenchmark):
     config: AttentionConfigBSHD
 
-    def __post_init__(self):
-        super().__post_init__()
-        self.mfma_variant = TuningParameter(
+    def setup_parameters(self):
+        self.mfma_variant = self.add_param(
             "MFMA_VARIANT",
             CategoricalBounds(
                 [
@@ -125,15 +132,16 @@ class WaveAttentionGQABenchmark(WaveKernelBenchmark):
             initial_value=0,
             include_hyperparam=False,
         )
-        self.BLOCK_B = TuningParameter("BLOCK_B", IntegerBounds(min=1, max=1, step=1))
-        self.BLOCK_M = TuningParameter(
-            "BLOCK_M", IntegerBounds(min=32, max=256, step=8)
+        self.BLOCK_B = self.add_param("BLOCK_B", IntegerBounds(min=1, max=1, step=1))
+        self.BLOCK_H = self.add_param("BLOCK_H", IntegerBounds(min=1, max=2, step=1))
+        self.BLOCK_N_Q = self.add_param(
+            "BLOCK_N_Q", IntegerBounds(min=16, max=128, step=16)
         )
-        self.BLOCK_N = TuningParameter(
-            "BLOCK_N", IntegerBounds(min=16, max=128, step=4)
+        self.BLOCK_D_KV = self.add_param(
+            "BLOCK_D_KV", IntegerBounds(min=16, max=128, step=16)
         )
-        self.BLOCK_K2 = TuningParameter(
-            "BLOCK_K2", IntegerBounds(min=32, max=256, step=8)
+        self.BLOCK_N_KV = self.add_param(
+            "BLOCK_N_KV", IntegerBounds(min=16, max=64, step=16)
         )
 
     @override
@@ -142,7 +150,7 @@ class WaveAttentionGQABenchmark(WaveKernelBenchmark):
 
         base_attention, hyperparams, dynamic_symbols = get_gqa_bshd_attention_kernel(
             shape=bshd_to_attention_attributes(config),
-            mfma_variant=self.mfma_variant,
+            mfma_variant=self.mfma_variant.value,
             input_dtype=dtype_to_torch(config.dtype),
             output_dtype=dtype_to_torch("f32"),
         )

@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass
+import math
 from typing import (
     Any,
     Dict,
@@ -8,8 +9,10 @@ from typing import (
     Callable,
 )
 
+from kernel_bench.core.base import create_benchmark
 from kernel_bench.core.template import KernelBenchmark
 from kernel_bench.core.utils import BenchmarkResult
+from kernel_bench.utils.parallel import ProgressUpdate
 
 
 @dataclass
@@ -40,7 +43,23 @@ class TuningParadigm(ABC):
 
     def tune(self, context: TuningContext, progress_callback: Callable) -> TuningResult:
         """Run the tuning process and return the best result."""
+
+        bench = context.bench
+        context.bench = create_benchmark(
+            bench.kernel_type, bench.backend, asdict(bench)
+        )
         config = context.bench.config
+
+        self.progress = ProgressUpdate(
+            device_id=context.device_id,
+            completed=0,
+            total=context.num_trials,
+            current=bench.config.get_name(),
+            active=True,
+            worker_id=context.worker_id,
+        )
+        self.progress_callback = progress_callback
+        self._update_progress()
 
         base_result = self._benchmark(context)
         tuned_result = self._tune(context, progress_callback)
@@ -57,6 +76,8 @@ class TuningParadigm(ABC):
             improvement = True
             speedup = base_runtime / tuned_runtime
 
+        self._update_progress(completed=self.progress.total, active=False)
+
         return TuningResult(
             name=config.get_name(),
             benchmark=best_result,
@@ -64,6 +85,20 @@ class TuningParadigm(ABC):
             speedup=speedup,
             hyperparams=best_result.tuning_config,
         )
+
+    def _update_progress(
+        self,
+        completed: Optional[int] = None,
+        total: Optional[int] = None,
+        active: Optional[bool] = None,
+    ):
+        if completed:
+            self.progress.completed = completed
+        if total:
+            self.progress.total = total
+        if active is not None:
+            self.active = active
+        self.progress_callback(self.progress)
 
     @abstractmethod
     def _tune(
@@ -89,7 +124,14 @@ class TuningParadigm(ABC):
             for name, val in param_values.items():
                 bench.tuning_spec.set_parameter(name, val)
 
+            sat, violated = bench.tuning_spec.validate_constraints()
+            if not sat:
+                return bench.get_bench_result(math.inf, False)
+
         bench_result = bench.run_bench(
             f"hip://{context.device_id}", context.num_iterations
         )
+        if not bench_result.ok:
+            bench_result.mean_microseconds = math.inf
+            bench_result.tflops = 0
         return bench_result

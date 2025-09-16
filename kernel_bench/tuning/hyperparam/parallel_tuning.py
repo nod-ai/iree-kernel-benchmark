@@ -5,6 +5,7 @@ import time
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass
 from multiprocessing import Process, Queue
+import traceback
 from typing import (
     Any,
     Dict,
@@ -13,6 +14,7 @@ from typing import (
     Callable,
 )
 import queue
+import torch
 
 from kernel_bench.core.template import KernelBenchmark
 from .paradigm import TuningContext, TuningParadigm, TuningResult
@@ -33,6 +35,7 @@ def worker_process(
         if result.hyperparams:
             message_queue.put(WorkerMessage(type="result", data=result))
     except Exception as e:
+        traceback.print_exception(e)
         message_queue.put(
             WorkerMessage(
                 type="progress",
@@ -68,6 +71,11 @@ class ParallelTuner:
         save_results: bool = True,
     ) -> Dict[str, Any]:
         """Run parallel tuning for multiple kernel configurations."""
+        try:
+            torch.multiprocessing.set_start_method("spawn", force=True)
+        except RuntimeError:
+            pass
+
         os.makedirs(os.path.dirname(tuning_result_path), exist_ok=True)
 
         total_configs = len(benches)

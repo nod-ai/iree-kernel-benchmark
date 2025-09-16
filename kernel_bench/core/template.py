@@ -1,4 +1,4 @@
-from abc import ABC, ABCMeta, abstractmethod
+from abc import ABC, abstractmethod
 import math
 import os
 import traceback
@@ -21,46 +21,16 @@ from .utils import (
 )
 from kernel_bench.utils.device_utils import machine_to_hip_target
 from kernel_bench.utils.iree_utils import bench_kernel_ireert
-from kernel_bench.tuning.hyperparam.parameters import TuningParameter, TuningSpec
-
-
-class TuningParameterDescriptor:
-    """Descriptor to handle tuning parameter access and assignment."""
-
-    def __init__(self, name: str):
-        self.name = name
-        self.param_name = None
-
-    def __get__(self, instance, owner):
-        if instance is None:
-            return self
-        return instance._tuning_spec.get_parameter_value(self.param_name)
-
-    def __set__(self, instance, value):
-        if isinstance(value, TuningParameter):
-            self.param_name = value.name
-            instance._tuning_spec.add_parameter(self.param_name, value)
-        else:
-            raise TypeError(f"Invalid type for tuning parameter: {type(value)}")
-
-
-class KernelBenchmarkMeta(ABCMeta):
-    """Metaclass to automatically detect TuningParameter assignments."""
-
-    def __new__(cls, name, bases, attrs):
-        for key, value in list(attrs.items()):
-            if isinstance(value, TuningParameter):
-                attrs[key] = TuningParameterDescriptor(key)
-            elif isinstance(value, (Tuple, List)):
-                if len(value) > 0 and isinstance(value[0], TuningParameter):
-                    for param in value:
-                        attrs[param.name] = param
-
-        return super().__new__(cls, name, bases, attrs)
+from kernel_bench.tuning.hyperparam.parameters import (
+    TuningParameter,
+    TuningSpec,
+    ParameterSymbol,
+)
+import sympy as sp
 
 
 @dataclass
-class KernelBenchmark(ABC, metaclass=KernelBenchmarkMeta):
+class KernelBenchmark(ABC):
     tag: str
     backend: str
     kernel_type: str
@@ -69,12 +39,30 @@ class KernelBenchmark(ABC, metaclass=KernelBenchmarkMeta):
 
     def __post_init__(self):
         self._tuning_spec = TuningSpec()
+        self._param_symbols = {}
+        self.setup_parameters()
 
-    def __setattr__(self, name, value):
-        if isinstance(value, TuningParameter):
-            if not hasattr(self.__class__, name):
-                setattr(self.__class__, name, TuningParameterDescriptor(name))
-        object.__setattr__(self, name, value)
+    def add_param(self, name: str, bounds, **kwargs) -> ParameterSymbol:
+        """Register and return a parameter symbol"""
+        param = TuningParameter(name, bounds, **kwargs)
+        self._tuning_spec.add_parameter(name, param)
+
+        # Create a ParameterSymbol that wraps SymPy Symbol
+        param_symbol = ParameterSymbol(name, self._tuning_spec)
+        self._param_symbols[name] = param_symbol
+        return param_symbol
+
+    def add_constraint(self, constraint_expr, name: str = None):
+        """Add constraint using SymPy expression or string"""
+        self._tuning_spec.add_constraint(constraint_expr, name)
+
+    def get_param(self, name: str):
+        """Get parameter value by name"""
+        return self._tuning_spec.get_parameter_value(name)
+
+    def setup_parameters(self):
+        """Override to define parameters and constraints"""
+        pass
 
     def get_bench_result(self, runtime_us: float, ok: bool):
         arithmetic_intensity, tflops_per_second = get_kernel_perf_stats(
@@ -102,6 +90,11 @@ class KernelBenchmark(ABC, metaclass=KernelBenchmarkMeta):
     @property
     def tuning_spec(self):
         return self._tuning_spec
+
+    def validate_constraints(
+        self, param_values: dict[str, Any] = None
+    ) -> tuple[bool, dict[str, float]]:
+        return self._tuning_spec.validate_constraints(param_values)
 
     def load_tuning_spec(self, new_spec: TuningSpec):
         self._tuning_spec = new_spec
@@ -204,5 +197,5 @@ class WaveKernelBenchmark(IREEKernelBenchmark):
 
         except Exception as e:
             print(f"Failed to compile {self.config.get_name()}: {e}")
-            # traceback.print_exception(e)
+            traceback.print_exception(e)
             return False

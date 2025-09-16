@@ -1,6 +1,8 @@
 import math
 from typing import Callable, override
 import optuna
+from tqdm import tqdm
+import torch
 
 from ..parameters import CategoricalBounds, IntegerBounds
 from .paradigm import TuningParadigm, TuningContext
@@ -65,10 +67,12 @@ class BayesianTuningParadigm(TuningParadigm):
                 name: trial.suggest_categorical(name, bounds.get_range())
                 for name, bounds in categorical_constraints
             }
+            constraint_vals = int_constraint_values | cat_constraint_values
 
-            curr_result = self._benchmark(
-                context, int_constraint_values | cat_constraint_values
-            )
+            curr_result = self._benchmark(context, constraint_vals)
+
+            if not curr_result.ok:
+                raise optuna.TrialPruned()
 
             # Update best result if improved
             if curr_result.mean_microseconds < best_result.mean_microseconds:
@@ -76,10 +80,20 @@ class BayesianTuningParadigm(TuningParadigm):
 
             return curr_result.mean_microseconds
 
-        # Configure and run Optuna study
-        optuna.logging.set_verbosity(optuna.logging.WARNING)
-        study = optuna.create_study(direction="minimize")
+        def constraints_func(trial: optuna.trial.FrozenTrial):
+            all_satisfied, violations = context.bench.validate_constraints(
+                param_values=trial.params
+            )
+            return list(violations.values())
 
+        # Configure and run Optuna study
+        # optuna.logging.set_verbosity(optuna.logging.WARNING)
+
+        sampler = optuna.samplers.TPESampler(
+            constraints_func=constraints_func,
+            n_startup_trials=max(context.num_trials // 5, 15),
+        )
+        study = optuna.create_study(direction="minimize", sampler=sampler)
         study.optimize(
             objective,
             n_trials=context.num_trials,

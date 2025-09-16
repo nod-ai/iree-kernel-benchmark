@@ -1,9 +1,86 @@
 from enum import Enum
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass
-from typing import Any, List, Optional, override
+from typing import Any, List, Optional, override, Dict
 import wave_lang.kernel.lang as tkl
 from wave_lang.kernel._support.indexing import index_symbol
+import sympy as sp
+from sympy import sympify, symbols
+
+
+class ParameterSymbol:
+    """Wrapper around SymPy Symbol that knows about its tuning parameter"""
+
+    def __init__(self, name: str, tuning_spec: "TuningSpec"):
+        self.name = name
+        self._tuning_spec = tuning_spec
+        self.symbol = sp.Symbol(name)
+
+    @property
+    def value(self):
+        """Get the current assigned value"""
+        return self._tuning_spec.get_parameter_value(self.name)
+
+    # Delegate all symbolic operations to SymPy
+    def __add__(self, other):
+        return self.symbol + other
+
+    def __radd__(self, other):
+        return other + self.symbol
+
+    def __mul__(self, other):
+        return self.symbol * other
+
+    def __rmul__(self, other):
+        return other * self.symbol
+
+    def __sub__(self, other):
+        return self.symbol - other
+
+    def __rsub__(self, other):
+        return other - self.symbol
+
+    def __truediv__(self, other):
+        return self.symbol / other
+
+    def __rtruediv__(self, other):
+        return other / self.symbol
+
+    def __floordiv__(self, other):
+        return self.symbol // other
+
+    def __rfloordiv__(self, other):
+        return other // self.symbol
+
+    def __pow__(self, other):
+        return self.symbol**other
+
+    def __rpow__(self, other):
+        return other**self.symbol
+
+    def __le__(self, other):
+        return self.symbol <= other
+
+    def __lt__(self, other):
+        return self.symbol < other
+
+    def __ge__(self, other):
+        return self.symbol >= other
+
+    def __gt__(self, other):
+        return self.symbol > other
+
+    def __eq__(self, other):
+        return self.symbol == other
+
+    def __ne__(self, other):
+        return self.symbol != other
+
+    def __str__(self):
+        return str(self.symbol)
+
+    def __repr__(self):
+        return f"ParameterSymbol({self.name}, value={self.value})"
 
 
 @dataclass
@@ -29,7 +106,7 @@ class TuningBounds(ABC):
 class IntegerBounds(TuningBounds):
     min: int
     max: int
-    step: int
+    step: int = 1
     exponential: bool = False
 
     @override
@@ -175,6 +252,8 @@ class TuningSpec:
             self._params = {param.name: param for param in tuning_params}
         else:
             self._params = {}
+        self._constraints = {}
+        self._param_symbols = {}  # Cache ParameterSymbol objects
 
     def load_from_dict(self, obj: dict[str, Any]):
         for pname, param in self._params.items():
@@ -183,6 +262,59 @@ class TuningSpec:
 
     def add_parameter(self, name: str, param: TuningParameter):
         self._params[name] = param
+
+    def add_constraint(self, expression, name: Optional[str] = None):
+        """Add a constraint using SymPy expression or string"""
+        if isinstance(expression, sp.Basic):
+            constraint_str = str(expression)
+        else:
+            constraint_str = str(expression)
+
+        if not name:
+            name = constraint_str
+        self._constraints[name] = constraint_str
+
+    def get_constraints(self) -> List[str]:
+        """Get all constraints."""
+        return list(self._constraints.values())
+
+    def validate_constraints(
+        self, parameter_values: Optional[dict[str, Any]] = None
+    ) -> tuple[bool, dict[str, float]]:
+        """Validate constraints using SymPy evaluation"""
+        sat = True
+        violated = {}
+
+        # Create substitution dictionary
+        substitutions = {}
+        if parameter_values is not None:
+            # Use provided parameter values
+            for param_name, param_value in parameter_values.items():
+                symbol = sp.Symbol(param_name)
+                substitutions[symbol] = param_value
+        else:
+            # Use current parameter assignments
+            for param_name, param in self._params.items():
+                if param.value is not None and param.include_hyperparam:
+                    symbol = sp.Symbol(param_name)
+                    substitutions[symbol] = param.value
+
+        for cname, cexp_str in self._constraints.items():
+            # Parse and evaluate constraint
+            constraint_expr = sp.sympify(cexp_str)
+            result = constraint_expr.subs(substitutions)
+
+            if result.is_number:
+                violation_magnitude = float(result)
+                violated[cname] = violation_magnitude
+                if violation_magnitude > 0:  # Assuming constraint is expr <= 0
+                    sat = False
+            else:
+                raise ValueError(
+                    f"Constraint '{cname}' resulted in non-numeric value: {result}"
+                )
+
+        return sat, violated
 
     def get_parameter(self, name: str) -> TuningParameter:
         if name not in self._params:

@@ -94,10 +94,10 @@ def dtype_to_torch(dtype: str, target: Optional[str] = None):
     return DTYPE_TO_TORCH[dtype]
 
 
-def dtype_to_bits(dtype: str):
-    dtype = get_device_specific_dtype(dtype)
+def dtype_to_bits(dtype: str, target: Optional[str] = None):
+    dtype = get_device_specific_dtype(dtype, target)
     return DTYPE_TO_BITS[dtype]
 
 
-def dtype_to_bytes(dtype: str):
-    return max(1, dtype_to_bits(dtype) // 8)
+def dtype_to_bytes(dtype: str, target: Optional[str] = None):
+    return max(1, dtype_to_bits(dtype, target) // 8)

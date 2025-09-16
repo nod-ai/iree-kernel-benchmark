@@ -10,7 +10,6 @@ from wave_lang.kernel.wave.scheduling.schedule_enums import SchedulingType
 from wave_lang.kernel.wave.templates.reordered_gemm import get_reordered_matmul
 
 from kernel_bench.tuning.hyperparam import (
-    TuningParameter,
     CategoricalBounds,
     IntegerBounds,
 )
@@ -22,9 +21,7 @@ from ..gemm_utils import GemmConfig
 class WaveGemmBenchmark(WaveKernelBenchmark):
     config: GemmConfig
 
-    def __post_init__(self):
-        super().__post_init__()
-
+    def setup_parameters(self):
         dtype = dtype_to_torch(self.config.operand_element_type)
         bitwidth = dtype_to_bits(self.config.operand_element_type)
 
@@ -44,24 +41,33 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
                 (MMAType.F32_16x16x32_BF16, MMAType.F32_16x16x32_BF16),
             ]
 
-        self.mfma_variant = TuningParameter(
+        # Define parameters using the new paradigm
+        self.mfma_variant = self.add_param(
             "MFMA_VARIANT",
             CategoricalBounds(mfma_options),
             initial_value=0,
             include_hyperparam=False,
         )
-        self.BLOCK_M = TuningParameter(
+        self.BLOCK_M = self.add_param(
             "BLOCK_M", IntegerBounds(min=16, max=256, step=8), initial_value=128
         )
-        self.BLOCK_N = TuningParameter(
+        self.BLOCK_N = self.add_param(
             "BLOCK_N", IntegerBounds(min=16, max=256, step=8), initial_value=256
         )
-        self.BLOCK_K = TuningParameter(
+        self.BLOCK_K = self.add_param(
             "BLOCK_K", IntegerBounds(min=16, max=128, step=4), initial_value=64
         )
-        self.GROUP_SIZE_M = TuningParameter(
+        self.GROUP_SIZE_M = self.add_param(
             "GROUP_SIZE_M", IntegerBounds(min=8, max=16, step=8), initial_value=8
         )
+
+        shared_memory_constraint = self.BLOCK_M * self.BLOCK_N <= 65536
+        self.add_constraint(shared_memory_constraint, "shared_memory_limit")
+
+        min_block_m_constraint = self.BLOCK_M >= 32
+        min_block_n_constraint = self.BLOCK_N >= 64
+        self.add_constraint(min_block_m_constraint, "min_block_m")
+        self.add_constraint(min_block_n_constraint, "min_block_n")
 
     @override
     def load_wave_kernel(self):
@@ -80,11 +86,11 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
             config.M,
             config.N,
             config.K,
-            self.BLOCK_M,
-            self.BLOCK_N,
-            self.BLOCK_K,
-            self.GROUP_SIZE_M,
-            mfma_variant=self.mfma_variant,
+            self.BLOCK_M.value,
+            self.BLOCK_N.value,
+            self.BLOCK_K.value,
+            self.GROUP_SIZE_M.value,
+            mfma_variant=self.mfma_variant.value,
             input_dtype=input_dtype,
             output_dtype=output_dtype,
             quantized_dtype=quant_dtype,

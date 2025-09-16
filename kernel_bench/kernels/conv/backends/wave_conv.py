@@ -6,7 +6,7 @@ from wave_lang.kernel.wave.compile import WaveCompileOptions
 from wave_lang.kernel.wave.scheduling.schedule_enums import SchedulingType
 
 from kernel_bench.core.template import WaveKernelBenchmark, WaveKernel
-from kernel_bench.tuning.hyperparam import IntegerBounds, TuningParameter
+from kernel_bench.tuning.hyperparam import IntegerBounds
 from kernel_bench.utils import *
 from ..conv_utils import ConvConfig
 
@@ -14,20 +14,18 @@ from ..conv_utils import ConvConfig
 class WaveConvBenchmark(WaveKernelBenchmark):
     config: ConvConfig
 
-    def __post_init__(self):
-        super().__post_init__()
-        self.BLOCK_M = TuningParameter(
-            "BLOCK_M", IntegerBounds(min=16, max=256, step=8)
-        )
-        self.BLOCK_N = TuningParameter(
-            "BLOCK_N", IntegerBounds(min=16, max=256, step=8)
-        )
-        self.BLOCK_K = TuningParameter(
-            "BLOCK_K", IntegerBounds(min=16, max=128, step=4)
-        )
-        self.ELEMS_PER_THREAD = TuningParameter(
+    def setup_parameters(self):
+        self.BLOCK_M = self.add_param("BLOCK_M", IntegerBounds(min=16, max=256, step=8))
+        self.BLOCK_N = self.add_param("BLOCK_N", IntegerBounds(min=16, max=256, step=8))
+        self.BLOCK_K = self.add_param("BLOCK_K", IntegerBounds(min=16, max=128, step=4))
+        self.ELEMS_PER_THREAD = self.add_param(
             "ELEMS_PER_THREAD", IntegerBounds(min=4, max=4, step=1)
         )
+
+        # Add some example constraints for conv operations
+        # Ensure reasonable block sizes for convolution workloads
+        memory_constraint = self.BLOCK_M * self.BLOCK_N <= 8192
+        self.add_constraint(memory_constraint, "conv_memory_limit")
 
     @override
     def load_wave_kernel(self):
@@ -54,7 +52,7 @@ class WaveConvBenchmark(WaveKernelBenchmark):
         else:
             raise Exception(f"Op type {op_type} is not supported for wave convolutions")
 
-        hyperparams.update(self.tuning_spec.hyperparams())
+        hyperparams.update(self._tuning_spec.hyperparams())
         hyperparams.update(get_default_scheduling_params())
 
         return WaveKernel(launchable=conv, hyperparams=hyperparams)

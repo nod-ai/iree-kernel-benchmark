@@ -1,5 +1,7 @@
-from typing import Type
+from typing import Any, Type
+from dacite import from_dict
 
+from kernel_bench.core.template import KernelBenchmark
 from kernel_bench.kernels.attention.attention_config import AttentionConfigBMNK
 from kernel_bench.kernels.conv.conv_utils import ConvConfig
 from kernel_bench.kernels.gemm.gemm_utils import GemmConfig
@@ -33,3 +35,10 @@ CONFIG_CLASSES = {
     "attention": AttentionConfigBMNK,
     "conv": ConvConfig,
 }
+
+
+def create_benchmark(
+    kernel_type: str, backend: str, kwargs: dict[str, Any]
+) -> KernelBenchmark:
+    BenchType = BENCHMARKS[kernel_type][backend]
+    return from_dict(BenchType, kwargs)

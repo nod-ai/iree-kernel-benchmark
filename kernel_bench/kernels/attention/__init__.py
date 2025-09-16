@@ -12,7 +12,7 @@ def get_default_attention_configs(kernel_type: str, backend_name: str):
         configs = [
             (tag, config.to_bshd()) for tag, config in get_attention_configs_gqa()
         ]
-    elif backend_name in ["iree", "wave"]:
+    elif backend_name in ["iree"]:
         configs = [
             (tag, config.to_bmnk1k2())
             for tag, config in get_attention_configs(use_fp8=True)

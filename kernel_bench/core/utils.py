@@ -1,3 +1,4 @@
+from functools import total_ordering
 import os
 import logging
 import subprocess
@@ -56,6 +57,7 @@ class OpConfig(ABC):
         return list(self.to_dict().keys())
 
 
+@total_ordering
 @dataclass
 class BenchmarkResult:
     machine: str
@@ -71,6 +73,20 @@ class BenchmarkResult:
     arithmetic_intensity: float
     tflops: float
     ok: bool
+
+    def __eq__(self, other):
+        if isinstance(other, BenchmarkResult):
+            return self.mean_microseconds == other.mean_microseconds
+        if isinstance(other, float):
+            return self.mean_microseconds == other
+        raise ValueError("Expected type BenchmarkResult")
+
+    def __lt__(self, other):
+        if isinstance(other, BenchmarkResult):
+            return self.mean_microseconds < other.mean_microseconds
+        if isinstance(other, float):
+            return self.mean_microseconds < other
+        raise ValueError("Expected type BenchmarkResult")
 
 
 type ConfigList = List[Tuple[str, OpConfig]]
