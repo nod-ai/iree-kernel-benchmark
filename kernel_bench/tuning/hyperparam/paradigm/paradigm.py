@@ -12,7 +12,7 @@ from typing import (
 
 from kernel_bench.core.base import create_benchmark
 from kernel_bench.core.template import KernelBenchmark
-from kernel_bench.core.utils import BenchmarkResult
+from kernel_bench.utils.bench_utils import BenchmarkResult
 from kernel_bench.utils.parallel import ProgressUpdate
 
 

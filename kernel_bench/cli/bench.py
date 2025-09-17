@@ -6,7 +6,7 @@ from kernel_bench.utils.device_utils import HIP_TARGETS
 from wave_lang.kernel.wave.constraints import MMAType
 
 from kernel_bench.core.runner import BenchmarkRunner
-from kernel_bench.core.utils import OpConfig, load_configs
+from kernel_bench.utils.bench_utils import OpConfig, load_configs
 from kernel_bench.core.base import LOAD_PROBLEMS, BENCHMARKS, CONFIG_CLASSES
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@ import subprocess
 from typing import Optional, Sequence
 from typing import List, Tuple
 import iree.runtime as ireert
-from kernel_bench.core.utils import unit_to_microseconds
+from kernel_bench.utils.bench_utils import unit_to_microseconds
 
 
 def bench_kernel_ireert(

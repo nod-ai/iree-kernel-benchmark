@@ -5,7 +5,7 @@ import itertools
 
 from kernel_bench.core.base import create_benchmark
 from kernel_bench.core.template import IREEKernelBenchmark, batch_compile_iree_benches
-from kernel_bench.core.utils import BenchmarkResult
+from kernel_bench.utils.bench_utils import BenchmarkResult
 from kernel_bench.tuning.hyperparam.paradigm.paradigm import (
     TuningContext,
     TuningParadigm,

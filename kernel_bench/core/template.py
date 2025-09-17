@@ -10,13 +10,13 @@ from os import PathLike
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from tqdm import tqdm
+from tqdm import tqdm, trange
 from wave_lang.kernel.wave.compile import wave_compile
 from wave_lang.kernel.wave.compile_options import WaveCompileOptions
 from wave_lang.kernel.wave.utils.general_utils import get_default_scheduling_params
 from wave_lang.kernel.wave.wave import LaunchableWave
 
-from .utils import (
+from ..utils.bench_utils import (
     BenchmarkResult,
     get_kernel_perf_stats,
     redirect_stderr_to_file,
@@ -245,6 +245,12 @@ def batch_compile_iree_benches(
     verbose=False,
     unique_id=False,
 ) -> List[CompileResult]:
+    """
+    Compile a list of IREE-based kernel benchmarks. Compilation results
+    guaranteed to preserve initial input order.
+
+    Returns: CompileResult = Tuple[OpConfig, Optional[Path], bool]
+    """
 
     def tag_name(name: str):
         if not unique_id:
@@ -277,4 +283,78 @@ def batch_compile_iree_benches(
             )
 
     assert len(iree_benches) == len(compilation_results)
+
+    success_count = sum([success for _, _, success in compilation_results])
+    error_count = len(iree_benches) - success_count
+
+    if verbose:
+        print(
+            f"{success_count} Success, {error_count} Failed out of {len(compilation_results)} configs"
+        )
+        print("Compilation process completed.")
+
     return compilation_results
+
+
+def batch_benchmark(
+    benches: List[KernelBenchmark],
+    device: str,
+    num_iterations: int = 1,
+    timeout: Optional[float] = None,
+    verbose=False,
+    unique_ids=False,
+) -> List[BenchmarkResult]:
+    """
+    Benchmark a list of kernel benchmarks.
+
+    First compiles all IREE-based benches in batch, then benchmarks all benches
+    in order while preserving the original input order.
+    """
+
+    iree_benches = []
+    iree_indices = []
+    non_iree_benches = []
+    non_iree_indices = []
+
+    for i, bench in enumerate(benches):
+        if isinstance(bench, IREEKernelBenchmark):
+            iree_benches.append(bench)
+            iree_indices.append(i)
+        else:
+            non_iree_benches.append(bench)
+            non_iree_indices.append(i)
+
+    compilation_results = {}
+    if iree_benches:
+        compile_results = batch_compile_iree_benches(
+            iree_benches, verbose=verbose, unique_id=unique_ids
+        )
+        for bench, (config, vmfb_path, success) in zip(iree_benches, compile_results):
+            compilation_results[id(bench)] = (vmfb_path, success)
+
+    results = [None] * len(benches)
+
+    all_bench_items = [(i, bench) for i, bench in enumerate(benches)]
+
+    for i, bench in tqdm(all_bench_items, desc="Benchmarking kernels"):
+        try:
+            if isinstance(bench, IREEKernelBenchmark):
+                vmfb_path, compile_success = compilation_results[id(bench)]
+                if compile_success and vmfb_path:
+                    result = bench.bench_vmfb(
+                        vmfb_path, device, num_iterations, timeout
+                    )
+                else:
+                    result = bench.get_bench_result(0, False)
+            else:
+                result = bench.run_bench(device, num_iterations, timeout)
+
+            results[i] = result
+
+        except Exception as e:
+            if verbose:
+                print(f"Benchmarking failed for {bench.config.get_name()}: {e}")
+            result = bench.get_bench_result(0, False)
+            results[i] = result
+
+    return results

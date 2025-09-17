@@ -3,7 +3,7 @@ from typing import Union, Optional, Literal
 import math
 from abc import ABC, abstractmethod
 
-from kernel_bench.core.utils import OpConfig, change_shape_dtype
+from kernel_bench.utils.bench_utils import OpConfig, change_shape_dtype
 from kernel_bench.utils.device_utils import dtype_to_bytes
 
 

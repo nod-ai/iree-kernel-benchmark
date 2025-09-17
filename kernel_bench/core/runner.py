@@ -15,7 +15,7 @@ from kernel_bench.tuning.hyperparam.paradigm.bayesian import BayesianTuningParad
 from kernel_bench.tuning.hyperparam.paradigm.tree import MultiPassTreeTuner
 from kernel_bench.tuning.hyperparam.parallel_tuning import ParallelTuner
 from kernel_bench.tuning import tune_kernel_schedule
-from .utils import (
+from ..utils.bench_utils import (
     BenchmarkResult,
     get_kernel_perf_stats,
     write_results_to_csv,
@@ -29,6 +29,7 @@ from .template import (
     KernelBenchmark,
     IREEKernelBenchmark,
     WaveKernelBenchmark,
+    batch_benchmark,
     batch_compile_iree_benches,
 )
 from kernel_bench.core.base import BENCHMARKS, create_benchmark
@@ -146,79 +147,21 @@ class BenchmarkRunner:
             self._create_benchmark(tag, config) for tag, config in self.configs
         ]
 
-    def _compile_kernels_parallel(self) -> Dict[str, Path]:
-        """Compile all kernels in parallel."""
-        if not self._benches:
-            self._load_benches()
-
-        iree_benches = [
-            bench for bench in self._benches if isinstance(bench, IREEKernelBenchmark)
-        ]
-        if not iree_benches:
-            return
-
-        compilation_results = batch_compile_iree_benches(iree_benches, verbose=True)
-
-        vmfb_dict = {}
-        success_count = 0
-        error_count = 0
-
-        for result in compilation_results:
-            config, vmfb_file, success = result
-            config_name = config.get_name()
-            if success:
-                vmfb_dict[config_name] = vmfb_file
-                success_count += 1
-            else:
-                error_count += 1
-
-        self._log(
-            f"{success_count} Success, {error_count} Failed out of {len(compilation_results)} configs"
-        )
-        self._log("Compilation process completed.")
-
-        return vmfb_dict
-
     def benchmark_kernels(self):
-        """Run benchmarks sequentially after parallel compilation."""
+        """
+        Run benchmarks sequentially. Compiles all IREE-based kernels beforehand.
+        """
         self._load_benches()
 
         if len(self._benches) == 0:
             return
 
-        use_iree = isinstance(self._benches[0], IREEKernelBenchmark)
-        if use_iree:
-            vmfb_dict = self._compile_kernels_parallel()
-            bench_items = [
-                bench for bench in self._benches if bench.config.get_name() in vmfb_dict
-            ]
-        else:
-            bench_items = self._benches
-
-        results = []
-
-        for bench in tqdm(bench_items, desc="Benchmarking Kernels"):
-            try:
-                if use_iree:
-                    iree_bench: IREEKernelBenchmark = bench
-                    bench_result = iree_bench.bench_vmfb(
-                        vmfb_filename=vmfb_dict.get(bench.config.get_name()),
-                        device=self.device,
-                        num_iterations=self.num_iterations,
-                    )
-                else:
-                    bench_result = bench.run_bench(
-                        device=self.device, num_iterations=self.num_iterations
-                    )
-
-                if not bench_result.ok:
-                    tqdm.write(f"Benchmark failed for {bench.config.get_name()}")
-
-                results.append(bench_result)
-
-            except Exception as e:
-                tqdm.write(f"Error benchmarking {bench.config.get_name()}: {e}")
-                results.append(bench.get_bench_result(0, False))
+        results = batch_benchmark(
+            self._benches,
+            self.device,
+            self.num_iterations,
+            verbose=True,
+        )
 
         return self.save_results(results)
 
@@ -261,6 +204,7 @@ class BenchmarkRunner:
         self,
         num_trials: int = 100,
     ):
+        """Runs benchmarks sequentially after parallel compilation."""
         self._load_benches()
 
         tuning_dir = Path(f"results/tuning")

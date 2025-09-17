@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from kernel_bench.core.utils import *
+from kernel_bench.utils.bench_utils import *
 from kernel_bench.utils.device_utils import dtype_to_bytes
 
 FUNC_ARGS = r"""%arg0: tensor<{LHS_TYPE}>, %arg1: tensor<{RHS_TYPE}>"""

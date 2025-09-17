@@ -35,7 +35,7 @@ from wave_lang.kernel.wave.utils.print_utils import dump_schedule, load_schedule
 
 from wave_lang.kernel.wave.utils.run_utils import get_default_arch
 
-from kernel_bench.core.utils import OpConfig
+from kernel_bench.utils.bench_utils import OpConfig
 
 
 @dataclass
