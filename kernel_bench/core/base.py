@@ -27,12 +27,14 @@ BENCHMARKS.update(CONV_BENCH)
 LOAD_PROBLEMS = {
     "gemm": get_default_gemm_configs,
     "attention": get_default_attention_configs,
+    "extend_attention": get_default_attention_configs,
     "conv": get_default_conv_configs,
 }
 
 CONFIG_CLASSES = {
     "gemm": GemmConfig,
     "attention": AttentionConfigBMNK,
+    "extend_attention": AttentionConfigBMNK,
     "conv": ConvConfig,
 }
 

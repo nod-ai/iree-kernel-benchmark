@@ -65,6 +65,15 @@ class TuningParadigm(ABC):
         self._update_progress()
 
         base_result = self._benchmark(context)
+        if not base_result.ok:
+            return TuningResult(
+                name=config.get_name(),
+                benchmark=base_result,
+                improvement=False,
+                speedup=0,
+                hyperparams=None,
+            )
+
         tuned_result = self._tune(context, progress_callback)
 
         base_runtime = base_result.mean_microseconds
@@ -79,7 +88,7 @@ class TuningParadigm(ABC):
             improvement = True
             speedup = base_runtime / tuned_runtime
 
-        self._update_progress(completed=self.progress.total, active=False)
+        self._update_progress(completed=self.progress.total, finished=True)
 
         return TuningResult(
             name=config.get_name(),
@@ -93,14 +102,16 @@ class TuningParadigm(ABC):
         self,
         completed: Optional[int] = None,
         total: Optional[int] = None,
-        active: Optional[bool] = None,
+        finished: Optional[bool] = None,
     ):
         if completed:
             self.progress.completed = completed
         if total:
             self.progress.total = total
-        if active is not None:
-            self.progress.active = active
+        if finished is not None:
+            self.progress.is_final = finished
+            self.progress.active = not finished
+
         self.progress_callback(self.progress)
 
     @abstractmethod
@@ -124,8 +135,7 @@ class TuningParadigm(ABC):
 
         bench.tuning_spec.clear()
         if param_values:
-            for name, val in param_values.items():
-                bench.tuning_spec.set_parameter(name, val)
+            bench.update_parameter_values(param_values)
 
             sat, violated = bench.tuning_spec.validate_constraints()
             if not sat:
@@ -133,7 +143,7 @@ class TuningParadigm(ABC):
 
         # Cap benchmark runtime
         if self.base_exec_time:
-            bench_timeout = self.base_exec_time * 5
+            bench_timeout = self.base_exec_time * 3
         else:
             bench_timeout = None
 

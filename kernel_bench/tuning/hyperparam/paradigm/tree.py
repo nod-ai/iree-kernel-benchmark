@@ -1,8 +1,10 @@
 import numpy as np
 from typing import Dict, List, Tuple, Any, Callable, Optional
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 import itertools
 
+from kernel_bench.core.base import create_benchmark
+from kernel_bench.core.template import IREEKernelBenchmark, batch_compile_iree_benches
 from kernel_bench.core.utils import BenchmarkResult
 from kernel_bench.tuning.hyperparam.paradigm.paradigm import (
     TuningContext,
@@ -14,11 +16,10 @@ from kernel_bench.utils.parallel import ProgressUpdate
 
 @dataclass
 class TreeParameter:
-    """Represents a tunable parameter with integer range"""
+    """Represents a tunable parameter with a list of acceptable values"""
 
     name: str
-    min_value: int
-    max_value: int
+    values: List[int]
     is_categorical: bool = False
 
     def get_candidates(
@@ -36,62 +37,71 @@ class TreeParameter:
             range_fraction: Fraction of the original range to use (for refinement)
         """
         if center is None:
-            # Initial pass: evenly distribute across full range
+            # Initial pass: evenly distribute across all values
             if num_candidates == 1:
-                return [(self.min_value + self.max_value) // 2]
-            elif num_candidates >= (self.max_value - self.min_value + 1):
-                # If we want more candidates than the range, return all values
-                return list(range(self.min_value, self.max_value + 1))
+                # Return the middle value
+                return [self.values[len(self.values) // 2]]
+            elif num_candidates >= len(self.values):
+                # If we want more candidates than available values, return all values
+                return self.values.copy()
             else:
-                # Evenly distribute candidates
-                step = (self.max_value - self.min_value) / (num_candidates - 1)
-                candidates = []
+                # Evenly distribute candidates across the available values
+                indices = []
+                step = (len(self.values) - 1) / (num_candidates - 1)
                 for i in range(num_candidates):
-                    value = int(round(self.min_value + i * step))
-                    candidates.append(value)
-                # Remove duplicates while preserving order
-                seen = set()
-                unique_candidates = []
-                for val in candidates:
-                    if val not in seen:
-                        seen.add(val)
-                        unique_candidates.append(val)
-                return unique_candidates
+                    idx = int(round(i * step))
+                    indices.append(idx)
+                # Remove duplicate indices while preserving order
+                unique_indices = list(dict.fromkeys(indices))
+                return [self.values[i] for i in unique_indices]
         else:
             # Refinement pass: search around the center point
-            range_width = int((self.max_value - self.min_value) * range_fraction)
-            # Ensure we have at least a range of num_candidates
-            range_width = max(range_width, num_candidates - 1)
+            if center not in self.values:
+                # Find the closest value to center
+                center_idx = min(
+                    range(len(self.values)), key=lambda i: abs(self.values[i] - center)
+                )
+            else:
+                center_idx = self.values.index(center)
 
-            local_min = max(self.min_value, center - range_width // 2)
-            local_max = min(self.max_value, center + range_width // 2)
+            # Calculate the range of indices to consider
+            total_range = len(self.values) - 1
+            search_range = max(1, int(total_range * range_fraction))
+
+            # Ensure we have at least num_candidates range if possible
+            search_range = max(search_range, num_candidates - 1)
+
+            # Calculate local bounds
+            local_min_idx = max(0, center_idx - search_range // 2)
+            local_max_idx = min(len(self.values) - 1, center_idx + search_range // 2)
 
             # Adjust to ensure we have enough unique values
-            while local_max - local_min + 1 < num_candidates:
-                if local_min > self.min_value:
-                    local_min -= 1
+            while local_max_idx - local_min_idx + 1 < num_candidates:
+                if local_min_idx > 0:
+                    local_min_idx -= 1
                 if (
-                    local_max < self.max_value
-                    and local_max - local_min + 1 < num_candidates
+                    local_max_idx < len(self.values) - 1
+                    and local_max_idx - local_min_idx + 1 < num_candidates
                 ):
-                    local_max += 1
-                if local_min == self.min_value and local_max == self.max_value:
+                    local_max_idx += 1
+                if local_min_idx == 0 and local_max_idx == len(self.values) - 1:
                     break
 
-            available_range = local_max - local_min + 1
+            available_values = self.values[local_min_idx : local_max_idx + 1]
 
-            if num_candidates >= available_range:
+            if num_candidates >= len(available_values):
                 # Return all values in the range
-                return list(range(local_min, local_max + 1))
+                return available_values
             else:
                 # Evenly distribute within the local range
-                step = (local_max - local_min) / (num_candidates - 1)
-                candidates = []
+                indices = []
+                step = (len(available_values) - 1) / (num_candidates - 1)
                 for i in range(num_candidates):
-                    value = int(round(local_min + i * step))
-                    candidates.append(value)
+                    idx = int(round(i * step))
+                    indices.append(idx)
                 # Remove duplicates
-                return list(dict.fromkeys(candidates))
+                unique_indices = list(dict.fromkeys(indices))
+                return [available_values[i] for i in unique_indices]
 
 
 class MultiPassTreeTuner(TuningParadigm):
@@ -133,8 +143,7 @@ class MultiPassTreeTuner(TuningParadigm):
         self.parameters = [
             TreeParameter(
                 name=param.name,
-                min_value=param.bounds.get_range()[0],
-                max_value=param.bounds.get_range()[-1],
+                values=param.bounds.get_range(),
                 is_categorical=isinstance(param.bounds, CategoricalBounds),
             )
             for param in tuning_params
@@ -218,17 +227,54 @@ class MultiPassTreeTuner(TuningParadigm):
                 seen.add(config_tuple)
                 unique_configs.append(config)
 
-        for config in unique_configs:
-            score = self._benchmark(self.context, config)
+        base_bench = self.context.bench
+        use_iree = isinstance(base_bench, IREEKernelBenchmark)
 
+        scores: List[BenchmarkResult] = []
+
+        if use_iree:
+            batch_benches: List[IREEKernelBenchmark] = []
+            for config in unique_configs:
+                iree_bench = create_benchmark(
+                    base_bench.kernel_type, base_bench.backend, asdict(base_bench)
+                )
+                iree_bench.update_parameter_values(config)
+                batch_benches.append(iree_bench)
+            compile_results = batch_compile_iree_benches(
+                batch_benches, verbose=True, unique_id=True
+            )
+
+            device = f"hip://{self.context.device_id}"
+            bench_timeout = self.base_exec_time * 3 if self.base_exec_time else None
+
+            for i in range(len(unique_configs)):
+                config, vmfb_path, success = compile_results[i]
+                bench = batch_benches[i]
+                if success and vmfb_path:
+                    score = bench.bench_vmfb(
+                        vmfb_path, device, self.context.num_iterations, bench_timeout
+                    )
+                else:
+                    score = bench.get_bench_result(0, False)
+
+                scores.append(score)
+                self.trial_count += 1
+                self._update_progress(completed=self.trial_count)
+
+        else:
+            for config in unique_configs:
+                score = self._benchmark(self.context, config)
+
+                scores.append(score)
+                self.trial_count += 1
+                self._update_progress(completed=self.trial_count)
+
+        for i, score in enumerate(scores):
             if (self.minimize and score < best_score) or (
                 not self.minimize and score > best_score
             ):
                 best_score = score
-                best_config = config.copy()
-
-            self.trial_count += 1
-            self._update_progress(completed=self.trial_count)
+                best_config = unique_configs[i].copy()
 
         return best_config, best_score
 
@@ -256,7 +302,7 @@ class MultiPassTreeTuner(TuningParadigm):
             max_configs_per_pass * self.num_passes for _ in range(self.num_passes)
         ]
 
-        self._update_progress(completed=0, total=sum(configs_per_pass), active=True)
+        self._update_progress(completed=0, total=sum(configs_per_pass), finished=False)
 
         for pass_num in range(self.num_passes):
             if verbose:
@@ -321,26 +367,24 @@ if __name__ == "__main__":
     # Define a simple objective function
     def objective_function(config: Dict[str, int]) -> float:
         """Example objective function to minimize"""
-        a = config["A"]
-        b = config["B"]
-        c = config["C"]
-        d = config["D"]
+        a = config["BLOCK_B"]
+        b = config["BLOCK_M"]
+        c = config["BLOCK_N"]
+        d = config["BLOCK_K2"]
 
         # Target: A=1, B=8, C=15, D=8
         return (a - 1) ** 2 + (b - 6) ** 2 + (c - 4) ** 2 + (d - 14) ** 2
 
-    # Define parameters with integer ranges
+    # Define parameters with lists of acceptable values
     parameters = [
-        TreeParameter("A", min_value=1, max_value=15),
-        TreeParameter("B", min_value=1, max_value=15),
-        TreeParameter("C", min_value=1, max_value=15),
-        TreeParameter("D", min_value=1, max_value=15),
+        TreeParameter("BLOCK_B", values=[1, 2, 4, 8, 16]),
+        TreeParameter("BLOCK_M", values=[2, 4, 6, 8, 10, 12, 14, 16]),
+        TreeParameter("BLOCK_N", values=[1, 3, 5, 7, 9, 11, 13, 15]),
+        TreeParameter("BLOCK_K2", values=[4, 8, 12, 16, 20, 24]),
     ]
 
     # Create and run tuner
     tuner = MultiPassTreeTuner(
-        parameters=parameters,
-        objective_function=objective_function,
         num_candidates=2,
         num_passes=4,
         minimize=True,

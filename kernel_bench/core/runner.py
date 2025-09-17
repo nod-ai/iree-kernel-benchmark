@@ -25,7 +25,12 @@ from .utils import (
     write_results_to_json,
     write_to_json_file,
 )
-from .template import KernelBenchmark, IREEKernelBenchmark, WaveKernelBenchmark
+from .template import (
+    KernelBenchmark,
+    IREEKernelBenchmark,
+    WaveKernelBenchmark,
+    batch_compile_iree_benches,
+)
 from kernel_bench.core.base import BENCHMARKS, create_benchmark
 
 
@@ -85,11 +90,11 @@ class BenchmarkRunner:
             if config.get_name() in tuned_data.keys()
         ]
 
-        # self.specs = {
-        #     kernel_name: tune_result["hyperparams"]
-        #     for kernel_name, tune_result in tuned_data.items()
-        #     if tune_result["improvement"]
-        # }
+        self.specs = {
+            kernel_name: tune_result["hyperparams"]
+            for kernel_name, tune_result in tuned_data.items()
+            if tune_result["improvement"]
+        }
 
     def save_results(self, results: List[BenchmarkResult]):
         if len(results) == 0:
@@ -141,32 +146,6 @@ class BenchmarkRunner:
             self._create_benchmark(tag, config) for tag, config in self.configs
         ]
 
-    @staticmethod
-    def _compile_single_kernel_static(args):
-        """Static method for parallel compilation."""
-        tag, bench, hyperparams_dict, config_name = args
-        try:
-            # Get paths for this specific benchmark
-            local_kernel_dir = bench.kernel_dir / bench.kernel_type / bench.backend
-            mlir_dir = local_kernel_dir / "mlir"
-            vmfb_dir = local_kernel_dir / "vmfb"
-
-            os.makedirs(mlir_dir, exist_ok=True)
-            os.makedirs(vmfb_dir, exist_ok=True)
-
-            mlir_path = mlir_dir / f"{bench.config.get_name()}.mlir"
-            vmfb_path = vmfb_dir / f"{bench.config.get_name()}.vmfb"
-
-            # Set hyperparams if available
-            if hasattr(bench, "hyperparams") and hyperparams_dict:
-                bench.hyperparams = hyperparams_dict.get(config_name)
-
-            success = bench.compile_to_vmfb(mlir_path, vmfb_path)
-            return bench.config, vmfb_path, success
-        except Exception as e:
-            print(f"Compilation failed for {config_name}: {e}")
-            return bench.config, None, False
-
     def _compile_kernels_parallel(self) -> Dict[str, Path]:
         """Compile all kernels in parallel."""
         if not self._benches:
@@ -175,31 +154,10 @@ class BenchmarkRunner:
         iree_benches = [
             bench for bench in self._benches if isinstance(bench, IREEKernelBenchmark)
         ]
-
         if not iree_benches:
             return
 
-        compilation_results = []
-        compile_args = [
-            (bench.tag, bench, self.hyperparams, bench.config.get_name())
-            for bench in iree_benches
-        ]
-        if len(iree_benches) < 5:
-            compilation_results = compilation_results = [
-                self._compile_single_kernel_static(args) for args in compile_args
-            ]
-        else:
-            num_cpus = max(1, cpu_count() - 20)
-            self._log(f"Using {num_cpus} CPUs for parallel compilation.")
-
-            with Pool(num_cpus) as pool:
-                compilation_results = list(
-                    tqdm(
-                        pool.imap(self._compile_single_kernel_static, compile_args),
-                        total=len(compile_args),
-                        desc=f"Compiling {self.kernel_type.capitalize()} Kernels",
-                    )
-                )
+        compilation_results = batch_compile_iree_benches(iree_benches, verbose=True)
 
         vmfb_dict = {}
         success_count = 0

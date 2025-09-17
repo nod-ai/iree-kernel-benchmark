@@ -108,6 +108,45 @@ def get_attention_configs(use_fp8=True) -> ConfigList:
     return configs
 
 
+def get_extend_attention_configs() -> ConfigList:
+    shapes = [
+        AttentionAttributes(
+            attention_type="bmnk",
+            batch_size=1,
+            num_seqs=2,
+            context_len=1024,
+            num_query_heads=16,
+            num_kv_heads=1,
+            head_size=128,
+            head_size_kv=128,
+            block_size=64,
+        ),
+        AttentionAttributes(
+            attention_type="bmnk",
+            batch_size=1,
+            num_seqs=1,
+            context_len=1024,
+            num_query_heads=16,
+            num_kv_heads=2,
+            head_size=64,
+            head_size_kv=64,
+            block_size=128,
+        ),
+        AttentionAttributes(
+            attention_type="bmnk",
+            batch_size=1,
+            num_seqs=4,
+            context_len=1024,
+            num_query_heads=4,
+            num_kv_heads=4,
+            head_size=256,
+            head_size_kv=256,
+            block_size=64,
+        ),
+    ]
+    return [("extend_test", shape) for shape in shapes]
+
+
 def get_attention_configs_gqa() -> ConfigList:
     cai_configs = cai_attn("bf16")
 

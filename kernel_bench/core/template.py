@@ -1,13 +1,16 @@
 from abc import ABC, abstractmethod
 import math
+from multiprocessing import Pool, cpu_count
 import os
 import traceback
+from uuid import uuid4
 from sympy import Symbol
 from dataclasses import asdict, dataclass, field
 from os import PathLike
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from tqdm import tqdm
 from wave_lang.kernel.wave.compile import wave_compile
 from wave_lang.kernel.wave.compile_options import WaveCompileOptions
 from wave_lang.kernel.wave.utils.general_utils import get_default_scheduling_params
@@ -102,6 +105,10 @@ class KernelBenchmark(ABC):
     def load_tuned_config(self, obj: dict[str, Any]):
         self.tuning_spec.load_from_dict(obj)
 
+    def update_parameter_values(self, param_values: dict[str, int]):
+        for name, val in param_values.items():
+            self.tuning_spec.set_parameter(name, val)
+
     @abstractmethod
     def run_bench(
         self, device: str, num_iterations: int = 1, timeout: Optional[float] = None
@@ -112,7 +119,7 @@ class KernelBenchmark(ABC):
 @dataclass
 class IREEKernelBenchmark(KernelBenchmark):
     kernel_dir: Path
-    dump_dir: Optional[Path]
+    dump_dir: Optional[Path] = None
 
     def __post_init__(self):
         super().__post_init__()
@@ -150,10 +157,12 @@ class IREEKernelBenchmark(KernelBenchmark):
         mlir_path = mlir_dir / f"{self.config.get_name()}.mlir"
         vmfb_path = vmfb_dir / f"{self.config.get_name()}.vmfb"
 
+        # print("Compiling")
         compile_success = self.compile_to_vmfb(mlir_path, vmfb_path)
         if not compile_success:
             return self.get_bench_result(0, False)
 
+        # print("Benchmarking")
         return self.bench_vmfb(vmfb_path, device, num_iterations, timeout)
 
 
@@ -206,3 +215,66 @@ class WaveKernelBenchmark(IREEKernelBenchmark):
             print(f"Failed to compile {self.config.get_name()}: {e}")
             traceback.print_exception(e)
             return False
+
+
+type CompileResult = Tuple[OpConfig, Optional[Path], bool]
+
+
+def compile_iree_bench(bench: IREEKernelBenchmark, kernel_name: str) -> CompileResult:
+    try:
+        local_kernel_dir = bench.kernel_dir / bench.kernel_type / bench.backend
+        mlir_dir = local_kernel_dir / "mlir"
+        vmfb_dir = local_kernel_dir / "vmfb"
+
+        os.makedirs(mlir_dir, exist_ok=True)
+        os.makedirs(vmfb_dir, exist_ok=True)
+
+        mlir_path = mlir_dir / f"{kernel_name}.mlir"
+        vmfb_path = vmfb_dir / f"{kernel_name}.vmfb"
+
+        success = bench.compile_to_vmfb(mlir_path, vmfb_path)
+        return bench.config, vmfb_path, success
+
+    except Exception as e:
+        print(f"Compilation failed for {bench.config.get_name()}: {e}")
+        return bench.config, None, False
+
+
+def batch_compile_iree_benches(
+    iree_benches: List[IREEKernelBenchmark],
+    verbose=False,
+    unique_id=False,
+) -> List[CompileResult]:
+
+    def tag_name(name: str):
+        if not unique_id:
+            return name
+        id_suffix = str(uuid4()).replace("-", "_")
+        return f"{name}_{id_suffix}"
+
+    compile_args = [
+        (bench, tag_name(bench.config.get_name())) for bench in iree_benches
+    ]
+
+    # Compile sequentially for small batches
+    if len(iree_benches) < 5:
+        compilation_results = [compile_iree_bench(*args) for args in compile_args]
+
+    # Parallelize compilation for larger batches
+    else:
+        num_cpus = max(1, cpu_count() - 20)
+        num_cpus = min(num_cpus, len(iree_benches))
+        if verbose:
+            print(f"Using {num_cpus} CPUs for parallel compilation.")
+
+        with Pool(num_cpus) as pool:
+            compilation_results = list(
+                tqdm(
+                    pool.istarmap(compile_iree_bench, compile_args),
+                    total=len(iree_benches),
+                    desc=f"Compiling {iree_benches[0].kernel_type.capitalize()} Kernels",
+                )
+            )
+
+    assert len(iree_benches) == len(compilation_results)
+    return compilation_results
