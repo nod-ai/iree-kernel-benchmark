@@ -15,8 +15,7 @@ from ..attention_config import (
     AttentionAttributes,
     AttentionConfigBMNK,
     AttentionConfigBSHD,
-    bmnk1k2_to_attention_attributes,
-    bshd_to_attention_attributes,
+    AttentionConfigExtend,
 )
 from typing import override
 
@@ -33,14 +32,6 @@ from wave_lang.kernel.wave.templates.gqa_vanilla_attention import (
     get_gqa_bshd_attention_kernel,
 )
 from wave_lang.kernel.wave.scheduling.schedule_enums import SchedulingType
-from wave_lang.kernel.wave.utils.torch_utils import (
-    device_randn,
-    device_zeros,
-    device_empty,
-    device_arange,
-    device_randint,
-    device_full,
-)
 
 
 class WaveAttentionMHABenchmark(WaveKernelBenchmark):
@@ -97,7 +88,7 @@ class WaveAttentionMHABenchmark(WaveKernelBenchmark):
         if "f8" in config.dtype:
             base_attention, hyperparams, dynamic_symbols = (
                 get_brevitas_pertensor_fp8_attention_kernel(
-                    shape=bmnk1k2_to_attention_attributes(config),
+                    shape=config.attributes,
                     f8_dtype=dtype_to_torch(config.dtype, self.target),
                     mfma_variant=self.mfma_variant.value,
                     dynamic_dims=False,
@@ -105,7 +96,7 @@ class WaveAttentionMHABenchmark(WaveKernelBenchmark):
             )
         else:
             base_attention, hyperparams, dynamic_symbols = get_vanilla_attention_kernel(
-                shape=bmnk1k2_to_attention_attributes(config),
+                shape=config.attributes,
                 mfma_variant=self.mfma_variant.value,
                 dynamic_dims=False,
             )
@@ -162,7 +153,7 @@ class WaveAttentionGQABenchmark(WaveKernelBenchmark):
         config = self.config
 
         base_attention, hyperparams, dynamic_symbols = get_gqa_bshd_attention_kernel(
-            shape=bshd_to_attention_attributes(config),
+            shape=config.attributes,
             mfma_variant=self.mfma_variant.value,
             input_dtype=dtype_to_torch(config.dtype),
             output_dtype=dtype_to_torch("f32"),
@@ -185,139 +176,11 @@ class WaveAttentionGQABenchmark(WaveKernelBenchmark):
         )
 
 
-def create_extend_attention_inputs(
-    shape: AttentionAttributes,
-):
-
-    dtype = torch.float16
-    N_CTX = shape.context_len
-    B = shape.num_seqs
-    H_KV = shape.num_kv_heads
-    H_Q = shape.num_query_heads
-    D = shape.head_size
-    b_seq_len_prefix = device_randint(1, N_CTX // 2, (B,), dtype=torch.int32)
-    if shape.fixed_seq_len_prefix:
-        b_seq_len_prefix.fill_(shape.fixed_seq_len_prefix)
-    b_seq_len_extend = device_randint(1, N_CTX // 2, (B,), dtype=torch.int32)
-    if shape.fixed_seq_len_extend:
-        b_seq_len_extend.fill_(shape.fixed_seq_len_extend)
-    b_seq_len = b_seq_len_prefix + b_seq_len_extend
-
-    b_req_idx = device_arange(B, dtype=torch.int32)
-    b_start_loc = device_zeros((B,), dtype=torch.int32)
-    b_start_loc[1:] = torch.cumsum(b_seq_len[:-1], 0)
-    b_start_loc_extend = device_zeros((B,), dtype=torch.int32)
-    b_start_loc_extend[1:] = torch.cumsum(b_seq_len_extend[:-1], 0)
-
-    kv_indptr = device_zeros((B + 1,), dtype=torch.int32)
-    kv_indptr[1 : B + 1] = torch.cumsum(b_seq_len_prefix[:B], dim=0)
-    kv_indices = device_zeros((b_seq_len_prefix.sum().item(),), dtype=torch.int32)
-
-    for i in range(B):
-        kv_indices[kv_indptr[i] : kv_indptr[i + 1]] = torch.arange(
-            b_start_loc[i], b_start_loc[i] + b_seq_len_prefix[i]
-        )
-    total_token_num = torch.sum(b_seq_len).item()
-    extend_token_num = torch.sum(b_seq_len_extend).item()
-    k_buffer = device_empty((total_token_num, H_KV, D), dtype=dtype).normal_(
-        mean=0.1, std=0.2
-    )
-    v_buffer = device_empty((total_token_num, H_KV, D), dtype=dtype).normal_(
-        mean=0.1, std=0.2
-    )
-
-    k_extend = device_empty((extend_token_num, H_KV, D), dtype=dtype)
-    v_extend = device_empty((extend_token_num, H_KV, D), dtype=dtype)
-    q_extend = device_empty((extend_token_num, H_Q, D), dtype=dtype)
-    for i in range(B):
-        extend_start_in_buffer = b_start_loc[i] + b_seq_len_prefix[i]
-        extend_end_in_buffer = b_start_loc[i] + b_seq_len[i]
-        extend_start = b_start_loc_extend[i]
-        extend_end = b_start_loc_extend[i] + b_seq_len_extend[i]
-        k_extend[extend_start:extend_end] = k_buffer[
-            extend_start_in_buffer:extend_end_in_buffer
-        ]
-        v_extend[extend_start:extend_end] = v_buffer[
-            extend_start_in_buffer:extend_end_in_buffer
-        ]
-        q_extend[extend_start:extend_end] = device_empty(
-            (b_seq_len_extend[i], H_Q, D), dtype=dtype
-        ).normal_(mean=0.1, std=0.2)
-
-    b_seq_len_extend = b_seq_len - b_seq_len_prefix
-    b_start_loc_extend = torch.zeros_like(b_seq_len)
-    b_start_loc_extend[1:] = torch.cumsum(b_seq_len_extend[:-1], 0)
-    max_len_extend = torch.max(b_seq_len_extend, 0)[0].item()
-    qo_indptr = device_zeros((B + 1,), dtype=torch.int32)
-    qo_indptr[1 : B + 1] = torch.cumsum(b_seq_len_extend[:B], dim=0)
-    logit_cap = 30.0
-
-    b_seq_mask_len = b_seq_len_extend * b_seq_len
-    # NOTE: Custom mask is of causal nature in this test. Random mask numerics
-    # is not tested.
-    custom_mask = device_full(
-        (b_seq_mask_len.sum().item(),), fill_value=1, dtype=torch.int8
-    )
-    mask_offsets = device_zeros((B + 1,), dtype=torch.int32)
-    mask_offsets[1 : B + 1] = torch.cumsum(b_seq_mask_len[:B], dim=0)
-    for i in range(B):
-        causal_mask = (
-            torch.tril(
-                device_full(
-                    (b_seq_len_extend[i], b_seq_len_extend[i]),
-                    fill_value=1,
-                    dtype=torch.int8,
-                ),
-                diagonal=0,
-            )
-            == 1
-        )
-        prefix_mask = device_full(
-            (b_seq_len_extend[i], b_seq_len_prefix[i]), fill_value=1, dtype=torch.int8
-        )
-        mask_flatten = torch.cat([prefix_mask, causal_mask], dim=1).flatten()
-        custom_mask[mask_offsets[i] : mask_offsets[i + 1]] = mask_flatten
-
-    max_rpe_context_length = 10
-    rpe_bias = device_zeros(max_rpe_context_length + 1, dtype=torch.float32)
-    rpe_bias.copy_(device_randn(max_rpe_context_length + 1, dtype=torch.float32))
-    rpe_bias[max_rpe_context_length] = 0
-
-    output = device_zeros(
-        extend_token_num, shape.num_query_heads, shape.head_size, dtype=torch.float32
-    )
-
-    return (
-        q_extend,
-        k_extend,
-        v_extend,
-        k_buffer,
-        v_buffer,
-        output,
-        b_req_idx,
-        b_seq_len,
-        qo_indptr,
-        kv_indptr,
-        kv_indices,
-        custom_mask,
-        mask_offsets,
-        b_start_loc,
-        b_seq_len_prefix,
-        extend_token_num,
-        max_len_extend,
-        logit_cap,
-        rpe_bias,
-        max_rpe_context_length,
-    )
-
-
 class WaveExtendAttentionBenchmark(WaveKernelBenchmark):
-    config: AttentionConfigBMNK
+    config: AttentionConfigExtend
 
     @override
     def setup_parameters(self):
-        config = self.config
-
         mfma_bounds = CategoricalBounds(
             [
                 (MMAType.F32_32x32x16_K8_F16, MMAType.F32_32x32x8_F16),
@@ -346,43 +209,18 @@ class WaveExtendAttentionBenchmark(WaveKernelBenchmark):
     @override
     def load_wave_kernel(self):
         config = self.config
-        shape = bmnk1k2_to_attention_attributes(config)
-        dtype = dtype_to_torch(config.dtype)
-
-        (
-            q_extend,
-            k_extend,
-            v_extend,
-            k_buffer,
-            v_buffer,
-            output,
-            b_req_idx,
-            b_seq_len,
-            qo_indptr,
-            kv_indptr,
-            kv_indices,
-            custom_mask,
-            mask_offsets,
-            b_start_loc,
-            b_seq_len_prefix,
-            extend_token_num,
-            max_len_extend,
-            logit_cap,
-            _,
-            _,
-        ) = create_extend_attention_inputs(shape)
-        shape = replace(shape, max_seq_len=max_len_extend)
 
         base_extend, hyperparams, dynamic_symbols = get_extend_attention_kernel(
-            shape,
+            config.attributes,
             self.mfma_variant.value,
-            q_extend.shape,
-            k_extend.shape,
-            v_extend.shape,
-            k_buffer.shape,
-            v_buffer.shape,
-            output.shape,
-            logit_cap=logit_cap,
+            config.inputs.q_extend_shape,
+            config.inputs.k_extend_shape,
+            config.inputs.v_extend_shape,
+            config.inputs.k_buffer_shape,
+            config.inputs.v_buffer_shape,
+            config.inputs.output_shape,
+            input_dtype=dtype_to_torch(config.dtype),
+            logit_cap=config.inputs.logit_cap,
         )
 
         hyperparams.update(self.tuning_spec.hyperparams())

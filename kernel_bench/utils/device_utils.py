@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Any, Iterable, Optional
 import torch
 
 DTYPE_TO_TORCH = {
@@ -101,3 +101,33 @@ def dtype_to_bits(dtype: str, target: Optional[str] = None):
 
 def dtype_to_bytes(dtype: str, target: Optional[str] = None):
     return max(1, dtype_to_bits(dtype, target) // 8)
+
+
+def torch_dtype_to_str(dtype: torch.dtype) -> str:
+    torch_dtype_to_str = {
+        torch_dtype: dtype_str for dtype_str, torch_dtype in DTYPE_TO_TORCH.items()
+    }
+    dtype = torch_dtype_to_str.get(dtype)
+    if not dtype:
+        raise ValueError(f"Datatype {dtype} is invalid.")
+    return dtype
+
+
+def stringify_shape(shape: tuple[int, ...] | Any, dtype: str | torch.dtype) -> str:
+    if isinstance(dtype, torch.dtype):
+        dtype = torch_dtype_to_str(dtype)
+    if isinstance(shape, tuple):
+        return "x".join(map(str, [*shape, dtype]))
+    else:
+        return f"1x{dtype}"
+
+
+def stringify_tensor_shape(tensor: Any) -> str:
+    if isinstance(tensor, torch.Tensor):
+        return stringify_shape(tensor.shape, tensor.dtype)
+    if isinstance(tensor, float):
+        return "1xf32"
+    if isinstance(tensor, int):
+        return "1xi32"
+    if isinstance(tensor, bool):
+        return "1xbool"

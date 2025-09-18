@@ -3,10 +3,8 @@ from .attention_config import *
 
 def get_attention_attrs_bmnk(
     B: int, M: int, N: int, K1: int, K2: int, dtype: str
-) -> list[AttentionAttributes]:
-    return bmnk1k2_to_attention_attributes(
-        config_bmnk=AttentionConfigBMNK(B, M, N, K1, K2, dtype)
-    )
+) -> AttentionAttributes:
+    return AttentionConfigBMNK(B, M, N, K1, K2, dtype).attributes
 
 
 def llm_sweep(dtype: str) -> list[AttentionAttributes]:
@@ -69,7 +67,6 @@ def cai_attn(dtype: str) -> list[AttentionAttributes]:
     for M in [12288, 16384, 4145, 8192, 8698, 425, 8641, 8589, 4504]:
         configs.append(
             AttentionAttributes(
-                attention_type="bshd",
                 num_seqs=1,
                 num_query_heads=32,
                 num_kv_heads=1,
@@ -111,7 +108,6 @@ def get_attention_configs(use_fp8=True) -> ConfigList:
 def get_extend_attention_configs() -> ConfigList:
     shapes = [
         AttentionAttributes(
-            attention_type="bmnk",
             batch_size=1,
             num_seqs=2,
             context_len=1024,
@@ -122,7 +118,6 @@ def get_extend_attention_configs() -> ConfigList:
             block_size=64,
         ),
         AttentionAttributes(
-            attention_type="bmnk",
             batch_size=1,
             num_seqs=1,
             context_len=1024,
@@ -133,7 +128,6 @@ def get_extend_attention_configs() -> ConfigList:
             block_size=128,
         ),
         AttentionAttributes(
-            attention_type="bmnk",
             batch_size=1,
             num_seqs=4,
             context_len=1024,

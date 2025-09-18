@@ -2,7 +2,11 @@ from typing import Any, Type
 from dacite import from_dict
 
 from kernel_bench.core.template import KernelBenchmark
-from kernel_bench.kernels.attention.attention_config import AttentionConfigBMNK
+from kernel_bench.kernels.attention.attention_config import (
+    AttentionConfigBMNK,
+    AttentionConfigBSHD,
+    AttentionConfigExtend,
+)
 from kernel_bench.kernels.conv.conv_utils import ConvConfig
 from kernel_bench.kernels.gemm.gemm_utils import GemmConfig
 
@@ -34,7 +38,7 @@ LOAD_PROBLEMS = {
 CONFIG_CLASSES = {
     "gemm": GemmConfig,
     "attention": AttentionConfigBMNK,
-    "extend_attention": AttentionConfigBMNK,
+    "extend_attention": AttentionConfigExtend,
     "conv": ConvConfig,
 }
 

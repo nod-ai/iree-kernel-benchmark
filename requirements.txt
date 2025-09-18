@@ -5,3 +5,4 @@ PyYAML>=6.0.2 # Required by iree.compiler.dialects.linalg
 pandas
 optuna
 scikit-learn
+dacite

@@ -1,3 +1,8 @@
+from kernel_bench.kernels.attention.attention_config import (
+    attention_attributes_to_bmnk1k2,
+    attention_attributes_to_bshd,
+    attention_attributes_to_extend,
+)
 from .backends.wave_attention import (
     WaveAttentionGQABenchmark,
     WaveAttentionMHABenchmark,
@@ -16,21 +21,23 @@ def get_default_attention_configs(kernel_type: str, backend_name: str):
     if kernel_type == "attention":
         if backend_name == "wavegqa":
             return [
-                (tag, config.to_bshd()) for tag, config in get_attention_configs_gqa()
+                (tag, attention_attributes_to_bshd(config))
+                for tag, config in get_attention_configs_gqa()
             ]
         elif backend_name in ["iree"]:
             return [
-                (tag, config.to_bmnk1k2())
+                (tag, attention_attributes_to_bmnk1k2(config))
                 for tag, config in get_attention_configs(use_fp8=True)
             ]
         else:
             return [
-                (tag, config.to_bmnk1k2())
+                (tag, attention_attributes_to_bmnk1k2(config))
                 for tag, config in get_attention_configs(use_fp8=False)
             ]
     elif kernel_type == "extend_attention":
         return [
-            (tag, config.to_bmnk1k2()) for tag, config in get_extend_attention_configs()
+            (tag, attention_attributes_to_extend(config))
+            for tag, config in get_extend_attention_configs()
         ]
 
 

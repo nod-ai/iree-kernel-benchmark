@@ -3,10 +3,7 @@ import torch
 
 from kernel_bench.core.template import KernelBenchmark
 from kernel_bench.utils.device_utils import dtype_to_torch
-from ..attention_config import (
-    AttentionConfigBMNK,
-    bmnk1k2_to_attention_attributes,
-)
+from ..attention_config import AttentionConfigBMNK
 
 
 class TorchAttentionBenchmark(KernelBenchmark):
@@ -21,7 +18,7 @@ class TorchAttentionBenchmark(KernelBenchmark):
     @override
     def run_bench(self, device, num_iterations=1):
         config = self.config
-        shape = bmnk1k2_to_attention_attributes(config)
+        shape = config.attributes
 
         q_shape = (shape.num_query_heads, shape.query_seq_len, shape.head_size)
         k_shape = (shape.num_query_heads, shape.kv_seq_len, shape.head_size)

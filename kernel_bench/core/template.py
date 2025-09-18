@@ -8,7 +8,7 @@ from sympy import Symbol
 from dataclasses import asdict, dataclass, field
 from os import PathLike
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from tqdm import tqdm, trange
 from wave_lang.kernel.wave.compile import wave_compile
@@ -45,12 +45,24 @@ class KernelBenchmark(ABC):
         self._param_symbols = {}
         self.setup_parameters()
 
+    def add_params(self, params: List[TuningParameter]) -> List[ParameterSymbol]:
+        """Register multiple parameters and return their corresponding symbols"""
+        symbols = []
+
+        for param in params:
+            self._tuning_spec.add_parameter(param.name, param)
+
+            param_symbol = ParameterSymbol(param.name, self._tuning_spec)
+            self._param_symbols[param.name] = param_symbol
+            symbols.append(param_symbol)
+
+        return symbols
+
     def add_param(self, name: str, bounds, **kwargs) -> ParameterSymbol:
         """Register and return a parameter symbol"""
         param = TuningParameter(name, bounds, **kwargs)
         self._tuning_spec.add_parameter(name, param)
 
-        # Create a ParameterSymbol that wraps SymPy Symbol
         param_symbol = ParameterSymbol(name, self._tuning_spec)
         self._param_symbols[name] = param_symbol
         return param_symbol
@@ -301,6 +313,7 @@ def batch_benchmark(
     device: str,
     num_iterations: int = 1,
     timeout: Optional[float] = None,
+    callback: Optional[Callable[[BenchmarkResult], None]] = None,
     verbose=False,
     unique_ids=False,
 ) -> List[BenchmarkResult]:
@@ -311,18 +324,9 @@ def batch_benchmark(
     in order while preserving the original input order.
     """
 
-    iree_benches = []
-    iree_indices = []
-    non_iree_benches = []
-    non_iree_indices = []
-
-    for i, bench in enumerate(benches):
-        if isinstance(bench, IREEKernelBenchmark):
-            iree_benches.append(bench)
-            iree_indices.append(i)
-        else:
-            non_iree_benches.append(bench)
-            non_iree_indices.append(i)
+    iree_benches = [
+        bench for bench in benches if isinstance(bench, IREEKernelBenchmark)
+    ]
 
     compilation_results = {}
     if iree_benches:
@@ -353,8 +357,12 @@ def batch_benchmark(
 
         except Exception as e:
             if verbose:
-                print(f"Benchmarking failed for {bench.config.get_name()}: {e}")
+                tqdm.write(f"Benchmarking failed for {bench.config.get_name()}: {e}")
             result = bench.get_bench_result(0, False)
             results[i] = result
+
+        finally:
+            if callback:
+                callback(results[i])
 
     return results
