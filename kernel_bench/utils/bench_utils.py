@@ -26,6 +26,7 @@ import wave_lang.kernel.lang as tkl
 from wave_lang.kernel._support.indexing import index_symbol
 
 from kernel_bench.utils.clustering import KernelConfigurationClustering
+from kernel_bench.utils.print_utils import get_logger
 
 
 @dataclass
@@ -121,7 +122,7 @@ def write_results_to_csv(results: list[BenchmarkResult], output_filename: os.Pat
         os.makedirs(output_dir, exist_ok=True)
 
     if len(results) == 0:
-        print("No valid results")
+        get_logger().warn("No valid results")
         return
 
     fieldnames = [
@@ -170,7 +171,7 @@ def write_to_json_file(data: Any, output_filename: os.PathLike, indent=4):
 
 def write_results_to_json(results: list[BenchmarkResult], output_filename: os.PathLike):
     if len(results) == 0:
-        print("No valid results")
+        get_logger().warn("No valid results")
         return
 
     results_json = [asdict(result) for result in results]
@@ -316,7 +317,7 @@ def roofline(results=None, out=None, batch=None, dtype=None, model=None, **kwarg
     plt.savefig(out, dpi=300, bbox_inches="tight")
     plt.close()
 
-    print(f"Roofline plot saved as '{out}'")
+    get_logger().info(f"Roofline plot saved as '{out}'")
 
 
 def reduce_configs(

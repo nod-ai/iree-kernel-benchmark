@@ -12,9 +12,11 @@ from typing import Any, Dict, List, Optional, Tuple, Type
 from wave_lang.kernel.wave.constraints import MMAType
 
 from kernel_bench.tuning.hyperparam.paradigm.bayesian import BayesianTuningParadigm
+from kernel_bench.tuning.hyperparam.paradigm.test_progress import ParallelProgressTester
 from kernel_bench.tuning.hyperparam.paradigm.tree import MultiPassTreeTuner
 from kernel_bench.tuning.hyperparam.parallel_tuning import ParallelTuner
 from kernel_bench.tuning import tune_kernel_schedule
+from kernel_bench.utils.print_utils import get_logger
 from ..utils.bench_utils import (
     BenchmarkResult,
     get_kernel_perf_stats,
@@ -47,23 +49,16 @@ class BenchmarkRunner:
     dump_dir: Optional[Path] = None
     debug: bool = False
 
-    hyperparams: Dict[str, Dict[str, Any]] = field(default_factory=dict)
-
     machine: str = "MI325X"
     num_iterations: int = 3
 
     title: str = None
 
-    _benches: List[KernelBenchmark] = None
-
     def __post_init__(self):
+        self._benches: List[KernelBenchmark] = None
         self.specs = {}
         self.machine = self.machine.upper()
-
-    def _log(self, *args):
-        print(*args)
-        # if self.debug:
-        #     print(*args)
+        self.logger = get_logger()
 
     def reduce_configs(self, max_kernels: int = None, seed: int = 42):
         self.configs = reduce_configs(self.configs, max_kernels, seed)
@@ -81,7 +76,7 @@ class BenchmarkRunner:
         speedups = [tune_result["speedup"] for tune_result in tuned_data.values()]
         avg_speedup = sum(speedups) / len(speedups)
         avg_speedup_percent = (avg_speedup - 1) * 100
-        print(
+        self.logger.info(
             f"Loading tuned config with average speedup of +{avg_speedup_percent:.2f}%"
         )
 
@@ -110,10 +105,10 @@ class BenchmarkRunner:
         output_json_path = output_json_dir / f"{output_base}.json"
 
         write_results_to_csv(results, output_csv_path)
-        self._log(f"Results written to {output_csv_path}")
+        self.logger.info(f"Results written to {output_csv_path}")
 
         write_results_to_json(results, output_json_path)
-        self._log(f"Results written to {output_json_path}")
+        self.logger.info(f"Results written to {output_json_path}")
 
         return pd.read_csv(output_csv_path)
 
@@ -175,7 +170,7 @@ class BenchmarkRunner:
         results = {}
 
         for tag, config in tqdm(self.configs, desc="Tuning Scheduling"):
-            print(f"Tuning scheduling for kernel {config.get_name()}")
+            self.logger.info(f"Tuning scheduling for kernel {config.get_name()}")
             result, runtime_us = tune_kernel_schedule(
                 config,
                 run_name=timestamp,
@@ -213,6 +208,7 @@ class BenchmarkRunner:
 
         # tuning_paradigm = BayesianTuningParadigm()
         tuning_paradigm = MultiPassTreeTuner()
+        # tuning_paradigm = ParallelProgressTester()
         tuner = ParallelTuner(tuning_paradigm)
         tuner.tune_kernels(
             benches=self._benches,
@@ -223,4 +219,4 @@ class BenchmarkRunner:
             save_results=True,
         )
 
-        print(f"Saved results to {tuning_result_path}")
+        self.logger.info(f"Saved results to {tuning_result_path}")

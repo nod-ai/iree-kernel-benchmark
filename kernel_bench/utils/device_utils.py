@@ -1,6 +1,8 @@
 from typing import Any, Iterable, Optional
 import torch
 
+from kernel_bench.utils.print_utils import get_logger
+
 DTYPE_TO_TORCH = {
     "bf16": torch.bfloat16,
     "f8e5m2": torch.float8_e5m2,
@@ -60,7 +62,9 @@ HIP_TARGETS = {
 def machine_to_hip_target(machine_name: str):
     target = HIP_TARGETS.get(machine_name.lower().strip())
     if target is None:
-        print(f"Could not find valid hip target for machine {machine_name}")
+        get_logger().error(
+            f"Could not find valid hip target for machine {machine_name}"
+        )
     return target
 
 

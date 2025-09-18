@@ -265,7 +265,6 @@ class AttentionConfigExtend(AttentionConfigBSHD):
             stringify_shape(self.inputs.output_shape, "f32"),
             stringify_shape(self.inputs.max_len_extend, "i32"),
         ]
-        print(bench_inputs)
         bench_function = "isolated_benchmark" if backend_name == "wave" else "main"
         return [f"--input={input}" for input in bench_inputs] + [
             f"--function={bench_function}"

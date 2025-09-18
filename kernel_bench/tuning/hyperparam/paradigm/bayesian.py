@@ -7,7 +7,7 @@ import torch
 from ..parameters import CategoricalBounds, IntegerBounds
 from .paradigm import TuningParadigm, TuningContext
 from kernel_bench.utils.bench_utils import BenchmarkResult
-from kernel_bench.utils.parallel import ProgressUpdate
+from kernel_bench.utils.parallel import ProgressEvent
 
 
 class BayesianTuningParadigm(TuningParadigm):

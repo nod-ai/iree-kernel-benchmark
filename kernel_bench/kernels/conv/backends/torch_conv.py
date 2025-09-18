@@ -64,7 +64,7 @@ class TorchConvBenchmark(KernelBenchmark):
             torch.cuda.synchronize()
 
         except Exception as e:
-            print(f"Failed to benchmark kernel {config.get_name()}: {e}")
+            self.logger.error(f"Failed to benchmark kernel {config.get_name()}: {e}")
             return 0, False
         self._clear_mem(input, weight)
 

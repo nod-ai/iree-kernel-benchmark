@@ -1,17 +1,24 @@
 import numpy as np
 from typing import Dict, List, Tuple, Any, Callable, Optional
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 import itertools
 
 from kernel_bench.core.base import create_benchmark
-from kernel_bench.core.template import IREEKernelBenchmark, batch_compile_iree_benches
+from kernel_bench.core.template import (
+    IREEKernelBenchmark,
+    KernelBenchmark,
+    batch_benchmark,
+    batch_compile_iree_benches,
+)
 from kernel_bench.utils.bench_utils import BenchmarkResult
 from kernel_bench.tuning.hyperparam.paradigm.paradigm import (
     TuningContext,
     TuningParadigm,
 )
 from kernel_bench.tuning.hyperparam.parameters import CategoricalBounds
-from kernel_bench.utils.parallel import ProgressUpdate
+from kernel_bench.utils.print_utils import get_logger
+from kernel_bench.utils.parallel import ProgressEvent
+from kernel_bench.utils.progress_context import MainProgress
 
 
 @dataclass
@@ -36,6 +43,7 @@ class TreeParameter:
             center: Center point for refined search (None for initial pass)
             range_fraction: Fraction of the original range to use (for refinement)
         """
+
         if center is None:
             # Initial pass: evenly distribute across all values
             if num_candidates == 1:
@@ -132,12 +140,14 @@ class MultiPassTreeTuner(TuningParadigm):
         self.range_reduction_factor = range_reduction_factor
         self.history = []
         self.parameters = []
+        self.logger = get_logger()
 
     def get_name(self):
         return "Tree-based Multi-pass Tuning"
 
-    def initialize(self, context: TuningContext):
+    def initialize(self, context: TuningContext, progress: MainProgress):
         self.context = context
+        self.progress = progress
         self.tuning_spec = context.bench.tuning_spec
         tuning_params = self.tuning_spec.params()
         self.parameters = [
@@ -183,15 +193,6 @@ class MultiPassTreeTuner(TuningParadigm):
             configurations.append(config)
 
         pruned_configurations = []
-        print("--- Pruned Configs ---")
-        for config in configurations:
-            sat, violated = self.tuning_spec.validate_constraints(config)
-            if sat:
-                print("*", end="")
-                pruned_configurations.append(config)
-            else:
-                print("-", end="")
-        print("---------------------")
 
         num_trials = self.context.num_trials
         max_configs = num_trials // self.num_passes + num_trials // 10
@@ -228,46 +229,42 @@ class MultiPassTreeTuner(TuningParadigm):
                 unique_configs.append(config)
 
         base_bench = self.context.bench
-        use_iree = isinstance(base_bench, IREEKernelBenchmark)
 
-        scores: List[BenchmarkResult] = []
-
-        if use_iree:
-            batch_benches: List[IREEKernelBenchmark] = []
-            for config in unique_configs:
-                iree_bench = create_benchmark(
-                    base_bench.kernel_type, base_bench.backend, asdict(base_bench)
-                )
-                iree_bench.update_parameter_values(config)
-                batch_benches.append(iree_bench)
-            compile_results = batch_compile_iree_benches(
-                batch_benches, verbose=True, unique_id=True
+        batch_benches: List[KernelBenchmark] = []
+        for config in unique_configs:
+            candidate_bench = create_benchmark(
+                base_bench.kernel_type, base_bench.backend, asdict(base_bench)
             )
+            candidate_bench.update_parameter_values(config)
+            batch_benches.append(candidate_bench)
 
-            device = f"hip://{self.context.device_id}"
-            bench_timeout = self.base_exec_time * 3 if self.base_exec_time else None
+        old_total = self.progress.total
+        self.progress.configure(
+            total=len(batch_benches), description=f"Compiling", color="yellow"
+        )
 
-            for i in range(len(unique_configs)):
-                config, vmfb_path, success = compile_results[i]
-                bench = batch_benches[i]
-                if success and vmfb_path:
-                    score = bench.bench_vmfb(
-                        vmfb_path, device, self.context.num_iterations, bench_timeout
-                    )
-                else:
-                    score = bench.get_bench_result(0, False)
+        def compile_callback(compile_res):
+            self.progress.update(increment=1)
 
-                scores.append(score)
-                self.trial_count += 1
-                self._update_progress(completed=self.trial_count)
+        def bench_callback(bench_res):
+            nonlocal old_total
+            if old_total:
+                self.progress.configure(
+                    total=old_total, description=f"Benchmarking", color="blue"
+                )
+                old_total = None
+            self.progress.update(increment=1)
 
-        else:
-            for config in unique_configs:
-                score = self._benchmark(self.context, config)
-
-                scores.append(score)
-                self.trial_count += 1
-                self._update_progress(completed=self.trial_count)
+        scores = batch_benchmark(
+            batch_benches,
+            device=f"hip://{self.context.device_id}",
+            num_iterations=self.context.num_iterations,
+            timeout=self.base_exec_time * 3 if self.base_exec_time else None,
+            compile_callback=compile_callback,
+            bench_callback=bench_callback,
+            verbose=True,
+            unique_ids=True,
+        )
 
         for i, score in enumerate(scores):
             if (self.minimize and score < best_score) or (
@@ -278,7 +275,7 @@ class MultiPassTreeTuner(TuningParadigm):
 
         return best_config, best_score
 
-    def _tune(self, context, progress_callback) -> BenchmarkResult:
+    def _tune(self, context, progress) -> BenchmarkResult:
         """
         Run the multi-pass tree-based tuning algorithm.
 
@@ -288,7 +285,7 @@ class MultiPassTreeTuner(TuningParadigm):
         Returns:
             Tuple of (best_configuration, best_score)
         """
-        self.initialize(context)
+        self.initialize(context, progress)
         bench = context.bench
 
         verbose = False
@@ -302,25 +299,30 @@ class MultiPassTreeTuner(TuningParadigm):
             max_configs_per_pass * self.num_passes for _ in range(self.num_passes)
         ]
 
-        self._update_progress(completed=0, total=sum(configs_per_pass), finished=False)
+        self.progress.update(
+            total=sum(configs_per_pass),
+            current="Benchmarking",
+        )
 
         for pass_num in range(self.num_passes):
             if verbose:
-                print(f"\n{'='*50}")
-                print(f"Pass {pass_num + 1}/{self.num_passes}")
-                print(f"{'='*50}")
+                self.logger.info(f"\n{'='*50}")
+                self.logger.info(f"Pass {pass_num + 1}/{self.num_passes}")
+                self.logger.info(f"{'='*50}")
 
             # Generate configurations for this pass
             configurations = self._generate_configurations(pass_num, best_config)
             for i in range(pass_num, self.num_passes):
                 configs_per_pass[i] = len(configurations)
 
-            self._update_progress(total=sum(configs_per_pass))
+            self.progress.update(total=sum(configs_per_pass))
 
             if verbose:
-                print(f"Generated {len(configurations)} valid configurations")
+                self.logger.info(
+                    f"Generated {len(configurations)} valid configurations"
+                )
                 if best_config:
-                    print(f"Refining around: {best_config}")
+                    self.logger.info(f"Refining around: {best_config}")
 
             # Evaluate all configurations
             pass_best_config, pass_best_score = self._evaluate_configurations(
@@ -347,48 +349,16 @@ class MultiPassTreeTuner(TuningParadigm):
             )
 
             if verbose:
-                print(f"Pass {pass_num + 1} best score: {best_score}")
-                print(f"Pass {pass_num + 1} best config: {best_config}")
+                self.logger.info(f"Pass {pass_num + 1} best score: {best_score}")
+                self.logger.info(f"Pass {pass_num + 1} best config: {best_config}")
 
         if verbose:
-            print(f"\n{'='*50}")
-            print(f"Tuning Complete!")
-            print(f"Final best score: {best_score}")
-            print(f"Final best configuration: {best_config}")
-            print(
+            self.logger.info(f"\n{'='*50}")
+            self.logger.info(f"Tuning Complete!")
+            self.logger.info(f"Final best score: {best_score}")
+            self.logger.info(f"Final best configuration: {best_config}")
+            self.logger.info(
                 f"Total evaluations: {sum(h['num_evaluations'] for h in self.history)}"
             )
 
         return best_score
-
-
-# Example usage
-if __name__ == "__main__":
-    # Define a simple objective function
-    def objective_function(config: Dict[str, int]) -> float:
-        """Example objective function to minimize"""
-        a = config["BLOCK_B"]
-        b = config["BLOCK_M"]
-        c = config["BLOCK_N"]
-        d = config["BLOCK_K2"]
-
-        # Target: A=1, B=8, C=15, D=8
-        return (a - 1) ** 2 + (b - 6) ** 2 + (c - 4) ** 2 + (d - 14) ** 2
-
-    # Define parameters with lists of acceptable values
-    parameters = [
-        TreeParameter("BLOCK_B", values=[1, 2, 4, 8, 16]),
-        TreeParameter("BLOCK_M", values=[2, 4, 6, 8, 10, 12, 14, 16]),
-        TreeParameter("BLOCK_N", values=[1, 3, 5, 7, 9, 11, 13, 15]),
-        TreeParameter("BLOCK_K2", values=[4, 8, 12, 16, 20, 24]),
-    ]
-
-    # Create and run tuner
-    tuner = MultiPassTreeTuner(
-        num_candidates=2,
-        num_passes=4,
-        minimize=True,
-        range_reduction_factor=0.3,  # Reduce range to 30% each pass
-    )
-
-    best_config, best_score = tuner.tune(verbose=True)

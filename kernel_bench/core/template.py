@@ -16,6 +16,8 @@ from wave_lang.kernel.wave.compile_options import WaveCompileOptions
 from wave_lang.kernel.wave.utils.general_utils import get_default_scheduling_params
 from wave_lang.kernel.wave.wave import LaunchableWave
 
+from kernel_bench.utils.print_utils import get_logger
+
 from ..utils.bench_utils import (
     BenchmarkResult,
     get_kernel_perf_stats,
@@ -29,6 +31,7 @@ from kernel_bench.tuning.hyperparam.parameters import (
     TuningSpec,
     ParameterSymbol,
 )
+from ..utils import istarmap  # Import to enable monkey-patched istarmap method
 import sympy as sp
 
 
@@ -43,6 +46,7 @@ class KernelBenchmark(ABC):
     def __post_init__(self):
         self._tuning_spec = TuningSpec()
         self._param_symbols = {}
+        self.logger = get_logger()
         self.setup_parameters()
 
     def add_params(self, params: List[TuningParameter]) -> List[ParameterSymbol]:
@@ -169,12 +173,10 @@ class IREEKernelBenchmark(KernelBenchmark):
         mlir_path = mlir_dir / f"{self.config.get_name()}.mlir"
         vmfb_path = vmfb_dir / f"{self.config.get_name()}.vmfb"
 
-        # print("Compiling")
         compile_success = self.compile_to_vmfb(mlir_path, vmfb_path)
         if not compile_success:
             return self.get_bench_result(0, False)
 
-        # print("Benchmarking")
         return self.bench_vmfb(vmfb_path, device, num_iterations, timeout)
 
 
@@ -224,8 +226,8 @@ class WaveKernelBenchmark(IREEKernelBenchmark):
             return True
 
         except Exception as e:
-            print(f"Failed to compile {self.config.get_name()}: {e}")
-            traceback.print_exception(e)
+            self.logger.error(f"Failed to compile {self.config.get_name()}: {e}")
+            self.logger.error("".join(traceback.format_exception(e)))
             return False
 
 
@@ -248,12 +250,13 @@ def compile_iree_bench(bench: IREEKernelBenchmark, kernel_name: str) -> CompileR
         return bench.config, vmfb_path, success
 
     except Exception as e:
-        print(f"Compilation failed for {bench.config.get_name()}: {e}")
+        get_logger().error(f"Compilation failed for {bench.config.get_name()}: {e}")
         return bench.config, None, False
 
 
 def batch_compile_iree_benches(
     iree_benches: List[IREEKernelBenchmark],
+    callback: Optional[Callable[[CompileResult], None]] = None,
     verbose=False,
     unique_id=False,
 ) -> List[CompileResult]:
@@ -263,6 +266,8 @@ def batch_compile_iree_benches(
 
     Returns: CompileResult = Tuple[OpConfig, Optional[Path], bool]
     """
+
+    logger = get_logger()
 
     def tag_name(name: str):
         if not unique_id:
@@ -276,23 +281,33 @@ def batch_compile_iree_benches(
 
     # Compile sequentially for small batches
     if len(iree_benches) < 5:
-        compilation_results = [compile_iree_bench(*args) for args in compile_args]
+        compilation_results = []
+        for args in compile_args:
+            result = compile_iree_bench(*args)
+            compilation_results.append(result)
+            if callback:
+                callback(result)
 
     # Parallelize compilation for larger batches
     else:
         num_cpus = max(1, cpu_count() - 20)
         num_cpus = min(num_cpus, len(iree_benches))
         if verbose:
-            print(f"Using {num_cpus} CPUs for parallel compilation.")
+            logger.info(f"Using {num_cpus} CPUs for parallel compilation.")
 
         with Pool(num_cpus) as pool:
-            compilation_results = list(
-                tqdm(
-                    pool.istarmap(compile_iree_bench, compile_args),
-                    total=len(iree_benches),
-                    desc=f"Compiling {iree_benches[0].kernel_type.capitalize()} Kernels",
-                )
-            )
+            compilation_iterator = pool.istarmap(compile_iree_bench, compile_args)
+            compilation_results = []
+
+            for result in tqdm(
+                compilation_iterator,
+                total=len(iree_benches),
+                desc=f"Compiling {iree_benches[0].kernel_type.capitalize()} Kernels",
+                disable=callback is not None,
+            ):
+                compilation_results.append(result)
+                if callback:
+                    callback(result)
 
     assert len(iree_benches) == len(compilation_results)
 
@@ -300,10 +315,10 @@ def batch_compile_iree_benches(
     error_count = len(iree_benches) - success_count
 
     if verbose:
-        print(
+        logger.info(
             f"{success_count} Success, {error_count} Failed out of {len(compilation_results)} configs"
         )
-        print("Compilation process completed.")
+        logger.info("Compilation process completed.")
 
     return compilation_results
 
@@ -313,7 +328,8 @@ def batch_benchmark(
     device: str,
     num_iterations: int = 1,
     timeout: Optional[float] = None,
-    callback: Optional[Callable[[BenchmarkResult], None]] = None,
+    compile_callback: Optional[Callable[[CompileResult], None]] = None,
+    bench_callback: Optional[Callable[[BenchmarkResult], None]] = None,
     verbose=False,
     unique_ids=False,
 ) -> List[BenchmarkResult]:
@@ -331,7 +347,10 @@ def batch_benchmark(
     compilation_results = {}
     if iree_benches:
         compile_results = batch_compile_iree_benches(
-            iree_benches, verbose=verbose, unique_id=unique_ids
+            iree_benches,
+            callback=compile_callback,
+            verbose=verbose,
+            unique_id=unique_ids,
         )
         for bench, (config, vmfb_path, success) in zip(iree_benches, compile_results):
             compilation_results[id(bench)] = (vmfb_path, success)
@@ -340,7 +359,9 @@ def batch_benchmark(
 
     all_bench_items = [(i, bench) for i, bench in enumerate(benches)]
 
-    for i, bench in tqdm(all_bench_items, desc="Benchmarking kernels"):
+    for i, bench in tqdm(
+        all_bench_items, desc="Benchmarking kernels", disable=bench_callback is not None
+    ):
         try:
             if isinstance(bench, IREEKernelBenchmark):
                 vmfb_path, compile_success = compilation_results[id(bench)]
@@ -357,12 +378,14 @@ def batch_benchmark(
 
         except Exception as e:
             if verbose:
-                tqdm.write(f"Benchmarking failed for {bench.config.get_name()}: {e}")
+                get_logger().error(
+                    f"Benchmarking failed for {bench.config.get_name()}: {e}"
+                )
             result = bench.get_bench_result(0, False)
             results[i] = result
 
         finally:
-            if callback:
-                callback(results[i])
+            if bench_callback:
+                bench_callback(results[i])
 
     return results

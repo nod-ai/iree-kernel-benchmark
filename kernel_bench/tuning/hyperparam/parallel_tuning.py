@@ -15,11 +15,18 @@ from typing import (
 )
 import queue
 import torch
+from tqdm import tqdm
 
 from kernel_bench.core.template import KernelBenchmark
+from kernel_bench.utils.print_utils import (
+    get_logger,
+    set_global_handler,
+    set_tqdm_handler,
+)
 from .paradigm import TuningContext, TuningParadigm, TuningResult
 from kernel_bench.utils.parallel import ParallelProgressManager
-from kernel_bench.utils.parallel import ProgressUpdate, WorkerMessage
+from kernel_bench.utils.parallel import WorkerMessage
+from kernel_bench.utils.progress_context import ProgressEvent
 
 
 def worker_process(
@@ -27,29 +34,31 @@ def worker_process(
 ):
     """Worker process function."""
 
-    def progress_callback(update: ProgressUpdate):
-        message_queue.put(WorkerMessage(type="progress", data=update))
+    def progress_callback(event: ProgressEvent):
+        message_queue.put(WorkerMessage(type="progress", data=event))
+
+    set_tqdm_handler()
 
     try:
         result = tuning_paradigm.tune(context, progress_callback)
         if result.hyperparams:
             message_queue.put(WorkerMessage(type="result", data=result))
     except Exception as e:
-        traceback.print_exception(e)
-        message_queue.put(
-            WorkerMessage(
-                type="progress",
-                data=ProgressUpdate(
-                    device_id=context.device_id,
-                    completed=context.num_trials,
-                    total=context.num_trials,
-                    current=f"Error: {str(e)}",
-                    active=False,
-                    is_final=True,
-                    worker_id=context.worker_id,
-                ),
-            )
+        get_logger().error("".join(traceback.format_exception(e)))
+        # Send a final error event
+        error_event = ProgressEvent(
+            event_type="main_update",
+            worker_id=context.worker_id,
+            device_id=context.device_id,
+            data={
+                "completed": context.num_trials,
+                "total": context.num_trials,
+                "current": f"Error: {str(e)}",
+                "active": False,
+                "color": "red",
+            },
         )
+        message_queue.put(WorkerMessage(type="progress", data=error_event))
 
 
 class ParallelTuner:
@@ -60,6 +69,7 @@ class ParallelTuner:
         self.num_gpus = num_gpus or 8
         self.results = {}
         self.results_lock = threading.Lock()
+        self.logger = get_logger()
 
     def tune_kernels(
         self,
@@ -149,7 +159,7 @@ class ParallelTuner:
                         active_processes[(worker_id, gpu_id)] = p
 
                 except Exception as e:
-                    print(f"Error launching worker: {e}")
+                    self.logger.error(f"Error launching worker: {e}")
 
         def process_monitor():
             """Monitor processes and free GPUs when they complete."""
@@ -179,20 +189,19 @@ class ParallelTuner:
                     msg: WorkerMessage = message_queue.get(timeout=0.1)
 
                     if msg.type == "progress":
-                        update: ProgressUpdate = msg.data
-                        progress_state = progress_manager.get_shared_state()
-                        progress_state.update(
-                            {
-                                f"worker_{update.device_id}_completed": update.completed,
-                                f"worker_{update.device_id}_total": update.total,
-                                f"worker_{update.device_id}_current": update.current,
-                                f"worker_{update.device_id}_active": update.active,
-                            }
-                        )
+                        event: ProgressEvent = msg.data
 
-                        if update.is_final:
+                        # Handle the progress event through the progress manager
+                        progress_manager.handle_progress_event(event)
+
+                        # Check if this is a final update (worker completed)
+                        if (
+                            event.event_type == "main_update"
+                            and not event.data.get("active", True)
+                            and event.data.get("completed", 0)
+                            >= event.data.get("total", 1)
+                        ):
                             worker_completed_count += 1
-                            progress_state["total_completed"] = worker_completed_count
 
                     elif msg.type == "result":
                         result = msg.data
@@ -201,7 +210,7 @@ class ParallelTuner:
                 except queue.Empty:
                     continue
                 except Exception as e:
-                    print(f"Error handling message: {e}")
+                    self.logger.error(f"Error handling message: {e}")
 
         def refresh_display():
             """Refresh the progress display."""

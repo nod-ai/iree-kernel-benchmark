@@ -5,6 +5,7 @@ from typing import Optional, Sequence
 from typing import List, Tuple
 import iree.runtime as ireert
 from kernel_bench.utils.bench_utils import unit_to_microseconds
+from kernel_bench.utils.print_utils import get_logger
 
 
 def bench_kernel_ireert(
@@ -46,7 +47,7 @@ def bench_kernel_ireert(
             **extra_flags,
         )
     except Exception as e:
-        print(e)
+        get_logger().error(e)
         return 0, False
 
     times = []

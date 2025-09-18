@@ -180,11 +180,15 @@ class IREEGemmBenchmark(IREEKernelBenchmark):
                     self.dump_dir / "iree" / "log" / (config.get_name() + "_error.txt")
                 )
                 os.makedirs(os.path.dirname(error_file), exist_ok=True)
-                print(f"Failed to compile {mlir_path}. Error dumped in {error_file}")
+                self.logger.error(
+                    f"Failed to compile {mlir_path}. Error dumped in {error_file}"
+                )
                 with open(error_file, "w") as f:
                     f.write(stderr.decode("utf-8"))
             else:
-                print(f"Failed to compile {mlir_path}. No dump directory specified.")
+                self.logger.error(
+                    f"Failed to compile {mlir_path}. No dump directory specified."
+                )
 
             return False
 

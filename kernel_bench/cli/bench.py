@@ -8,6 +8,7 @@ from wave_lang.kernel.wave.constraints import MMAType
 from kernel_bench.core.runner import BenchmarkRunner
 from kernel_bench.utils.bench_utils import OpConfig, load_configs
 from kernel_bench.core.base import LOAD_PROBLEMS, BENCHMARKS, CONFIG_CLASSES
+from kernel_bench.utils.print_utils import get_logger
 
 if __name__ == "__main__":
     os.environ["WAVE_CACHE_ON"] = "0"
@@ -96,6 +97,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
     logging.basicConfig(level=args.log_level)
 
+    logger = get_logger()
+
     kernel_type = str(args.kernel_type)
     backend_name = str(args.backend)
 
@@ -118,11 +121,11 @@ if __name__ == "__main__":
     device = args.device
 
     if kernel_type not in BENCHMARKS:
-        print(f"Kernel Type {kernel_type} is currently unsupported.")
+        logger.error(f"Kernel Type {kernel_type} is currently unsupported.")
         exit(1)
 
     if backend_name not in BENCHMARKS[kernel_type]:
-        print(
+        logger.error(
             f"Backend {backend_name} is currently unsupported for {kernel_type} benchmarking."
         )
         exit(1)
@@ -140,7 +143,7 @@ if __name__ == "__main__":
         title=args.title,
     )
     bench.reduce_configs(args.max_kernels)
-    print(
+    logger.info(
         f"Generated {len(bench.configs)} {kernel_type} configs for backend {backend_name}."
     )
 

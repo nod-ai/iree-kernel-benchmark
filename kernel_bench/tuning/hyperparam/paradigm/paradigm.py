@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 import math
 import time
 from typing import (
@@ -13,7 +13,11 @@ from typing import (
 from kernel_bench.core.base import create_benchmark
 from kernel_bench.core.template import KernelBenchmark
 from kernel_bench.utils.bench_utils import BenchmarkResult
-from kernel_bench.utils.parallel import ProgressUpdate
+from kernel_bench.utils.progress_context import (
+    ProgressContext,
+    ProgressEvent,
+    MainProgress,
+)
 
 
 @dataclass
@@ -42,7 +46,11 @@ class TuningResult:
 class TuningParadigm(ABC):
     """Abstract base class for different tuning paradigms."""
 
-    def tune(self, context: TuningContext, progress_callback: Callable) -> TuningResult:
+    def tune(
+        self,
+        context: TuningContext,
+        progress_callback: Callable[[ProgressEvent], None],
+    ) -> TuningResult:
         """Run the tuning process and return the best result."""
 
         self.base_exec_time = None
@@ -53,71 +61,69 @@ class TuningParadigm(ABC):
         )
         config = context.bench.config
 
-        self.progress = ProgressUpdate(
-            device_id=context.device_id,
-            completed=0,
-            total=context.num_trials,
-            current=bench.config.get_name(),
-            active=True,
-            worker_id=context.worker_id,
-        )
-        self.progress_callback = progress_callback
-        self._update_progress()
-
-        base_result = self._benchmark(context)
-        if not base_result.ok:
-            return TuningResult(
-                name=config.get_name(),
-                benchmark=base_result,
-                improvement=False,
-                speedup=0,
-                hyperparams=None,
+        # Create progress context for this worker
+        with ProgressContext(
+            context.worker_id, context.device_id, progress_callback
+        ) as progress:
+            progress.configure(
+                total=context.num_trials,
+                description=bench.config.get_name(),
+                color="blue",
             )
 
-        tuned_result = self._tune(context, progress_callback)
+            base_result = self._benchmark(context)
+            if not base_result.ok:
+                progress.finish("Failed")
+                return TuningResult(
+                    name=config.get_name(),
+                    benchmark=base_result,
+                    improvement=False,
+                    speedup=0,
+                    hyperparams=None,
+                )
 
-        base_runtime = base_result.mean_microseconds
-        tuned_runtime = tuned_result.mean_microseconds
+            tuned_result = self._tune(context, progress)
 
-        if not tuned_result.ok or base_runtime < tuned_runtime:
-            best_result = base_result
-            improvement = False
-            speedup = 0
-        else:
-            best_result = tuned_result
-            improvement = True
-            speedup = base_runtime / tuned_runtime
+            base_runtime = base_result.mean_microseconds
+            tuned_runtime = tuned_result.mean_microseconds
 
-        self._update_progress(completed=self.progress.total, finished=True)
+            if not tuned_result.ok or base_runtime < tuned_runtime:
+                best_result = base_result
+                improvement = False
+                speedup = 0
+            else:
+                best_result = tuned_result
+                improvement = True
+                speedup = base_runtime / tuned_runtime
 
-        return TuningResult(
-            name=config.get_name(),
-            benchmark=best_result,
-            improvement=improvement,
-            speedup=speedup,
-            hyperparams=best_result.tuning_config,
-        )
+            progress.finish(
+                f"Complete (speedup: {speedup:.2f}x)" if improvement else "Complete"
+            )
 
-    def _update_progress(
-        self,
-        completed: Optional[int] = None,
-        total: Optional[int] = None,
-        finished: Optional[bool] = None,
-    ):
-        if completed:
-            self.progress.completed = completed
-        if total:
-            self.progress.total = total
-        if finished is not None:
-            self.progress.is_final = finished
-            self.progress.active = not finished
-
-        self.progress_callback(self.progress)
+            return TuningResult(
+                name=config.get_name(),
+                benchmark=best_result,
+                improvement=improvement,
+                speedup=speedup,
+                hyperparams=best_result.tuning_config,
+            )
 
     @abstractmethod
     def _tune(
-        self, context: TuningContext, progress_callback: Callable
+        self,
+        context: TuningContext,
+        progress: MainProgress,
     ) -> BenchmarkResult:
+        """
+        Implement the actual tuning logic.
+
+        Args:
+            context: Tuning context with benchmark and configuration
+            progress: Progress bar for this worker (use progress.sub_progress() for sub-tasks)
+
+        Returns:
+            Best benchmark result found during tuning
+        """
         pass
 
     @abstractmethod

@@ -65,9 +65,11 @@ class HipBLASLtGemmBenchmark(KernelBenchmark):
 
             if result.returncode != 0:
                 if debug:
-                    print(f"Executable failed with return code {result.returncode}")
-                    print(f"stderr: {result.stderr}")
-                    print(f"stdout: {result.stdout}")
+                    self.logger.error(
+                        f"Executable failed with return code {result.returncode}"
+                    )
+                    self.logger.error(f"stderr: {result.stderr}")
+                    self.logger.error(f"stdout: {result.stdout}")
                 return 0.0, False
 
             # Parse the output
@@ -75,17 +77,17 @@ class HipBLASLtGemmBenchmark(KernelBenchmark):
 
             if mean_time_us is None:
                 if debug:
-                    print("Failed to parse average time from output")
-                    print(f"stdout: {result.stdout}")
+                    self.logger.error("Failed to parse average time from output")
+                    self.logger.error(f"stdout: {result.stdout}")
                 return 0.0, False
 
             return mean_time_us, True
 
         except subprocess.TimeoutExpired:
             if debug:
-                print("Benchmark timed out")
+                self.logger.error("Benchmark timed out")
             return 0.0, False
         except Exception as e:
             if debug:
-                print(f"Error running benchmark: {e}")
+                self.logger.error(f"Error running benchmark: {e}")
             return 0.0, False
