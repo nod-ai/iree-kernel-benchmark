@@ -21,7 +21,6 @@ Usage:
     set_global_handler(my_custom_handler)
 """
 
-import logging
 import sys
 import threading
 from typing import Callable, Optional, Any
@@ -79,7 +78,7 @@ class GlobalLoggerManager:
             level_str = level
 
         # Format: [TIMESTAMP] [LEVEL] [MODULE] MESSAGE
-        output = f"[{timestamp}] [{level_str}] [{name}] {formatted_message}"
+        output = f"[{timestamp}] [{level_str}] {formatted_message}"
 
         # Use original print to avoid recursion
         self._original_print(output, **kwargs)

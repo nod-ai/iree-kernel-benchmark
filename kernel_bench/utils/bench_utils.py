@@ -327,7 +327,7 @@ def reduce_configs(
         return configs
 
     def extract_features(g: OpConfig) -> tuple:
-        return tuple([g.__dict__[dim_name] for dim_name in g.get_dim_names()])
+        return tuple(g.to_dict().values())
 
     def hash_features(feature_list: tuple) -> str:
         return "x".join(map(str, feature_list))

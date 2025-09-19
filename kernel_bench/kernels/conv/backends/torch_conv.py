@@ -16,7 +16,7 @@ class TorchConvBenchmark(KernelBenchmark):
             torch.cuda.empty_cache()
 
     @override
-    def run_bench(self, device, num_iterations=1):
+    def run_bench(self, device, num_iterations, timeout):
         config = self.config
 
         operation = config.OP
@@ -41,8 +41,8 @@ class TorchConvBenchmark(KernelBenchmark):
         input_shape = (batch_size, num_channels, input_height, input_width)
         weight_shape = (filter_batch_size, num_channels, filter_height, filter_width)
 
-        input = torch.randn(input_shape, dtype=dtype, device=device)
-        weight = torch.randn(weight_shape, dtype=dtype, device=device)
+        input = torch.randn(input_shape, dtype=dtype, device="cuda")
+        weight = torch.randn(weight_shape, dtype=dtype, device="cuda")
 
         self._clear_mem()
         try:
@@ -72,4 +72,4 @@ class TorchConvBenchmark(KernelBenchmark):
         delta_time_us = delta_time_ms * 1e3
         mean_time_us = delta_time_us / num_iterations
 
-        return mean_time_us, True
+        return self.get_bench_result(mean_time_us, True)

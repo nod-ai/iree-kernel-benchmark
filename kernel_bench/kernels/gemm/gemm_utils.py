@@ -4,22 +4,9 @@ from typing import Optional, Tuple, override
 from kernel_bench.core.template import OpConfig
 from iree.compiler import ir
 
+from kernel_bench.utils.device_utils import dtype_to_bytes, get_device_specific_dtype
+
 kDynamic = ir.ShapedType.get_dynamic_size()
-
-
-def num_bytes(dtype: str) -> int:
-    dtype_to_bytes = {
-        "f32": 4,
-        "f16": 2,
-        "bf16": 2,
-        "f8E4M3FNUZ": 1,
-        "f8E5M2FNUZ": 1,
-        "f8E4M3FN": 1,
-        "f8E5M2": 1,
-        "i8": 1,
-        "i32": 4,
-    }
-    return dtype_to_bytes[dtype]
 
 
 @dataclass
@@ -39,6 +26,13 @@ class GemmConfig(OpConfig):
     #       GemmConfig. The current design's advantage is that no changes have
     #       to be made to the execution logic (looks just like a static shape).
     runtime_dim: Optional[int] = None
+
+    def __post_init__(self):
+        self.operand_element_type = get_device_specific_dtype(self.operand_element_type)
+        self.accumulator_element_type = get_device_specific_dtype(
+            self.accumulator_element_type
+        )
+        self.result_element_type = get_device_specific_dtype(self.result_element_type)
 
     @override
     def get_name(self) -> str:
@@ -81,8 +75,8 @@ class GemmConfig(OpConfig):
 
     @override
     def get_byte_count(self) -> int:
-        operand_bytes_per_element = num_bytes(self.operand_element_type)
-        result_bytes_per_element = num_bytes(self.result_element_type)
+        operand_bytes_per_element = dtype_to_bytes(self.operand_element_type)
+        result_bytes_per_element = dtype_to_bytes(self.result_element_type)
         M, N, K = self.get_runtime_dims()
         byte_count_input = (M + N) * K * operand_bytes_per_element
         byte_count_output = (M * N) * result_bytes_per_element

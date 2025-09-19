@@ -26,7 +26,7 @@ class HipBLASLtGemmBenchmark(KernelBenchmark):
         return None
 
     @override
-    def run_bench(self, device, num_iterations=1):
+    def run_bench(self, device, num_iterations, timeout):
         debug = False
         config = self.config
 
@@ -70,7 +70,7 @@ class HipBLASLtGemmBenchmark(KernelBenchmark):
                     )
                     self.logger.error(f"stderr: {result.stderr}")
                     self.logger.error(f"stdout: {result.stdout}")
-                return 0.0, False
+                return self.get_bench_result(0.0, False)
 
             # Parse the output
             mean_time_us = self._parse_output(result.stdout)
@@ -79,15 +79,15 @@ class HipBLASLtGemmBenchmark(KernelBenchmark):
                 if debug:
                     self.logger.error("Failed to parse average time from output")
                     self.logger.error(f"stdout: {result.stdout}")
-                return 0.0, False
+                return self.get_bench_result(0.0, False)
 
-            return mean_time_us, True
+            return self.get_bench_result(mean_time_us, True)
 
         except subprocess.TimeoutExpired:
             if debug:
                 self.logger.error("Benchmark timed out")
-            return 0.0, False
+            return self.get_bench_result(0.0, False)
         except Exception as e:
             if debug:
                 self.logger.error(f"Error running benchmark: {e}")
-            return 0.0, False
+            return self.get_bench_result(0.0, False)

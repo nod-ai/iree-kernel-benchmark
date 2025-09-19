@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from kernel_bench.utils.bench_utils import *
-from kernel_bench.utils.device_utils import dtype_to_bytes
+from kernel_bench.utils.device_utils import dtype_to_bytes, get_device_specific_dtype
 
 FUNC_ARGS = r"""%arg0: tensor<{LHS_TYPE}>, %arg1: tensor<{RHS_TYPE}>"""
 CONSTANTS = r"""
@@ -35,6 +35,10 @@ class ConvConfig(OpConfig):
     OP: str
     input_dtype: str
     output_dtype: str
+
+    def __post_init__(self):
+        self.input_dtype = get_device_specific_dtype(self.input_dtype)
+        self.output_dtype = get_device_specific_dtype(self.output_dtype)
 
     def get_name(self) -> str:
         return (

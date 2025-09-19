@@ -4,9 +4,12 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+import os
 from pprint import pprint
 import pandas as pd
-from .gemm_utils import GemmConfig, num_bytes, kDynamic
+
+from kernel_bench.utils.device_utils import dtype_to_bytes
+from .gemm_utils import GemmConfig, kDynamic
 
 import re
 
@@ -43,8 +46,10 @@ def is_compute_bound(
     """Is this GEMM compute (or memory) bound?"""
     magic_ratio = 64
     flops = 2 * M * N * K
-    elem_type_bytes = num_bytes(dtype)
-    result_bytes = num_bytes(get_default_result_element_type(dtype, raw_accumulators))
+    elem_type_bytes = dtype_to_bytes(dtype)
+    result_bytes = dtype_to_bytes(
+        get_default_result_element_type(dtype, raw_accumulators)
+    )
     bytes = elem_type_bytes * (M * K + K * N) + result_bytes * (M * N)
     return flops > magic_ratio * bytes
 
@@ -985,7 +990,8 @@ def get_b200_gemm_configs(backend: str) -> list[tuple[str, GemmConfig]]:
             dtype = "f8"
         return dtype
 
-    gemm_df = pd.read_csv("b200_gemms.csv")
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    gemm_df = pd.read_csv(os.path.join(current_dir, "b200_gemms.csv"))
     configs: list[tuple[str, GemmConfig]] = []
 
     for index, row in gemm_df.iterrows():

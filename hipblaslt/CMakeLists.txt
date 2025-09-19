@@ -1,6 +1,17 @@
 cmake_minimum_required(VERSION 3.16)
 project(hipblaslt_gemm_benchmark LANGUAGES CXX)
 
+# Set up ROCm environment variables
+if(NOT DEFINED ENV{ROCM_PATH})
+    set(ENV{ROCM_PATH} "/opt/rocm")
+endif()
+
+# Add ROCm to PATH
+set(ENV{PATH} "$ENV{ROCM_PATH}/bin:$ENV{PATH}")
+
+# Set up LD_LIBRARY_PATH for ROCm libraries
+set(ENV{LD_LIBRARY_PATH} "$ENV{ROCM_PATH}/lib:$ENV{ROCM_PATH}/lib64:$ENV{LD_LIBRARY_PATH}")
+
 # Set the C++ compiler to hipcc
 set(CMAKE_CXX_COMPILER ${ROCM_PATH}/bin/hipcc)
 if(NOT EXISTS ${CMAKE_CXX_COMPILER})

@@ -27,21 +27,23 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
 
         if bitwidth == 8:
             mfma_options = [(MMAType.F32_32x32x16_F8, MMAType.F32_32x32x16_K8_F16)]
-        elif dtype == torch.float16:
-            mfma_options = [
-                (MMAType.F32_32x32x16_F16, MMAType.F32_32x32x16_F16),
-                (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
-                (MMAType.F32_16x16x32_F16, MMAType.F32_16x16x32_F16),
-                (MMAType.F32_32x32x8_F16, MMAType.F32_32x32x8_F16),
-                (MMAType.F32_32x32x16_K8_F16, MMAType.F32_32x32x16_K8_F16),
-            ]
-        elif dtype == torch.bfloat16:
+        elif dtype == torch.bfloat16 and self.target == "gfx950":
             mfma_options = [
                 (MMAType.F32_32x32x16_BF16, MMAType.F32_32x32x16_BF16),
                 (MMAType.F32_16x16x32_BF16, MMAType.F32_16x16x32_BF16),
             ]
+        else:
+            mfma_options = [
+                (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
+                (MMAType.F32_32x32x8_F16, MMAType.F32_32x32x8_F16),
+                (MMAType.F32_32x32x16_K8_F16, MMAType.F32_32x32x16_K8_F16),
+            ]
+            if self.target == "gfx950":
+                mfma_options = [
+                    (MMAType.F32_32x32x16_F16, MMAType.F32_32x32x16_F16),
+                    (MMAType.F32_16x16x32_F16, MMAType.F32_16x16x32_F16),
+                ] + mfma_options
 
-        # Define parameters using the new paradigm
         self.mfma_variant = self.add_param(
             "MFMA_VARIANT",
             CategoricalBounds(mfma_options),
@@ -63,11 +65,6 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
 
         shared_memory_constraint = self.BLOCK_M * self.BLOCK_N <= 65536
         self.add_constraint(shared_memory_constraint, "shared_memory_limit")
-
-        min_block_m_constraint = self.BLOCK_M >= 32
-        min_block_n_constraint = self.BLOCK_N >= 64
-        self.add_constraint(min_block_m_constraint, "min_block_m")
-        self.add_constraint(min_block_n_constraint, "min_block_n")
 
     @override
     def load_wave_kernel(self):

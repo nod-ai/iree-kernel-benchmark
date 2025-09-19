@@ -138,6 +138,7 @@ class KernelBenchmark(ABC):
 class IREEKernelBenchmark(KernelBenchmark):
     kernel_dir: Path
     dump_dir: Optional[Path] = None
+    target: str = None
 
     def __post_init__(self):
         super().__post_init__()

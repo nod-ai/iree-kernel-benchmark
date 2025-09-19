@@ -16,7 +16,7 @@ class TorchGemmBenchmark(KernelBenchmark):
             torch.cuda.empty_cache()
 
     @override
-    def run_bench(self, device, num_iterations=1):
+    def run_bench(self, device, num_iterations, timeout):
         config = self.config
 
         transposeA = config.tA == "T"
@@ -26,10 +26,10 @@ class TorchGemmBenchmark(KernelBenchmark):
         shape_b = (config.N, config.K) if transposeB else (config.K, config.N)
 
         a_base = torch.rand(
-            shape_a, dtype=dtype_to_torch(config.operand_element_type), device=device
+            shape_a, dtype=dtype_to_torch(config.operand_element_type), device="cuda"
         )
         b_base = torch.rand(
-            shape_b, dtype=dtype_to_torch(config.operand_element_type), device=device
+            shape_b, dtype=dtype_to_torch(config.operand_element_type), device="cuda"
         )
 
         self._clear_mem()
@@ -54,4 +54,4 @@ class TorchGemmBenchmark(KernelBenchmark):
         delta_time_us = delta_time_ms * 1e3
         mean_time_us = delta_time_us / num_iterations
 
-        return mean_time_us, True
+        return self.get_bench_result(mean_time_us, True)

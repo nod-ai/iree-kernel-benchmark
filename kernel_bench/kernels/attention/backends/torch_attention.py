@@ -16,7 +16,7 @@ class TorchAttentionBenchmark(KernelBenchmark):
             torch.cuda.empty_cache()
 
     @override
-    def run_bench(self, device, num_iterations=1):
+    def run_bench(self, device, num_iterations, timeout):
         config = self.config
         shape = config.attributes
 
@@ -24,9 +24,9 @@ class TorchAttentionBenchmark(KernelBenchmark):
         k_shape = (shape.num_query_heads, shape.kv_seq_len, shape.head_size)
         v_shape = (shape.num_query_heads, shape.kv_seq_len, shape.head_size_kv)
 
-        q = torch.randn(q_shape, dtype=dtype_to_torch(config.dtype), device=device)
-        k = torch.randn(k_shape, dtype=dtype_to_torch(config.dtype), device=device)
-        v = torch.randn(v_shape, dtype=dtype_to_torch(config.dtype), device=device)
+        q = torch.randn(q_shape, dtype=dtype_to_torch(config.dtype), device="cuda")
+        k = torch.randn(k_shape, dtype=dtype_to_torch(config.dtype), device="cuda")
+        v = torch.randn(v_shape, dtype=dtype_to_torch(config.dtype), device="cuda")
 
         self._clear_mem()
         try:
@@ -50,4 +50,4 @@ class TorchAttentionBenchmark(KernelBenchmark):
         delta_time_us = delta_time_ms * 1e3
         mean_time_us = delta_time_us / num_iterations
 
-        return mean_time_us, True
+        return self.get_bench_result(mean_time_us, True)

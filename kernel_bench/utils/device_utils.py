@@ -81,10 +81,9 @@ def get_hip_target() -> str:
 def get_device_specific_dtype(dtype: str, target: Optional[str] = None) -> str:
     dtype = dtype.lower().strip().replace("_", "")
 
-    if not target:
-        target = get_hip_target()
-
-    if "f8" in dtype and target is not None:
+    if dtype == "f8":
+        if not target:
+            target = get_hip_target()
         if target == "gfx950":
             dtype = "f8e4m3fn"
         else:

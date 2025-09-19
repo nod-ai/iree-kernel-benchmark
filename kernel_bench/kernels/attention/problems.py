@@ -92,10 +92,10 @@ def get_attention_configs(use_fp8=True) -> ConfigList:
     llama3_configs = llama3_405b_attn_sweep("f16")
 
     if use_fp8:
-        llm_configs += llm_sweep("f8E4M3FNUZ")
-        sdxl_configs += sdxl_unet_sweep("f8E4M3FNUZ")
-        bert_configs += bert_attn_sweep("f8E4M3FNUZ")
-        llama3_configs += llama3_405b_attn_sweep("f8E4M3FNUZ")
+        llm_configs += llm_sweep("f8")
+        sdxl_configs += sdxl_unet_sweep("f8")
+        bert_configs += bert_attn_sweep("f8")
+        llama3_configs += llama3_405b_attn_sweep("f8")
 
     configs += [("llm", x) for x in llm_configs]
     configs += [("sdxl_unet", x) for x in sdxl_configs]
