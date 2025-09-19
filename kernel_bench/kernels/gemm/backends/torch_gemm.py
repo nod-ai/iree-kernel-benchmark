@@ -47,7 +47,7 @@ class TorchGemmBenchmark(KernelBenchmark):
 
         except Exception as e:
             self.logger.error(f"Failed to benchmark kernel {config.get_name()}: {e}")
-            return 0, False
+            return self.get_bench_result(0, False)
         self._clear_mem(a_base, b_base)
 
         delta_time_ms = start_event.elapsed_time(end_event)
