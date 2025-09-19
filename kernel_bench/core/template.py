@@ -31,7 +31,9 @@ from kernel_bench.tuning.hyperparam.parameters import (
     TuningSpec,
     ParameterSymbol,
 )
-from ..utils import istarmap  # Import to enable monkey-patched istarmap method
+from ..utils.parallel_utils import (
+    istarmap,
+)  # Import to enable monkey-patched istarmap method
 import sympy as sp
 
 

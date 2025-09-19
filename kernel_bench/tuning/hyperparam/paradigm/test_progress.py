@@ -6,7 +6,7 @@ from kernel_bench.utils.print_utils import get_logger
 
 from .paradigm import TuningParadigm, TuningContext
 from kernel_bench.utils.bench_utils import BenchmarkResult
-from kernel_bench.utils.progress_context import MainProgress
+from kernel_bench.utils.parallel_utils.progress_context import MainProgress
 
 
 class ParallelProgressTester(TuningParadigm):

@@ -17,8 +17,8 @@ from kernel_bench.tuning.hyperparam.paradigm.paradigm import (
 )
 from kernel_bench.tuning.hyperparam.parameters import CategoricalBounds
 from kernel_bench.utils.print_utils import get_logger
-from kernel_bench.utils.parallel import ProgressEvent
-from kernel_bench.utils.progress_context import MainProgress
+from kernel_bench.utils.parallel_utils.progress_visualizer import ProgressEvent
+from kernel_bench.utils.parallel_utils.progress_context import MainProgress
 
 
 @dataclass
@@ -192,7 +192,11 @@ class MultiPassTreeTuner(TuningParadigm):
             config = dict(combination)
             configurations.append(config)
 
-        pruned_configurations = []
+        pruned_configurations = [
+            config
+            for config in configurations
+            if self.tuning_spec.validate_constraints(config)[0]
+        ]
 
         num_trials = self.context.num_trials
         max_configs = num_trials // self.num_passes + num_trials // 10

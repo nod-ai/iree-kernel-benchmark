@@ -24,9 +24,11 @@ from kernel_bench.utils.print_utils import (
     set_tqdm_handler,
 )
 from .paradigm import TuningContext, TuningParadigm, TuningResult
-from kernel_bench.utils.parallel import ParallelProgressManager
-from kernel_bench.utils.parallel import WorkerMessage
-from kernel_bench.utils.progress_context import ProgressEvent
+from kernel_bench.utils.parallel_utils.progress_visualizer import (
+    ParallelProgressManager,
+)
+from kernel_bench.utils.parallel_utils.progress_visualizer import WorkerMessage
+from kernel_bench.utils.parallel_utils.progress_context import ProgressEvent
 
 
 def worker_process(
