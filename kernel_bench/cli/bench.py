@@ -99,61 +99,82 @@ if __name__ == "__main__":
 
     logger = get_logger()
 
-    kernel_type = str(args.kernel_type)
-    backend_name = str(args.backend)
+    kernel_types = str(args.kernel_type).split(",")
+    if "all" in kernel_types:
+        kernel_types = list(BENCHMARKS.keys())
 
-    mfma_config = (MMAType.F32_32x32x16_K8_F16, MMAType.F32_32x32x16_K8_F16)
+    backend_names = str(args.backend).split(",")
+    if "all" in backend_names:
+        backend_names = set()
+        for kernel_benches in BENCHMARKS.values():
+            backend_names.update(kernel_benches.keys())
+        backend_names = list(set(backend_names))
 
-    configs: list[tuple[str, OpConfig]] = []
-    if args.load_problems:
-        configs = load_configs(
-            args.load_problems, kernel_type, backend_name, CONFIG_CLASSES[kernel_type]
-        )
-        if args.tune and len(configs) == 0:
-            exit(0)
+    for kernel_type in kernel_types:
+        if kernel_type not in BENCHMARKS:
+            logger.error(
+                f"Kernel type {kernel_type} is currently unsupported. Skipping..."
+            )
 
-    if len(configs) == 0:
-        configs = LOAD_PROBLEMS[kernel_type](kernel_type, backend_name)
+        for backend_name in backend_names:
+            if backend_name not in BENCHMARKS[kernel_type]:
+                continue
 
-    kernel_dir = Path("results/kernels")
-    kernel_dir.mkdir(parents=True, exist_ok=True)
-    dump_dir = Path(args.dump_dir) if args.dump_dir else None
-    device = args.device
+            logger.info(f"Running {kernel_type} benchmarks for backend {backend_name}")
 
-    if kernel_type not in BENCHMARKS:
-        logger.error(f"Kernel Type {kernel_type} is currently unsupported.")
-        exit(1)
+            configs: list[tuple[str, OpConfig]] = []
+            if args.load_problems:
+                configs = load_configs(
+                    args.load_problems,
+                    kernel_type,
+                    backend_name,
+                    CONFIG_CLASSES[kernel_type],
+                )
+                if args.tune and len(configs) == 0:
+                    exit(0)
 
-    if backend_name not in BENCHMARKS[kernel_type]:
-        logger.error(
-            f"Backend {backend_name} is currently unsupported for {kernel_type} benchmarking."
-        )
-        exit(1)
+            if len(configs) == 0:
+                configs = LOAD_PROBLEMS[kernel_type](kernel_type, backend_name)
 
-    bench = BenchmarkRunner(
-        backend=backend_name,
-        kernel_type=kernel_type,
-        device=device,
-        machine=args.machine,
-        configs=configs,
-        kernel_dir=kernel_dir,
-        dump_dir=dump_dir,
-        debug=True,
-        num_iterations=args.iterations,
-        title=args.title,
-    )
-    bench.reduce_configs(args.max_kernels)
-    logger.info(
-        f"Generated {len(bench.configs)} {kernel_type} configs for backend {backend_name}."
-    )
+            kernel_dir = Path("results/kernels")
+            kernel_dir.mkdir(parents=True, exist_ok=True)
+            dump_dir = Path(args.dump_dir) if args.dump_dir else None
+            device = args.device
 
-    if args.tune:
-        bench.tune_kernels(
-            num_trials=args.num_trials,
-        )
-        # bench.tune_scheduling(max_iterations=args.num_trials)
+            if kernel_type not in BENCHMARKS:
+                logger.error(f"Kernel Type {kernel_type} is currently unsupported.")
+                exit(1)
 
-    else:
-        if args.use_tuned:
-            bench.load_tuned_results(args.use_tuned)
-        bench.benchmark_kernels()
+            if backend_name not in BENCHMARKS[kernel_type]:
+                logger.error(
+                    f"Backend {backend_name} is currently unsupported for {kernel_type} benchmarking."
+                )
+                exit(1)
+
+            bench = BenchmarkRunner(
+                backend=backend_name,
+                kernel_type=kernel_type,
+                device=device,
+                machine=args.machine,
+                configs=configs,
+                kernel_dir=kernel_dir,
+                dump_dir=dump_dir,
+                debug=True,
+                num_iterations=args.iterations,
+                title=args.title,
+            )
+            bench.reduce_configs(args.max_kernels)
+            logger.info(
+                f"Generated {len(bench.configs)} {kernel_type} configs for backend {backend_name}."
+            )
+
+            if args.tune:
+                bench.tune_kernels(
+                    num_trials=args.num_trials,
+                )
+                # bench.tune_scheduling(max_iterations=args.num_trials)
+
+            else:
+                if args.use_tuned:
+                    bench.load_tuned_results(args.use_tuned)
+                bench.benchmark_kernels()
