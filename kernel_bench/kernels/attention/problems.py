@@ -138,6 +138,24 @@ def get_extend_attention_configs() -> ConfigList:
             block_size=64,
         ),
     ]
+
+    return [
+        (
+            "extend",
+            AttentionAttributes(
+                batch_size=1,
+                num_seqs=1,
+                context_len=1024,
+                num_query_heads=128,
+                num_kv_heads=8,
+                head_size=512,
+                head_size_kv=512,
+                block_size=32,
+                dtype="f16",
+            ),
+        )
+    ]
+
     return [("extend_test", shape) for shape in shapes]
 
 

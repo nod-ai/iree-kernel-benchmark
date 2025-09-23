@@ -43,50 +43,10 @@ jobs:
           pip install -r requirements.txt
           pip install wave-lang
 
-      - name: Attention - Wave
+      - name: Run Benchmarks
         run: |
           source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.attentionbench --backend=wave --iterations=1
-
-      - name: Attention - Wave GQA
-        run: |
-          source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.attentionbench --backend=wavegqa --iterations=1
-
-      - name: Attention - IREE
-        run: |
-          source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.attentionbench --backend=iree --iterations=1
-
-      - name: Attention - Torch
-        run: |
-          source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.attentionbench --backend=torch --iterations=10
-
-      - name: GEMM - Wave
-        run: |
-          source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.gemmbench --variants=NT --backend=wave --iterations=1
-
-      - name: GEMM - IREE
-        run: |
-          source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.gemmbench --backend=iree --iterations=1
-
-      - name: GEMM - Torch
-        run: |
-          source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.gemmbench --backend=torch --iterations=5
-
-      - name: Convolutions - Wave
-        run: |
-          source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.convbench --backend=wave --iterations=1
-
-      - name: Convolutions - IREE
-        run: |
-          source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.convbench --backend=iree --iterations=1
+          python3 -m kernel_bench.cli.bench --backend=all --kernel_type=all --machine=mi325x
 
       - name: Upload benchmark results
         uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1

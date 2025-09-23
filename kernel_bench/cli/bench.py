@@ -93,6 +93,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--load_problems", type=str, default=None, help="Path to custom problem list."
     )
+    parser.add_argument(
+        "--validate",
+        action="store_true",
+        help="Validate kernels for numerical accuracy before benchmarking.",
+    )
 
     args = parser.parse_args()
     logging.basicConfig(level=args.log_level)
@@ -115,6 +120,10 @@ if __name__ == "__main__":
             logger.error(
                 f"Kernel type {kernel_type} is currently unsupported. Skipping..."
             )
+
+        if kernel_type == "extend_attention":
+            configs = LOAD_PROBLEMS[kernel_type](kernel_type, "wave")
+            configs[0][1].get_inputs()
 
         for backend_name in backend_names:
             if backend_name not in BENCHMARKS[kernel_type]:
@@ -177,4 +186,4 @@ if __name__ == "__main__":
             else:
                 if args.use_tuned:
                     bench.load_tuned_results(args.use_tuned)
-                bench.benchmark_kernels()
+                bench.benchmark_kernels(validate_numerics=args.validate)

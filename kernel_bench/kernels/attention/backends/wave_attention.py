@@ -6,7 +6,7 @@ from kernel_bench.tuning.hyperparam import (
     CategoricalBounds,
     IntegerBounds,
 )
-from kernel_bench.core.template import WaveKernel, WaveKernelBenchmark
+from kernel_bench.core.template import WaveTemplate, WaveKernelBenchmark
 from kernel_bench.utils.device_utils import dtype_to_bytes, dtype_to_torch
 from wave_lang.kernel.wave.templates.quantized_attention import (
     get_brevitas_pertensor_fp8_attention_kernel,
@@ -74,13 +74,6 @@ class WaveAttentionMHABenchmark(WaveKernelBenchmark):
         ) - 65536
         self.add_constraint(memory_constraint, "memory_limit")
 
-        # wg_x, wg_y, wg_z = (
-        #     config.M // self.BLOCK_M,
-        #     config.N // self.BLOCK_N,
-        #     config.B // self.BLOCK_B,
-        # )
-        # num_workgroups = wg_x * wg_y * wg_z
-
     @override
     def load_wave_kernel(self):
         config = self.config
@@ -104,14 +97,14 @@ class WaveAttentionMHABenchmark(WaveKernelBenchmark):
         hyperparams.update(self._tuning_spec.hyperparams())
         hyperparams.update(get_default_scheduling_params())
 
-        return WaveKernel(
+        return WaveTemplate(
             launchable=base_attention,
             hyperparams=hyperparams,
             dynamic_symbols=dynamic_symbols,
         )
 
     @override
-    def get_compile_options(self):
+    def extra_compile_options(self):
         return WaveCompileOptions(
             schedule=SchedulingType.NONE,
             canonicalize=True,
@@ -162,13 +155,13 @@ class WaveAttentionGQABenchmark(WaveKernelBenchmark):
         hyperparams.update(self.tuning_spec.hyperparams())
         hyperparams.update(get_default_scheduling_params())
 
-        return WaveKernel(
+        return WaveTemplate(
             launchable=base_attention,
             hyperparams=hyperparams,
             dynamic_symbols=dynamic_symbols,
         )
 
-    def get_compile_options(self):
+    def extra_compile_options(self):
         return WaveCompileOptions(
             schedule=SchedulingType.NONE,
             canonicalize=True,
@@ -209,16 +202,17 @@ class WaveExtendAttentionBenchmark(WaveKernelBenchmark):
     @override
     def load_wave_kernel(self):
         config = self.config
+        inputs = config.get_inputs()
 
         base_extend, hyperparams, dynamic_symbols = get_extend_attention_kernel(
             config.attributes,
             self.mfma_variant.value,
-            config.inputs.q_extend_shape,
-            config.inputs.k_extend_shape,
-            config.inputs.v_extend_shape,
-            config.inputs.k_buffer_shape,
-            config.inputs.v_buffer_shape,
-            config.inputs.output_shape,
+            inputs.q_extend.shape,
+            inputs.k_extend.shape,
+            inputs.v_extend.shape,
+            inputs.k_buffer.shape,
+            inputs.v_buffer.shape,
+            inputs.output.shape,
             input_dtype=dtype_to_torch(config.dtype),
             logit_cap=config.inputs.logit_cap,
         )
@@ -226,14 +220,14 @@ class WaveExtendAttentionBenchmark(WaveKernelBenchmark):
         hyperparams.update(self.tuning_spec.hyperparams())
         hyperparams.update(get_default_scheduling_params())
 
-        return WaveKernel(
+        return WaveTemplate(
             launchable=base_extend,
             hyperparams=hyperparams,
             dynamic_symbols=dynamic_symbols,
         )
 
     @override
-    def get_compile_options(self):
+    def extra_compile_options(self):
         return WaveCompileOptions(
             canonicalize=True,
             schedule=SchedulingType.NONE,

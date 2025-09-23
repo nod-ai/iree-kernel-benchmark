@@ -112,7 +112,9 @@ class BenchmarkRunner:
 
         return pd.read_csv(output_csv_path)
 
-    def _create_benchmark(self, tag: str, config: OpConfig) -> KernelBenchmark:
+    def _create_benchmark(
+        self, tag: str, config: OpConfig
+    ) -> Optional[KernelBenchmark]:
         """Create appropriate benchmark instance based on backend type."""
         kwargs = {
             "tag": tag,
@@ -128,7 +130,11 @@ class BenchmarkRunner:
                     "dump_dir": self.dump_dir,
                 }
             )
-        bench = create_benchmark(self.kernel_type, self.backend, kwargs)
+
+        try:
+            bench = create_benchmark(self.kernel_type, self.backend, kwargs)
+        except:
+            return None
 
         tuned_config = self.specs.get(config.get_name())
         if tuned_config:
@@ -138,27 +144,33 @@ class BenchmarkRunner:
 
     def _load_benches(self):
         """Create benchmark instances for all configurations."""
-        self._benches = [
-            self._create_benchmark(tag, config) for tag, config in self.configs
-        ]
+        benches = [self._create_benchmark(tag, config) for tag, config in self.configs]
+        self._benches = [bench for bench in benches if bench]
 
-    def benchmark_kernels(self):
+    def benchmark_kernels(self, validate_numerics=True) -> List[BenchmarkResult]:
         """
         Run benchmarks sequentially. Compiles all IREE-based kernels beforehand.
         """
         self._load_benches()
+        if len(self._benches) != len(self.configs):
+            self.logger.info(
+                f"Filtered {len(self._benches)} {self.kernel_type} configs for benchmarking on backend {self.backend}."
+            )
 
         if len(self._benches) == 0:
-            return
+            return []
 
         results = batch_benchmark(
             self._benches,
             self.device,
             self.num_iterations,
+            validate_numerics=validate_numerics,
             verbose=True,
         )
 
-        return self.save_results(results)
+        self.save_results(results)
+
+        return results
 
     def tune_scheduling(self, max_iterations=100):
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")

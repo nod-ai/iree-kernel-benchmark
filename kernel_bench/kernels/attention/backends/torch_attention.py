@@ -3,17 +3,12 @@ import torch
 
 from kernel_bench.core.template import KernelBenchmark
 from kernel_bench.utils.device_utils import dtype_to_torch
+from kernel_bench.utils.torch_utils import benchmark_function_torch
 from ..attention_config import AttentionConfigBMNK
 
 
 class TorchAttentionBenchmark(KernelBenchmark):
     config: AttentionConfigBMNK
-
-    def _clear_mem(self, *tensors):
-        for tensor in tensors:
-            del tensor
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
 
     @override
     def run_bench(self, device, num_iterations, timeout):
@@ -29,26 +24,18 @@ class TorchAttentionBenchmark(KernelBenchmark):
         k = torch.randn(k_shape, dtype=dtype_to_torch(config.dtype), device="cuda")
         v = torch.randn(v_shape, dtype=dtype_to_torch(config.dtype), device="cuda")
 
-        self._clear_mem()
         try:
-            start_event = torch.cuda.Event(enable_timing=True)
-            end_event = torch.cuda.Event(enable_timing=True)
-
-            start_event.record()
-            for _ in range(num_iterations):
-                torch.nn.functional.scaled_dot_product_attention(
-                    q, k, v, attn_mask=None
-                )
-            end_event.record()
-            torch.cuda.synchronize()
+            mean_time_us = benchmark_function_torch(
+                torch.nn.functional.scaled_dot_product_attention,
+                q,
+                k,
+                v,
+                attn_mask=None,
+                iterations=num_iterations,
+            )
 
         except Exception as e:
             self.logger.error(f"Failed to benchmark kernel {config.get_name()}: {e}")
             return self.get_bench_result(0, False)
-        self._clear_mem(q, k, v)
-
-        delta_time_ms = start_event.elapsed_time(end_event)
-        delta_time_us = delta_time_ms * 1e3
-        mean_time_us = delta_time_us / num_iterations
 
         return self.get_bench_result(mean_time_us, True)

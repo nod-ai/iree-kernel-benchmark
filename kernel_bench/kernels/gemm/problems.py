@@ -1005,10 +1005,6 @@ def get_b200_gemm_configs(backend: str) -> list[tuple[str, GemmConfig]]:
         tA = row["Transpose A"]
         tB = row["Transpose B"]
 
-        if backend == "wave":
-            if input_dtype == "f32":
-                continue
-
         configs.append(
             (
                 row["Subworkload"],
@@ -1026,75 +1022,6 @@ def get_b200_gemm_configs(backend: str) -> list[tuple[str, GemmConfig]]:
         )
 
     return configs
-
-    def extract_features(g: GemmConfig) -> tuple:
-        return (g.M, g.N, g.K, g.tA + g.tB, g.operand_element_type)
-
-    def hash_features(feature_list: tuple) -> str:
-        return "x".join(map(str, feature_list))
-
-    # clustering
-    config_shapes = [extract_features(g) for tag, g in configs]
-    clusterer = KernelConfigurationClustering(
-        scaling_method="minmax", clustering_method="kmeans", n_clusters=8
-    )
-    clusterer.fit(config_shapes)
-    representatives = clusterer.get_representatives()
-    representative_ids = {hash_features(shape) for shape in representatives}
-
-    unique_mappings = {rep_id: None for rep_id in representative_ids}
-    for tag, kernel in configs:
-        kernel_id = hash_features(extract_features(kernel))
-        if kernel_id in unique_mappings:
-            unique_mappings[kernel_id] = (tag, kernel)
-
-    configs = list(unique_mappings.values())
-
-    return configs
-
-
-# def get_b200_gemm_configs_time(backend: str) -> list[tuple[str, float, GemmConfig]]:
-#     def parse_b200_dtype(dtype: str):
-#         dtype = dtype.split("_")[0]
-#         if "f8" in dtype:
-#             dtype = "f8E4M3FN"
-#         return dtype
-
-#     gemm_df = pd.read_csv("b200_gemms.csv")
-#     configs = []
-
-#     for index, row in gemm_df.iterrows():
-#         if row["Batch Count"] > 1:
-#             continue
-
-#         input_dtype = parse_b200_dtype(row["A Type"])
-#         accumulator_dtype = parse_b200_dtype(row["C Type"])
-#         result_dtype = parse_b200_dtype(row["D Type"])
-
-#         tA = row["Transpose A"]
-#         tB = row["Transpose B"]
-
-#         if backend == "wave" and (tA + tB != "NT" or "f8" in input_dtype):
-#             continue
-
-#         configs.append(
-#             (
-#                 row["Subworkload"],
-#                 float(row["Kernel Time (us)"]),
-#                 GemmConfig(
-#                     M=row["M"],
-#                     N=row["N"],
-#                     K=row["K"],
-#                     tA=tA,
-#                     tB=tB,
-#                     operand_element_type=input_dtype,
-#                     accumulator_element_type=accumulator_dtype,
-#                     result_element_type=result_dtype,
-#                 ),
-#             )
-#         )
-
-#     return configs
 
 
 def get_gemm_configs(
@@ -1133,8 +1060,24 @@ def get_gemm_configs(
 
 def get_gemm_comparison() -> list[tuple[str, GemmConfig]]:
     return [
-        ("comparison", GemmConfig(512, 512, 512, "N", "T", "f16", "f16", "f32")),
-        ("comparison", GemmConfig(512, 512, 512, "N", "T", "bf16", "bf16", "f32")),
+        ("comparison", GemmConfig(1024, 1280, 5120, "N", "T", "f16", "f16", "f32")),
+        ("comparison", GemmConfig(1024, 10240, 1280, "N", "T", "f16", "f16", "f32")),
+        ("comparison", GemmConfig(4096, 640, 640, "N", "T", "f16", "f16", "f32")),
+    ]
+
+
+def get_paper_gemms() -> list[tuple[str, GemmConfig]]:
+    shapes = [
+        (2048, 10240, 1280),
+        (2048, 1280, 1280),
+        (2048, 1280, 5120),
+        (128, 1280, 2048),
+        (8192, 5120, 640),
+    ]
+
+    return [
+        ("paper", GemmConfig(M, N, K, "N", "T", "f16", "f16", "f32"))
+        for M, N, K in shapes
     ]
 
 

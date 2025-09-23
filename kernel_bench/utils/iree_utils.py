@@ -1,5 +1,4 @@
 import os
-import logging
 import subprocess
 from typing import Optional, Sequence
 from typing import List, Tuple
@@ -15,10 +14,7 @@ def bench_kernel_ireert(
     device: Optional[str] = None,
     timeout: Optional[float] = None,
 ) -> Tuple[float, bool]:
-
-    # print(
-    #     f'iree-benchmark-module --device={device} --module={vmfb_filename} {" ".join(iree_args)}'
-    # )
+    logger = get_logger()
 
     extra_flags = {}
     func_name = None
@@ -47,7 +43,7 @@ def bench_kernel_ireert(
             **extra_flags,
         )
     except Exception as e:
-        get_logger().error(e)
+        logger.error(f"Error benchmarking: {e}")
         return 0, False
 
     times = []
@@ -65,6 +61,7 @@ def bench_kernel_ireert(
             times.append(time_us)
 
     if len(times) == 0:
+        logger.error("Could not parse benchmark results")
         return 0, False
 
     benchmark_mean_time_us = sum(times) / float(len(times))
@@ -72,22 +69,15 @@ def bench_kernel_ireert(
 
 
 def run_iree_command(args: Sequence[str] = ()):
-    command = "Exec:", " ".join(args)
-    logging.getLogger().info(command)
+    logger = get_logger()
+    # logger.info("Exec:", " ".join(args))
     proc = subprocess.run(
         args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False
-    )
-    (
-        stdout_v,
-        stderr_v,
-    ) = (
-        proc.stdout,
-        proc.stderr,
     )
     return_code = proc.returncode
     if return_code == 0:
         return 0, proc.stdout, proc.stderr
-    logging.getLogger().error(
+    logger.error(
         f"Command failed!\n"
         f"Stderr diagnostics:\n{proc.stderr}\n"
         f"Stdout diagnostics:\n{proc.stdout}\n"

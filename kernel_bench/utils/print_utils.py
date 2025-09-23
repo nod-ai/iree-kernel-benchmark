@@ -78,7 +78,13 @@ class GlobalLoggerManager:
             level_str = level
 
         # Format: [TIMESTAMP] [LEVEL] [MODULE] MESSAGE
-        output = f"[{timestamp}] [{level_str}] {formatted_message}"
+        header = f"[{level_str}] "
+        whitespace = " " * len(header)
+        message_lines = formatted_message.split("\n")
+        aligned_message = "\n".join(
+            [message_lines[0]] + [f"{whitespace}{line}" for line in message_lines[1:]]
+        )
+        output = f"{header}{aligned_message}"
 
         # Use original print to avoid recursion
         self._original_print(output, **kwargs)

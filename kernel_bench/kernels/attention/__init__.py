@@ -3,6 +3,9 @@ from kernel_bench.kernels.attention.attention_config import (
     attention_attributes_to_bshd,
     attention_attributes_to_extend,
 )
+from kernel_bench.kernels.attention.backends.triton_attention import (
+    TritonExtendAttentionBenchmark,
+)
 from .backends.wave_attention import (
     WaveAttentionGQABenchmark,
     WaveAttentionMHABenchmark,
@@ -50,5 +53,6 @@ ATTENTION_BENCH = {
     },
     "extend_attention": {
         "wave": WaveExtendAttentionBenchmark,
+        "triton": TritonExtendAttentionBenchmark,
     },
 }

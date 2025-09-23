@@ -92,18 +92,30 @@ def get_device_specific_dtype(dtype: str, target: Optional[str] = None) -> str:
     return dtype
 
 
-def dtype_to_torch(dtype: str, target: Optional[str] = None):
+def dtype_to_torch(dtype: str | torch.dtype, target: Optional[str] = None):
+    if isinstance(dtype, torch.dtype):
+        return dtype
     dtype = get_device_specific_dtype(dtype, target)
     return DTYPE_TO_TORCH[dtype]
 
 
-def dtype_to_bits(dtype: str, target: Optional[str] = None):
-    dtype = get_device_specific_dtype(dtype, target)
+def dtype_to_bits(dtype: str | torch.dtype, target: Optional[str] = None):
+    if not isinstance(dtype, torch.dtype):
+        dtype = get_device_specific_dtype(dtype, target)
     return DTYPE_TO_BITS[dtype]
 
 
-def dtype_to_bytes(dtype: str, target: Optional[str] = None):
+def dtype_to_bytes(dtype: str | torch.dtype, target: Optional[str] = None):
     return max(1, dtype_to_bits(dtype, target) // 8)
+
+
+def dtype_max_value(dtype: str | torch.dtype, target: Optional[str] = None):
+    if not isinstance(dtype, torch.dtype):
+        dtype = get_device_specific_dtype(dtype, target)
+    if dtype.is_floating_point:
+        return torch.finfo(dtype).max
+    else:
+        return torch.iinfo(dtype).max
 
 
 def torch_dtype_to_str(dtype: torch.dtype) -> str:

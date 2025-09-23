@@ -18,6 +18,10 @@ on:
         description: "Number of benchmark iterations per trial"
         required: false
         default: "1"
+      backend:
+        description: "Backend to tune"
+        required: false
+        default: "wave"
 
 concurrency:
   group: ${{ github.workflow }}
@@ -29,6 +33,7 @@ jobs:
 
     env:
       CONFIG_JSON: ${{ inputs.config_json }}
+      WAVE_CACHE_ON: 0
 
     concurrency:
       group: benchmarking
@@ -72,20 +77,10 @@ jobs:
           source tune_venv/bin/activate
           python -m json.tool tune_config.json > /dev/null || { echo "Error: Invalid JSON format"; exit 1; }
 
-      - name: Tune Attention
+      - name: Tune
         run: |
           source tune_venv/bin/activate
-          python -m iree_kernel_benchmark.attentionbench --backend=wave --tune --load_problems=tune_config.json --iterations=${{ inputs.iterations }} --num_trials=${{ inputs.num_trials }}
-
-      - name: Tune GEMM
-        run: |
-          source tune_venv/bin/activate
-          python -m iree_kernel_benchmark.gemmbench --backend=wave --tune --variants=NT --load_problems=tune_config.json --iterations=${{ inputs.iterations }} --num_trials=${{ inputs.num_trials }}
-
-      - name: Tune Convolutions
-        run: |
-          source tune_venv/bin/activate
-          python -m iree_kernel_benchmark.convbench --backend=wave --tune --load_problems=tune_config.json --iterations=${{ inputs.iterations }} --num_trials=${{ inputs.num_trials }}
+          python -m kernel_bench.bench --tune --load_problems=tune_config.json --backend=${{ inputs.backend }} --iterations=${{ inputs.iterations }} --num_trials=${{ inputs.num_trials }}
 
       - name: Upload tuning results
         uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1

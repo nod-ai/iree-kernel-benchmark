@@ -5,7 +5,7 @@ from wave_lang.kernel.wave.templates.conv import get_igemm_conv2d
 from wave_lang.kernel.wave.compile import WaveCompileOptions
 from wave_lang.kernel.wave.scheduling.schedule_enums import SchedulingType
 
-from kernel_bench.core.template import WaveKernelBenchmark, WaveKernel
+from kernel_bench.core.template import WaveKernelBenchmark, WaveTemplate
 from kernel_bench.tuning.hyperparam import IntegerBounds
 from kernel_bench.utils import *
 from ..conv_utils import ConvConfig
@@ -55,10 +55,10 @@ class WaveConvBenchmark(WaveKernelBenchmark):
         hyperparams.update(self._tuning_spec.hyperparams())
         hyperparams.update(get_default_scheduling_params())
 
-        return WaveKernel(launchable=conv, hyperparams=hyperparams)
+        return WaveTemplate(launchable=conv, hyperparams=hyperparams)
 
     @override
-    def get_compile_options(self):
+    def extra_compile_options(self):
         return WaveCompileOptions(
             canonicalize=True,
             schedule=SchedulingType.NONE,

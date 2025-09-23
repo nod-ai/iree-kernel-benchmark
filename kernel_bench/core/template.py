@@ -11,11 +11,14 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from tqdm import tqdm, trange
-from wave_lang.kernel.wave.compile import wave_compile
+from wave_lang.kernel.wave.compile import wave_compile, WaveKernel
 from wave_lang.kernel.wave.compile_options import WaveCompileOptions
 from wave_lang.kernel.wave.utils.general_utils import get_default_scheduling_params
 from wave_lang.kernel.wave.wave import LaunchableWave
 
+from kernel_bench.utils.parallel_utils.isolated_runtime import (
+    isolated_validate_numerics,
+)
 from kernel_bench.utils.print_utils import get_logger
 
 from ..utils.bench_utils import (
@@ -46,10 +49,23 @@ class KernelBenchmark(ABC):
     config: OpConfig
 
     def __post_init__(self):
+        if not self.validate_config():
+            raise ValueError(
+                f"Config {self.config.get_name()} invalid for {self.kernel_type} on backend {self.backend}"
+            )
+
         self._tuning_spec = TuningSpec()
         self._param_symbols = {}
+
+        self.machine = self.machine.upper()
+        self.target = machine_to_hip_target(self.machine)
+
         self.logger = get_logger()
         self.setup_parameters()
+
+    def validate_config(self) -> bool:
+        """Override to validate problem for given configuration"""
+        return True
 
     def add_params(self, params: List[TuningParameter]) -> List[ParameterSymbol]:
         """Register multiple parameters and return their corresponding symbols"""
@@ -84,6 +100,10 @@ class KernelBenchmark(ABC):
     def setup_parameters(self):
         """Override to define parameters and constraints"""
         pass
+
+    def validate_numerics(self, device: str) -> bool:
+        """Validate numerical accuracy of kernel before benchmarking"""
+        return True
 
     def get_bench_result(self, runtime_us: float, ok: bool):
         arithmetic_intensity, tflops_per_second = get_kernel_perf_stats(
@@ -138,12 +158,6 @@ class KernelBenchmark(ABC):
 class IREEKernelBenchmark(KernelBenchmark):
     kernel_dir: Path
     dump_dir: Optional[Path] = None
-    target: str = None
-
-    def __post_init__(self):
-        super().__post_init__()
-        self.machine = self.machine.upper()
-        self.target = machine_to_hip_target(self.machine)
 
     @abstractmethod
     def compile_to_vmfb(self, mlir_path: Path, vmfb_path: Path) -> bool:
@@ -184,7 +198,7 @@ class IREEKernelBenchmark(KernelBenchmark):
 
 
 @dataclass
-class WaveKernel:
+class WaveTemplate:
     launchable: LaunchableWave
     hyperparams: Dict[Symbol, Any]
     dynamic_symbols: List[Symbol] = field(default_factory=list)
@@ -193,25 +207,33 @@ class WaveKernel:
 @dataclass
 class WaveKernelBenchmark(IREEKernelBenchmark):
     @abstractmethod
-    def load_wave_kernel(self) -> WaveKernel:
+    def load_wave_kernel(self) -> WaveTemplate:
         pass
 
     @abstractmethod
-    def get_compile_options(self) -> WaveCompileOptions:
+    def extra_compile_options(self) -> WaveCompileOptions:
         pass
+
+    def get_compile_options(
+        self, kernel: WaveTemplate, vmfb_path: Optional[Path] = None
+    ) -> WaveCompileOptions:
+        compile_options = self.extra_compile_options()
+
+        if vmfb_path:
+            compile_options.create_vmfb_file = vmfb_path
+        compile_options.subs = kernel.hyperparams
+        compile_options.dynamic_symbols = kernel.dynamic_symbols
+        compile_options.iree_launch_async = False
+        compile_options.run_bench = False
+        compile_options.device = "hip"
+        compile_options.target = self.target
+
+        return compile_options
 
     def compile_to_vmfb(self, mlir_path, vmfb_path):
         try:
             kernel = self.load_wave_kernel()
-            compile_options = self.get_compile_options()
-
-            compile_options.create_vmfb_file = vmfb_path
-            compile_options.subs = kernel.hyperparams
-            compile_options.dynamic_symbols = kernel.dynamic_symbols
-            compile_options.iree_launch_async = False
-            compile_options.run_bench = False
-            compile_options.backend = "rocm"
-            compile_options.target = self.target
+            compile_options = self.get_compile_options(kernel, vmfb_path)
 
             if self.dump_dir:
                 dump_file = (
@@ -318,12 +340,39 @@ def batch_compile_iree_benches(
     error_count = len(iree_benches) - success_count
 
     if verbose:
-        logger.info(
+        (logger.info if error_count == 0 else logger.error)(
             f"{success_count} Success, {error_count} Failed out of {len(compilation_results)} configs"
         )
         logger.info("Compilation process completed.")
 
     return compilation_results
+
+
+def batch_validate(
+    benches: List[KernelBenchmark],
+    device: str,
+    verbose=False,
+) -> List[bool]:
+    logger = get_logger()
+
+    results = []
+    for bench in tqdm(benches, desc="Validating kernel numerics"):
+        validation_result, error_msg = isolated_validate_numerics(bench, device)
+        if error_msg:
+            logger.error(
+                f"Validation subprocess error for {bench.config.get_name()}: {error_msg}"
+            )
+        results.append(validation_result)
+
+    if verbose:
+        success_count = sum(results)
+        error_count = len(results) - success_count
+        (logger.info if error_count == 0 else logger.error)(
+            f"Numerical check: {success_count} Success, {error_count} Failed out of {len(results)} configs"
+        )
+        logger.info("Validation process completed.")
+
+    return results
 
 
 def batch_benchmark(
@@ -333,6 +382,7 @@ def batch_benchmark(
     timeout: Optional[float] = None,
     compile_callback: Optional[Callable[[CompileResult], None]] = None,
     bench_callback: Optional[Callable[[BenchmarkResult], None]] = None,
+    validate_numerics=True,
     verbose=False,
     unique_ids=False,
 ) -> List[BenchmarkResult]:
@@ -343,10 +393,10 @@ def batch_benchmark(
     in order while preserving the original input order.
     """
 
+    # Compile all IREE-based benches
     iree_benches = [
         bench for bench in benches if isinstance(bench, IREEKernelBenchmark)
     ]
-
     compilation_results = {}
     if iree_benches:
         compile_results = batch_compile_iree_benches(
@@ -358,31 +408,49 @@ def batch_benchmark(
         for bench, (config, vmfb_path, success) in zip(iree_benches, compile_results):
             compilation_results[id(bench)] = (vmfb_path, success)
 
+    # Validate numerics
+    if validate_numerics:
+        compiled_benches = [
+            bench
+            for bench in benches
+            if not isinstance(bench, IREEKernelBenchmark)
+            or compilation_results[id(bench)]
+        ]
+        validation_results = {
+            id(compiled_benches[i]): val_res
+            for i, val_res in enumerate(batch_validate(benches, device, verbose))
+        }
+    else:
+        validation_results = {id(bench): True for bench in benches}
+
+    # Run benchmarks
     results = [None] * len(benches)
-
     all_bench_items = [(i, bench) for i, bench in enumerate(benches)]
-
     for i, bench in tqdm(
         all_bench_items, desc="Benchmarking kernels", disable=bench_callback is not None
     ):
         try:
             if isinstance(bench, IREEKernelBenchmark):
                 vmfb_path, compile_success = compilation_results[id(bench)]
-                if compile_success and vmfb_path:
+                numerical_success = validation_results[id(bench)]
+                if compile_success and vmfb_path and numerical_success:
                     result = bench.bench_vmfb(
                         vmfb_path, device, num_iterations, timeout
                     )
                 else:
                     result = bench.get_bench_result(0, False)
             else:
-                result = bench.run_bench(device, num_iterations, timeout)
+                if validation_results[id(bench)]:
+                    result = bench.run_bench(device, num_iterations, timeout)
+                else:
+                    result = bench.get_bench_result(0, False)
 
             results[i] = result
 
         except Exception as e:
             if verbose:
                 get_logger().error(
-                    f"Benchmarking failed for {bench.config.get_name()}: {e}"
+                    f"Benchmarking failed for {bench.config.get_name()} on backend {bench.backend}: {e}"
                 )
             result = bench.get_bench_result(0, False)
             results[i] = result
@@ -391,4 +459,5 @@ def batch_benchmark(
             if bench_callback:
                 bench_callback(results[i])
 
+    # Return results
     return results

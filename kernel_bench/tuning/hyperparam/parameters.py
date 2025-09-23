@@ -196,14 +196,15 @@ class CategoricalBounds(TuningBounds):
         # Handle iterables
         if isinstance(value, (list, tuple)):
             parsed_label = tuple([self._parse_json_value(v) for v in value])
-            if parsed_label in self.options:
-                return self.options.index(parsed_label)
-            else:
-                raise ValueError(
-                    f"Label {parsed_label} not supported in available options: {self.options}"
-                )
+        else:
+            parsed_label = self._parse_json_value(value)
 
-        return self._parse_json_value(value)
+        if parsed_label in self.options:
+            return self.options.index(parsed_label)
+        else:
+            raise ValueError(
+                f"Label {parsed_label} not supported in available options: {self.options}"
+            )
 
 
 class TuningParameter:

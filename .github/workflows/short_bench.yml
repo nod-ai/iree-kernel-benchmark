@@ -7,13 +7,17 @@ on:
       iterations:
         description: "Number of iterations per benchmark"
         required: false
-        default: "3"
+        default: "1"
       max_kernels:
         description: "Maximum number of kernels to benchmark"
         required: false
         default: "50"
       selected_backend:
-        description: "Which backend to run benchmarks for (wave, iree, or all)"
+        description: "Which backends to run benchmarks for (wave, iree, torch, hipblaslt, all)"
+        required: false
+        default: "all"
+      selected_kernel:
+        description: "Which kernels to run benchmarks for (conv, gemm, attention, all)"
         required: false
         default: "all"
       metadata:
@@ -51,9 +55,10 @@ jobs:
 
     env:
       WAVE_CACHE_ON: 0
-      ITERATIONS: ${{ inputs.iterations || '3' }}
+      ITERATIONS: ${{ inputs.iterations || '1' }}
       MAX_KERNELS: ${{ inputs.max_kernels || '50' }}
       SELECTED_BACKEND: ${{ inputs.selected_backend || 'all' }}
+      SELECTED_KERNEL: ${{ inputs.selected_kernel || 'all' }}
       WAVE_REPO: ${{ inputs.pr_repository || 'iree-org/wave' }}
       WAVE_BRANCH: ${{ inputs.pr_branch || 'main' }}
 
@@ -88,64 +93,11 @@ jobs:
           cd ..
           pip install -r requirements.txt
 
-      # WAVE BACKEND
-      - name: Attention - Wave
-        if: env.SELECTED_BACKEND == 'wave' || env.SELECTED_BACKEND == 'all'
+      - name: Run Benchmarks
         run: |
           source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.attentionbench --backend=wave --iterations=$ITERATIONS --max_kernels=$MAX_KERNELS
+          python3 -m kernel_bench.cli.bench --backend=${{ env.SELECTED_BACKEND }} --kernel_type=${{ env.SELECTED_KERNEL }} --iterations=${{ env.ITERATIONS }} --max_kernels=${{ env.MAX_KERNELS }} --machine=mi325x
 
-      - name: Attention - Wave GQA
-        if: env.SELECTED_BACKEND == 'wave' || env.SELECTED_BACKEND == 'all'
-        run: |
-          source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.attentionbench --backend=wavegqa --iterations=$ITERATIONS --max_kernels=$MAX_KERNELS
-
-      - name: GEMM - Wave
-        if: env.SELECTED_BACKEND == 'wave' || env.SELECTED_BACKEND == 'all'
-        run: |
-          source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.gemmbench --backend=wave --variants=NT --iterations=$ITERATIONS --max_kernels=$MAX_KERNELS
-
-      - name: Convolutions - Wave
-        if: env.SELECTED_BACKEND == 'wave' || env.SELECTED_BACKEND == 'all'
-        run: |
-          source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.convbench --backend=wave --iterations=$ITERATIONS --max_kernels=$MAX_KERNELS
-
-      # IREE BACKEND
-      - name: Attention - IREE
-        if: env.SELECTED_BACKEND == 'iree' || env.SELECTED_BACKEND == 'all'
-        run: |
-          source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.attentionbench --backend=iree --iterations=$ITERATIONS --max_kernels=$MAX_KERNELS
-
-      - name: GEMM - IREE
-        if: env.SELECTED_BACKEND == 'iree' || env.SELECTED_BACKEND == 'all'
-        run: |
-          source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.gemmbench --backend=iree --iterations=$ITERATIONS --max_kernels=$MAX_KERNELS
-
-      - name: Convolutions - IREE
-        if: env.SELECTED_BACKEND == 'iree' || env.SELECTED_BACKEND == 'all'
-        run: |
-          source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.convbench --backend=iree --iterations=$ITERATIONS --max_kernels=$MAX_KERNELS
-
-      # TORCH BACKEND
-      - name: Attention - Torch
-        if: env.SELECTED_BACKEND == 'torch' || env.SELECTED_BACKEND == 'all'
-        run: |
-          source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.attentionbench --backend=torch --iterations=$ITERATIONS --max_kernels=$MAX_KERNELS
-
-      - name: GEMM - Torch
-        if: env.SELECTED_BACKEND == 'torch' || env.SELECTED_BACKEND == 'all'
-        run: |
-          source bench_venv/bin/activate
-          python -m iree_kernel_benchmark.gemmbench --backend=torch --iterations=$ITERATIONS --max_kernels=$MAX_KERNELS
-
-      # Finish
       - name: Tag result
         if: ${{ inputs.metadata }}
         run: |

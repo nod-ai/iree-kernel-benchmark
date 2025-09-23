@@ -2,6 +2,8 @@ from dataclasses import dataclass
 from typing import Any, Union, Optional, Literal
 import torch
 from abc import ABC, abstractmethod
+import pickle
+from pathlib import Path
 
 from kernel_bench.utils.bench_utils import OpConfig, change_shape_dtype
 from kernel_bench.utils.device_utils import (
@@ -242,6 +244,28 @@ class AttentionConfigExtend(AttentionConfigBSHD):
 
     def __post_init__(self):
         super().__post_init__()
+
+    def get_runtime_args(self, backend_name):
+        if not self.inputs:
+            self.get_inputs()
+        bench_inputs = [
+            stringify_shape(self.inputs.q_extend.shape, self.dtype),
+            stringify_shape(self.inputs.k_extend.shape, self.dtype),
+            stringify_shape(self.inputs.v_extend.shape, self.dtype),
+            stringify_shape(self.inputs.k_buffer.shape, self.dtype),
+            stringify_shape(self.inputs.v_buffer.shape, self.dtype),
+            stringify_shape(self.inputs.qo_indptr.shape, "i32"),
+            stringify_shape(self.inputs.kv_indptr.shape, "i32"),
+            stringify_shape(self.inputs.kv_indices.shape, "i32"),
+            stringify_shape(self.inputs.output.shape, "f32"),
+            stringify_shape(self.inputs.max_len_extend, "i32"),
+        ]
+        bench_function = "isolated_benchmark" if backend_name == "wave" else "main"
+        return [f"--input={input}" for input in bench_inputs] + [
+            f"--function={bench_function}"
+        ]
+
+    def get_inputs(self):
         self.inputs = create_extend_attention_inputs(
             self.attributes, dtype_to_torch(self.dtype)
         )
@@ -251,24 +275,7 @@ class AttentionConfigExtend(AttentionConfigBSHD):
         self.attributes.query_seq_len = seq_len
         self.N_Q = seq_len
         self.N_KV = seq_len
-
-    def get_runtime_args(self, backend_name):
-        bench_inputs = [
-            stringify_shape(self.inputs.q_extend_shape, self.dtype),
-            stringify_shape(self.inputs.k_extend_shape, self.dtype),
-            stringify_shape(self.inputs.v_extend_shape, self.dtype),
-            stringify_shape(self.inputs.k_buffer_shape, self.dtype),
-            stringify_shape(self.inputs.v_buffer_shape, self.dtype),
-            stringify_shape(self.inputs.qo_indptr_shape, "i32"),
-            stringify_shape(self.inputs.kv_indptr_shape, "i32"),
-            stringify_shape(self.inputs.kv_indices_shape, "i32"),
-            stringify_shape(self.inputs.output_shape, "f32"),
-            stringify_shape(self.inputs.max_len_extend, "i32"),
-        ]
-        bench_function = "isolated_benchmark" if backend_name == "wave" else "main"
-        return [f"--input={input}" for input in bench_inputs] + [
-            f"--function={bench_function}"
-        ]
+        return self.inputs
 
 
 def bmnk1k2_to_attention_attributes(
@@ -398,23 +405,104 @@ def attention_attributes_to_extend(
 
 @dataclass
 class ExtendAttentionInputs:
-    q_extend_shape: torch.Size
-    k_extend_shape: torch.Size
-    v_extend_shape: torch.Size
-    k_buffer_shape: torch.Size
-    v_buffer_shape: torch.Size
-    qo_indptr_shape: torch.Size
-    kv_indptr_shape: torch.Size
-    kv_indices_shape: torch.Size
-    output_shape: torch.Size
+    q_extend: torch.Tensor
+    k_extend: torch.Tensor
+    v_extend: torch.Tensor
+    k_buffer: torch.Tensor
+    v_buffer: torch.Tensor
+    qo_indptr: torch.Tensor
+    kv_indptr: torch.Tensor
+    kv_indices: torch.Tensor
+    output: torch.Tensor
     max_len_extend: int
     logit_cap: float
+
+
+def _generate_config_filename(
+    shape: AttentionAttributes, dtype_str: str, seed: Optional[int] = None
+) -> str:
+    """
+    Generate a unique filename based on attention configuration parameters.
+
+    Args:
+        shape: AttentionAttributes instance
+        dtype_str: String representation of the tensor dtype
+        seed: Random seed used for generation (if any)
+
+    Returns:
+        Unique filename string for this configuration
+    """
+    # Extract key parameters that define the configuration
+    params = [
+        f"nseqs{shape.num_seqs}",
+        f"nqh{shape.num_query_heads}",
+        f"nkvh{shape.num_kv_heads}",
+        f"hs{shape.head_size}",
+        f"ctx{shape.context_len}",
+    ]
+
+    # Add optional parameters if they exist
+    if shape.fixed_seq_len_prefix is not None:
+        params.append(f"prefixlen{shape.fixed_seq_len_prefix}")
+    if shape.fixed_seq_len_extend is not None:
+        params.append(f"extendlen{shape.fixed_seq_len_extend}")
+
+    # Add dtype and seed
+    params.append(f"dtype{dtype_str}")
+    if seed is not None:
+        params.append(f"seed{seed}")
+
+    # Create filename
+    config_str = "_".join(params)
+    return f"extend_attention_inputs_{config_str}.pkl"
 
 
 def create_extend_attention_inputs(
     shape: AttentionAttributes,
     dtype=torch.float16,
+    seed=None,
+    cache_dir: Optional[Union[str, Path]] = None,
+    force_regenerate: bool = False,
 ):
+    """
+    Create ExtendAttentionInputs with automatic save/load functionality.
+
+    Args:
+        shape: AttentionAttributes defining the configuration
+        dtype: Tensor dtype to use (default: torch.float16)
+        seed: Random seed for reproducible generation
+        cache_dir: Directory to store cached inputs (default: ./attention_cache)
+        force_regenerate: If True, ignore cached data and regenerate
+
+    Returns:
+        ExtendAttentionInputs instance
+    """
+    # Set up cache directory
+    if cache_dir is None:
+        cache_dir = Path.cwd() / "attention_cache"
+    else:
+        cache_dir = Path(cache_dir)
+
+    # Generate filename based on configuration
+    dtype_str = str(dtype).split(".")[-1]  # Extract 'float16' from 'torch.float16'
+    filename = _generate_config_filename(shape, dtype_str, seed)
+    cache_path = cache_dir / filename
+
+    # Try to load existing data first (unless force_regenerate is True)
+    if not force_regenerate and cache_path.exists():
+        try:
+            print(f"Loading cached ExtendAttentionInputs from {cache_path}")
+            return load_extend_attention_inputs(cache_path)
+        except Exception as e:
+            print(f"Warning: Failed to load cached data from {cache_path}: {e}")
+            print("Regenerating data...")
+
+    # Generate new data if no cache exists or loading failed
+    print(f"Generating new ExtendAttentionInputs for config: {filename}")
+
+    if seed:
+        torch.manual_seed(seed)
+
     N_CTX = shape.context_len
     B = shape.num_seqs
     H_KV = shape.num_kv_heads
@@ -512,16 +600,217 @@ def create_extend_attention_inputs(
         extend_token_num, shape.num_query_heads, shape.head_size, dtype=torch.float32
     )
 
-    return ExtendAttentionInputs(
-        q_extend.shape,
-        k_extend.shape,
-        v_extend.shape,
-        k_buffer.shape,
-        v_buffer.shape,
-        qo_indptr.shape,
-        kv_indptr.shape,
-        kv_indices.shape,
-        output.shape,
+    # Create the inputs object
+    inputs = ExtendAttentionInputs(
+        q_extend,
+        k_extend,
+        v_extend,
+        k_buffer,
+        v_buffer,
+        qo_indptr,
+        kv_indptr,
+        kv_indices,
+        output,
         max_len_extend,
         logit_cap,
     )
+
+    # Automatically save the generated data for future use
+    try:
+        save_extend_attention_inputs(inputs, cache_path)
+        print(f"Cached ExtendAttentionInputs to {cache_path}")
+    except Exception as e:
+        print(f"Warning: Failed to cache data to {cache_path}: {e}")
+
+    return inputs
+
+
+def save_extend_attention_inputs(
+    inputs: ExtendAttentionInputs, filepath: Union[str, Path]
+) -> None:
+    """
+    Save ExtendAttentionInputs instance to disk with all tensor data preserved.
+
+    Args:
+        inputs: ExtendAttentionInputs instance to save
+        filepath: Path where to save the data (will create .pkl file)
+    """
+    filepath = Path(filepath)
+    if not filepath.suffix:
+        filepath = filepath.with_suffix(".pkl")
+
+    # Create directory if it doesn't exist
+    filepath.parent.mkdir(parents=True, exist_ok=True)
+
+    # Prepare data dictionary with all tensor data and metadata
+    save_data = {
+        "tensors": {
+            "q_extend": {
+                "data": inputs.q_extend.cpu(),
+                "device": str(inputs.q_extend.device),
+                "dtype": inputs.q_extend.dtype,
+                "shape": inputs.q_extend.shape,
+                "requires_grad": inputs.q_extend.requires_grad,
+            },
+            "k_extend": {
+                "data": inputs.k_extend.cpu(),
+                "device": str(inputs.k_extend.device),
+                "dtype": inputs.k_extend.dtype,
+                "shape": inputs.k_extend.shape,
+                "requires_grad": inputs.k_extend.requires_grad,
+            },
+            "v_extend": {
+                "data": inputs.v_extend.cpu(),
+                "device": str(inputs.v_extend.device),
+                "dtype": inputs.v_extend.dtype,
+                "shape": inputs.v_extend.shape,
+                "requires_grad": inputs.v_extend.requires_grad,
+            },
+            "k_buffer": {
+                "data": inputs.k_buffer.cpu(),
+                "device": str(inputs.k_buffer.device),
+                "dtype": inputs.k_buffer.dtype,
+                "shape": inputs.k_buffer.shape,
+                "requires_grad": inputs.k_buffer.requires_grad,
+            },
+            "v_buffer": {
+                "data": inputs.v_buffer.cpu(),
+                "device": str(inputs.v_buffer.device),
+                "dtype": inputs.v_buffer.dtype,
+                "shape": inputs.v_buffer.shape,
+                "requires_grad": inputs.v_buffer.requires_grad,
+            },
+            "qo_indptr": {
+                "data": inputs.qo_indptr.cpu(),
+                "device": str(inputs.qo_indptr.device),
+                "dtype": inputs.qo_indptr.dtype,
+                "shape": inputs.qo_indptr.shape,
+                "requires_grad": inputs.qo_indptr.requires_grad,
+            },
+            "kv_indptr": {
+                "data": inputs.kv_indptr.cpu(),
+                "device": str(inputs.kv_indptr.device),
+                "dtype": inputs.kv_indptr.dtype,
+                "shape": inputs.kv_indptr.shape,
+                "requires_grad": inputs.kv_indptr.requires_grad,
+            },
+            "kv_indices": {
+                "data": inputs.kv_indices.cpu(),
+                "device": str(inputs.kv_indices.device),
+                "dtype": inputs.kv_indices.dtype,
+                "shape": inputs.kv_indices.shape,
+                "requires_grad": inputs.kv_indices.requires_grad,
+            },
+            "output": {
+                "data": inputs.output.cpu(),
+                "device": str(inputs.output.device),
+                "dtype": inputs.output.dtype,
+                "shape": inputs.output.shape,
+                "requires_grad": inputs.output.requires_grad,
+            },
+        },
+        "scalars": {
+            "max_len_extend": inputs.max_len_extend,
+            "logit_cap": inputs.logit_cap,
+        },
+        "metadata": {
+            "save_format_version": "1.0",
+            "torch_version": str(torch.__version__),
+        },
+    }
+
+    # Save using torch.save for better tensor serialization
+    torch.save(save_data, filepath)
+    print(f"ExtendAttentionInputs saved to {filepath}")
+
+
+def load_extend_attention_inputs(
+    filepath: Union[str, Path], device: Optional[str] = None
+) -> ExtendAttentionInputs:
+    """
+    Load ExtendAttentionInputs instance from disk with exact tensor data restored.
+
+    Args:
+        filepath: Path to the saved data file
+        device: Target device for loaded tensors (if None, uses original device)
+
+    Returns:
+        ExtendAttentionInputs instance with all tensor data restored
+    """
+    filepath = Path(filepath)
+    if not filepath.suffix:
+        filepath = filepath.with_suffix(".pkl")
+
+    if not filepath.exists():
+        raise FileNotFoundError(f"File not found: {filepath}")
+
+    # Load the data with weights_only=False for backward compatibility
+    # This is safe since we control the file format and contents
+    try:
+        save_data = torch.load(filepath, map_location="cpu", weights_only=False)
+    except Exception as e:
+        # Fallback for older PyTorch versions that don't support weights_only
+        save_data = torch.load(filepath, map_location="cpu")
+
+    # Extract tensors and restore their properties
+    tensors = {}
+    for tensor_name, tensor_info in save_data["tensors"].items():
+        # Restore tensor data
+        tensor_data = tensor_info["data"]
+
+        # Determine target device
+        target_device = device if device is not None else tensor_info["device"]
+
+        # Move to target device and restore properties
+        restored_tensor = tensor_data.to(
+            device=target_device, dtype=tensor_info["dtype"]
+        )
+
+        if tensor_info["requires_grad"]:
+            restored_tensor.requires_grad_(True)
+
+        tensors[tensor_name] = restored_tensor
+
+    # Extract scalars
+    scalars = save_data["scalars"]
+
+    # Create and return the ExtendAttentionInputs instance
+    return ExtendAttentionInputs(
+        q_extend=tensors["q_extend"],
+        k_extend=tensors["k_extend"],
+        v_extend=tensors["v_extend"],
+        k_buffer=tensors["k_buffer"],
+        v_buffer=tensors["v_buffer"],
+        qo_indptr=tensors["qo_indptr"],
+        kv_indptr=tensors["kv_indptr"],
+        kv_indices=tensors["kv_indices"],
+        output=tensors["output"],
+        max_len_extend=scalars["max_len_extend"],
+        logit_cap=scalars["logit_cap"],
+    )
+
+
+def clear_extend_attention_cache(cache_dir: Optional[Union[str, Path]] = None) -> None:
+    """
+    Clear all cached ExtendAttentionInputs files.
+
+    Args:
+        cache_dir: Cache directory to clear (default: ./attention_cache)
+    """
+    import shutil
+
+    if cache_dir is None:
+        cache_dir = Path.cwd() / "attention_cache"
+    else:
+        cache_dir = Path(cache_dir)
+
+    if cache_dir.exists():
+        cache_files = list(cache_dir.glob("extend_attention_inputs_*.pkl"))
+        if cache_files:
+            for cache_file in cache_files:
+                cache_file.unlink()
+            print(f"Cleared {len(cache_files)} cache files from {cache_dir}")
+        else:
+            print(f"No cache files found in {cache_dir}")
+    else:
+        print(f"Cache directory {cache_dir} does not exist")

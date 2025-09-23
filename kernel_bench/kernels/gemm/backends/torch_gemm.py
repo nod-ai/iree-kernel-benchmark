@@ -3,17 +3,20 @@ import torch
 
 from kernel_bench.core.template import KernelBenchmark
 from kernel_bench.utils.device_utils import dtype_to_torch
+from kernel_bench.utils.torch_utils import benchmark_function_torch
 from ..gemm_utils import GemmConfig
+
+
+def run_torch_matmul(
+    a_base: torch.Tensor, b_base: torch.Tensor, transposeA: bool, transposeB: bool
+):
+    a = a_base.transpose(-2, -1) if transposeA else a_base
+    b = b_base.transpose(-2, -1) if transposeB else b_base
+    torch.matmul(a, b)
 
 
 class TorchGemmBenchmark(KernelBenchmark):
     config: GemmConfig
-
-    def _clear_mem(self, *tensors):
-        for tensor in tensors:
-            del tensor
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
 
     @override
     def run_bench(self, device, num_iterations, timeout):
@@ -33,26 +36,18 @@ class TorchGemmBenchmark(KernelBenchmark):
             shape_b, dtype=dtype_to_torch(config.operand_element_type), device="cuda"
         )
 
-        self._clear_mem()
         try:
-            start_event = torch.cuda.Event(enable_timing=True)
-            end_event = torch.cuda.Event(enable_timing=True)
-
-            start_event.record()
-            for _ in range(num_iterations):
-                a = a_base.transpose(-2, -1) if transposeA else a_base
-                b = b_base.transpose(-2, -1) if transposeB else b_base
-                torch.matmul(a, b)
-            end_event.record()
-            torch.cuda.synchronize()
+            mean_time_us = benchmark_function_torch(
+                run_torch_matmul,
+                a_base,
+                b_base,
+                transposeA,
+                transposeB,
+                iterations=num_iterations,
+            )
 
         except Exception as e:
             self.logger.error(f"Failed to benchmark kernel {config.get_name()}: {e}")
             return self.get_bench_result(0, False)
-        self._clear_mem(a_base, b_base)
-
-        delta_time_ms = start_event.elapsed_time(end_event)
-        delta_time_us = delta_time_ms * 1e3
-        mean_time_us = delta_time_us / num_iterations
 
         return self.get_bench_result(mean_time_us, True)

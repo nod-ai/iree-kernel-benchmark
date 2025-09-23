@@ -3,17 +3,12 @@ from typing import override
 
 from kernel_bench.utils.device_utils import dtype_to_torch
 from kernel_bench.core.template import KernelBenchmark
+from kernel_bench.utils.torch_utils import benchmark_function_torch
 from ..conv_utils import ConvConfig
 
 
 class TorchConvBenchmark(KernelBenchmark):
     config: ConvConfig
-
-    def _clear_mem(self, *tensors):
-        for tensor in tensors:
-            del tensor
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
 
     @override
     def run_bench(self, device, num_iterations, timeout):
@@ -45,32 +40,21 @@ class TorchConvBenchmark(KernelBenchmark):
         input = torch.randn(input_shape, dtype=dtype, device="cuda")
         weight = torch.randn(weight_shape, dtype=dtype, device="cuda")
 
-        self._clear_mem()
         try:
-            start_event = torch.cuda.Event(enable_timing=True)
-            end_event = torch.cuda.Event(enable_timing=True)
-
-            start_event.record()
-            for _ in range(num_iterations):
-                torch.nn.functional.conv2d(
-                    input,
-                    weight,
-                    bias=None,
-                    stride=stride,
-                    padding=0,
-                    dilation=1,
-                    groups=1,
-                )
-            end_event.record()
-            torch.cuda.synchronize()
+            mean_time_us = benchmark_function_torch(
+                torch.nn.functional.conv2d,
+                input,
+                weight,
+                bias=None,
+                stride=stride,
+                padding=0,
+                dilation=1,
+                groups=1,
+                iterations=num_iterations,
+            )
 
         except Exception as e:
             self.logger.error(f"Failed to benchmark kernel {config.get_name()}: {e}")
             return self.get_bench_result(0, False)
-        self._clear_mem(input, weight)
-
-        delta_time_ms = start_event.elapsed_time(end_event)
-        delta_time_us = delta_time_ms * 1e3
-        mean_time_us = delta_time_us / num_iterations
 
         return self.get_bench_result(mean_time_us, True)

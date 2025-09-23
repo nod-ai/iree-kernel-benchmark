@@ -1,3 +1,4 @@
+import json
 import numpy as np
 from typing import Dict, List, Tuple, Any, Callable, Optional
 from dataclasses import asdict, dataclass, replace
@@ -198,14 +199,14 @@ class MultiPassTreeTuner(TuningParadigm):
             if self.tuning_spec.validate_constraints(config)[0]
         ]
 
-        num_trials = self.context.num_trials
-        max_configs = num_trials // self.num_passes + num_trials // 10
-        if len(pruned_configurations) <= max_configs:
-            return pruned_configurations
+        # num_trials = self.context.num_trials
+        # max_configs = num_trials // self.num_passes + num_trials // 10
+        # if len(pruned_configurations) <= max_configs:
+        #     return pruned_configurations
 
-        pruned_configurations = list(
-            np.random.choice(pruned_configurations, size=max_configs)
-        )
+        # pruned_configurations = list(
+        #     np.random.choice(pruned_configurations, size=max_configs)
+        # )
         return pruned_configurations
 
     def _evaluate_configurations(
@@ -250,13 +251,21 @@ class MultiPassTreeTuner(TuningParadigm):
         def compile_callback(compile_res):
             self.progress.update(increment=1)
 
-        def bench_callback(bench_res):
+        def bench_callback(bench_res: BenchmarkResult):
             nonlocal old_total
             if old_total:
                 self.progress.configure(
                     total=old_total, description=f"Benchmarking", color="blue"
                 )
                 old_total = None
+
+            self.bench_results.append(
+                {
+                    "config": bench_res.tuning_config,
+                    "success": bench_res.ok,
+                }
+            )
+
             self.progress.update(increment=1)
 
         scores = batch_benchmark(
@@ -266,6 +275,7 @@ class MultiPassTreeTuner(TuningParadigm):
             timeout=self.base_exec_time * 3 if self.base_exec_time else None,
             compile_callback=compile_callback,
             bench_callback=bench_callback,
+            validate_numerics=False,
             verbose=True,
             unique_ids=True,
         )
@@ -289,6 +299,8 @@ class MultiPassTreeTuner(TuningParadigm):
         Returns:
             Tuple of (best_configuration, best_score)
         """
+        self.bench_results = []
+
         self.initialize(context, progress)
         bench = context.bench
 
@@ -363,6 +375,19 @@ class MultiPassTreeTuner(TuningParadigm):
             self.logger.info(f"Final best configuration: {best_config}")
             self.logger.info(
                 f"Total evaluations: {sum(h['num_evaluations'] for h in self.history)}"
+            )
+
+        with open(
+            f"results/tuning/history/{context.bench.kernel_type}_{context.bench.backend}_{context.device_id}.json",
+            "w",
+        ) as file:
+            json.dump(
+                {
+                    "config": context.bench.config.to_dict(),
+                    "history": self.bench_results,
+                },
+                file,
+                indent=4,
             )
 
         return best_score
