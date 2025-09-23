@@ -4,10 +4,6 @@ on:
   pull_request:
   workflow_dispatch:
     inputs:
-      iterations:
-        description: "Number of iterations per benchmark"
-        required: false
-        default: "1"
       max_kernels:
         description: "Maximum number of kernels to benchmark"
         required: false
@@ -55,7 +51,6 @@ jobs:
 
     env:
       WAVE_CACHE_ON: 0
-      ITERATIONS: ${{ inputs.iterations || '1' }}
       MAX_KERNELS: ${{ inputs.max_kernels || '50' }}
       SELECTED_BACKEND: ${{ inputs.selected_backend || 'all' }}
       SELECTED_KERNEL: ${{ inputs.selected_kernel || 'all' }}
@@ -96,7 +91,7 @@ jobs:
       - name: Run Benchmarks
         run: |
           source bench_venv/bin/activate
-          python3 -m kernel_bench.cli.bench --backend=${{ env.SELECTED_BACKEND }} --kernel_type=${{ env.SELECTED_KERNEL }} --iterations=${{ env.ITERATIONS }} --max_kernels=${{ env.MAX_KERNELS }} --machine=mi325x
+          python3 -m kernel_bench.cli.bench --backend=${{ env.SELECTED_BACKEND }} --kernel_type=${{ env.SELECTED_KERNEL }} --max_kernels=${{ env.MAX_KERNELS }} --machine=mi325x
 
       - name: Tag result
         if: ${{ inputs.metadata }}

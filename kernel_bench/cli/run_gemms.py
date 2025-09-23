@@ -250,8 +250,6 @@ if __name__ == "__main__":
 
         logger.info(f"Running GEMM benchmarks for backend {backend_name}")
 
-        iterations = 1 if backend_name in ["iree", "wave"] else 20
-
         bench = BenchmarkRunner(
             backend=backend_name,
             kernel_type="gemm",
@@ -261,7 +259,7 @@ if __name__ == "__main__":
             kernel_dir=kernel_dir,
             dump_dir=None,
             debug=True,
-            num_iterations=iterations,
+            num_iterations=50,
             title=None,
         )
         logger.info(

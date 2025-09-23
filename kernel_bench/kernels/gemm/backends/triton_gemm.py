@@ -30,7 +30,6 @@ class TritonGemmBenchmark(KernelBenchmark):
         return True
 
     def run_bench(self, device, num_iterations=1, timeout=None):
-        num_iterations = 20
         config = self.config
 
         in_dtype = config.operand_element_type

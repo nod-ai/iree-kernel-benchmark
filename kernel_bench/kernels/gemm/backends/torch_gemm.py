@@ -20,7 +20,6 @@ class TorchGemmBenchmark(KernelBenchmark):
 
     @override
     def run_bench(self, device, num_iterations, timeout):
-        num_iterations = 20
         config = self.config
 
         transposeA = config.tA == "T"

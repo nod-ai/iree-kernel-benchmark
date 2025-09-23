@@ -173,9 +173,9 @@ class IREEKernelBenchmark(KernelBenchmark):
         runtime_us, ok = bench_kernel_ireert(
             vmfb_filename,
             self.config.get_runtime_args(self.backend),
-            num_iterations,
-            device,
-            timeout,
+            num_iterations=1,
+            device=device,
+            timeout=timeout,
         )
         return self.get_bench_result(runtime_us, ok)
 

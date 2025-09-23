@@ -154,7 +154,7 @@ from kernel_bench.utils.torch_utils import benchmark_function_torch
 class TritonExtendAttentionBenchmark(KernelBenchmark):
     config: AttentionConfigExtend
 
-    def run_bench(self, device, num_iterations=1, timeout=None):
+    def run_bench(self, device, num_iterations, timeout=None):
         inputs = self.config.get_inputs()
 
         try:
