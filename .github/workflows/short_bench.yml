@@ -88,6 +88,13 @@ jobs:
           cd ..
           pip install -r requirements.txt
 
+      - name: Install Triton
+        run: |
+          source bench_venv/bin/activate
+          git clone --recursive https://github.com/ROCm/aiter.git
+          cd aiter
+          python setup.py develop
+
       - name: Run Benchmarks
         run: |
           source bench_venv/bin/activate
