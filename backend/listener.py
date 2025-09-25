@@ -1,5 +1,5 @@
-from webhook import WorkflowListener, WaveUpdateListener
-from auth import get_azure_clients
+from backend.webhook import WorkflowListener, WaveUpdateListener
+from backend.storage.auth import get_azure_clients
 from wsgiref.simple_server import make_server
 from pyramid.config import Configurator
 from pyramid.view import view_config, view_defaults

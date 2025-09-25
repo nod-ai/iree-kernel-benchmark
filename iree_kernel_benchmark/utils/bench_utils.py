@@ -107,7 +107,7 @@ def generate_md5_hex(file_path):
 
 def run_iree_command(args: Sequence[str] = ()):
     command = "Exec:", " ".join(args)
-    logging.getLogger().info(command)
+    logging.getLogger("backend").info(command)
     proc = subprocess.run(
         args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False
     )
@@ -121,7 +121,7 @@ def run_iree_command(args: Sequence[str] = ()):
     return_code = proc.returncode
     if return_code == 0:
         return 0, proc.stdout, proc.stderr
-    logging.getLogger().error(
+    logging.getLogger("backend").error(
         f"Command failed!\n"
         f"Stderr diagnostics:\n{proc.stderr}\n"
         f"Stdout diagnostics:\n{proc.stdout}\n"

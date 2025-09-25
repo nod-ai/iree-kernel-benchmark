@@ -1,7 +1,15 @@
+import logging
+from backend.github_utils import trigger_workflow_dispatch, create_gist, get_repo
+from backend.runs import RunType, get_artifact_parser
+from backend.runs.run_utils import get_run_by_blob_name
+from backend.runs.tracker import get_run_tracker
+from backend.storage.rebase import rebase_all
+from backend.webhook.wave_update import WaveUpdateListener
+from backend.storage.auth import get_azure_clients
+
 from uuid import uuid4
 from flask import Flask, jsonify, request, make_response
 from flask_cors import CORS
-import json
 from dataclass_wizard import fromdict, asdict
 from functools import wraps
 import jwt
@@ -10,17 +18,9 @@ import os
 from werkzeug.security import check_password_hash, generate_password_hash
 from dotenv import load_dotenv
 
-from storage.runs import trigger_workflow_dispatch, upload_json_to_gist
-from storage.rebase import rebase_all
-from webhook.wave_update import WaveUpdateListener
-from auth import get_azure_clients, get_repo
-from storage.artifacts import (
-    load_artifact_kernels,
-    fill_new_kernels,
-)
-
 
 db_client, directory_client = get_azure_clients()
+logging.getLogger("backend").setLevel(logging.DEBUG)
 
 app = Flask(__name__)
 CORS(app, supports_credentials=True)
@@ -132,19 +132,13 @@ def get_all_perfs():
     return jsonify([asdict(perf) for perf in perfs])
 
 
-@app.route("/artifact/<run_id>")
-def get_artifact_by_run_id(run_id):
-    new_kernels = load_artifact_kernels(directory_client, f"{run_id}/benchmark-results")
-    if run_id == "baseline":
+@app.route("/artifact/<blob_name>")
+def get_artifact_by_run_id(blob_name):
+    new_kernels = get_artifact_parser(RunType.BENCHMARK).load_data(blob_name)
+    if new_kernels:
         return jsonify(new_kernels)
-
-    print(any([k["backend"] == "wavenew" for k in new_kernels]))
-
-    # old_kernels = load_artifact_kernels(directory_client, "baseline/benchmark-results")
-    # filled_kernels = fill_new_kernels(old_kernels, new_kernels)
-    # print(any([k["backend"] == "wavenew" for k in filled_kernels]))
-
-    return jsonify(new_kernels)
+    else:
+        return "Failed to gather artifact data", 500
 
 
 @app.route("/workflow/trigger", methods=["POST"])
@@ -193,7 +187,7 @@ def tune_kernels():
     tuning_kernels = [asdict(k) for k in kernels if k.id in kernel_ids]
 
     tuning_request_id = uuid4()
-    tuning_upload = upload_json_to_gist(
+    tuning_upload = create_gist(
         tuning_kernels,
         filename=f"tuning-request-{tuning_request_id}",
         description=f"Tuning configuration for {len(tuning_kernels)} kernels",

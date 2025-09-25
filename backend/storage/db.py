@@ -239,7 +239,7 @@ class DatabaseClient:
             )
 
     # PerformanceRun methods
-    def insert_performance(self, performance: PerformanceRun) -> str:
+    def insert_performance(self, performance: WorkflowRunBase) -> str:
         performance_obj = flatten_entry(
             performance, row_key=performance._id, partition="performance"
         )
@@ -375,7 +375,7 @@ class DatabaseClient:
         return latest_config_by_kernel
 
     # Additional helper methods for querying
-    def query_performances(self, query: str) -> list[PerformanceRun]:
+    def query_performances(self, query: str) -> list[WorkflowRunBase]:
         entities = list(
             self._performance_tb.query_entities(
                 query, headers={"Accept": "application/json;odata=nometadata"}
@@ -384,15 +384,15 @@ class DatabaseClient:
         performances = []
         for entity in entities:
             entity["changeStats"] = json.loads(entity["changeStats"])
-            performances.append(fromdict(PerformanceRun, entity))
+            performances.append(fromdict(WorkflowRunBase, entity))
         return performances
 
-    def find_performance_by_id(self, performance_id: str) -> PerformanceRun:
+    def find_performance_by_id(self, performance_id: str) -> WorkflowRunBase:
         entity = self._performance_tb.get_entity(
             partition_key="performance", row_key=performance_id
         )
         entity["changeStats"] = json.loads(entity["changeStats"])
-        return fromdict(PerformanceRun, entity)
+        return fromdict(WorkflowRunBase, entity)
 
     def query_kernels(self, query: str) -> list[Kernel]:
         entities = list(
@@ -413,7 +413,7 @@ class DatabaseClient:
         entity["problem"] = json.loads(entity["problem"])
         return fromdict(Kernel, entity)
 
-    def find_all_performances(self) -> list[PerformanceRun]:
+    def find_all_performances(self) -> list[WorkflowRunBase]:
         entities = list(
             self._performance_tb.list_entities(
                 headers={"Accept": "application/json;odata=nometadata"}
@@ -422,7 +422,10 @@ class DatabaseClient:
         performances = []
         for entity in entities:
             entity["changeStats"] = json.loads(entity["changeStats"])
-            performances.append(fromdict(PerformanceRun, entity))
+            try:
+                performances.append(fromdict(WorkflowRunBase, entity))
+            except:
+                continue
 
         # Sort by timestamp in descending order (most recent first)
         performances.sort(key=lambda x: x.timestamp, reverse=True)

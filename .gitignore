@@ -33,3 +33,4 @@ gemm/
 results/
 kernels/
 dump/
+tmp/

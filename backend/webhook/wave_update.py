@@ -1,9 +1,9 @@
+from backend.github_utils import get_repo, get_github_token
+from backend.globals import BENCH_ITERATIONS, MAX_BENCH_KERNELS, RUN_ALL_BACKENDS
+from backend.storage.db import DatabaseClient
+from backend.storage.directory import DirectoryClient
+from backend.storage.types import *
 from datetime import timezone
-from auth import get_repo, get_github_token
-from globals import BENCH_ITERATIONS, MAX_BENCH_KERNELS, RUN_ALL_BACKENDS, TESTING_MODE
-from storage.db import DatabaseClient
-from storage.directory import DirectoryClient
-from storage.types import *
 from dataclass_wizard import asdict
 import json
 import requests
@@ -49,7 +49,7 @@ class WaveUpdateListener:
         self, repo_name: str, branch_name: str, head_sha: str, metadata: dict = None
     ) -> bool:
         bench_repo_name = self._bench_repo.full_name
-        workflow_id = "main.yml" if TESTING_MODE else "short_bench.yml"
+        workflow_id = "short_bench.yml"
         token = get_github_token("bench")
 
         url = f"https://api.github.com/repos/{bench_repo_name}/actions/workflows/{workflow_id}/dispatches"

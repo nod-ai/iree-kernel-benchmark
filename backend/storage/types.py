@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional, Any
 
@@ -13,17 +13,22 @@ type ChangeStats = dict[str, float]
 
 
 @dataclass
-class PerformanceRun:
+class WorkflowRunBase:
     _id: str
     blobName: str
     timestamp: datetime
-    changeStats: ChangeStats
+    status: str
+    conclusion: str
+    numSteps: int
+    steps: list[dict]
+    completed: bool = False
+    hasArtifact: bool = False
+    mappingId: Optional[str] = None
 
 
 @dataclass
-class TuningRun(PerformanceRun):
-    completed: bool = False
-    hasArtifact: bool = False
+class TuningRun(WorkflowRunBase):
+    pass
 
 
 @dataclass
@@ -36,14 +41,8 @@ class TuningConfig:
 
 
 @dataclass
-class BenchmarkRun(PerformanceRun):
-    # _id: str
-    headSha: str
-    status: str
-    conclusion: str
-    numSteps: int
-    steps: list[dict]
-    hasArtifact: bool = False
+class BenchmarkRun(WorkflowRunBase):
+    changeStats: ChangeStats = field(default_factory=dict)
 
 
 @dataclass

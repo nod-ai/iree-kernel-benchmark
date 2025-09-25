@@ -1,5 +1,5 @@
-from storage.directory import DirectoryClient
-from storage.db import DatabaseClient
+from backend.storage.directory import DirectoryClient
+from backend.storage.db import DatabaseClient
 from dotenv import load_dotenv
 import os
 

@@ -1,0 +1,78 @@
+from datetime import datetime, timezone
+import json
+import os
+from pathlib import Path
+from typing import Dict, List, override
+from uuid import uuid4
+
+from backend.github_utils.gist import update_gist
+from backend.storage.auth import get_azure_clients
+from backend.storage.directory import DirectoryClient
+from backend.storage.types import TuningConfig
+from backend.storage.utils import get_nested_files
+from .artifact_parsing import RunArtifactParser
+
+
+class TuningArtifactParser(RunArtifactParser):
+    @override
+    def _parse_from_local_path(self, local_path):
+        return parse_tuning_results_from_path(local_path)
+
+    @override
+    def _save_artifact(self, local_path, artifact_data, run):
+        db_client, dir_client = get_azure_clients()
+        blob_name = run.blobName
+
+        if len(artifact_data) == 0:
+            self._logger.error("Failed to parse artifact")
+            return False
+
+        db_client.insert_tuning_configs(artifact_data)
+        self._logger.debug(f"Saved {len(artifact_data)} tuning results to database")
+
+        try:
+            self._logger.debug(f"Uploading artifacts to azure path {blob_name}")
+            dir_client.upload(f"{local_path}/tuning-results", blob_name)
+        except:
+            self._logger.error(f"Blob {blob_name} already exists. Skipped upload")
+            return False
+        self._logger.debug(f"Saved {len(artifact_data)} tuning results to blob storage")
+
+        updated_configs = db_client.find_latest_tuning_configs()
+        updated_gist = update_gist(os.getenv("TUNING_GIST_ID"), updated_configs)
+        if updated_gist:
+            self._logger.debug(
+                f"Saved updated tuning results to gist {updated_gist.gist_url}"
+            )
+
+        return True
+
+
+def parse_tuning_results_from_path(
+    artifact_path: os.PathLike, run_id: str
+) -> list[TuningConfig]:
+    artifact_path = Path(artifact_path)
+
+    results: list[TuningConfig] = []
+    for result_json in get_nested_files(artifact_path, "json"):
+        results.extend(load_tuning_result_json(result_json, run_id))
+
+    return results
+
+
+def load_tuning_result_json(json_path: os.PathLike, run_id: str) -> List[TuningConfig]:
+    with open(json_path, "r") as file:
+        results: dict[str, dict] = json.load(file)
+
+    results = [
+        TuningConfig(
+            _id=str(uuid4()),
+            timestamp=datetime.now(tz=timezone.utc),
+            run_id=run_id,
+            kernel_name=kernel_name,
+            result=result,
+        )
+        for kernel_name, result in results.items()
+    ]
+
+    return results

@@ -1,14 +1,11 @@
-from auth import get_repo
-from storage.conversion import random_stats
-from globals import TESTING_MODE
-from storage.db import DatabaseClient
-from storage.directory import DirectoryClient
-from storage.types import *
-from storage.artifacts import save_run_artifact
+import logging
+from backend.github_utils import get_repo
+from backend.storage.auth import get_azure_clients
+from backend.storage.db import DatabaseClient
+from backend.storage.directory import DirectoryClient
+from backend.storage.types import *
 from dataclass_wizard import asdict
-from github import Github, Auth
 import json
-from azure.core.exceptions import ResourceNotFoundError
 
 
 def jsonify(model) -> str:
@@ -16,10 +13,10 @@ def jsonify(model) -> str:
 
 
 class WorkflowListener:
-    def __init__(self, db_client: DatabaseClient, storage_client: DirectoryClient):
+    def __init__(self):
         self._repo = get_repo("bench")
-        self._db_client = db_client
-        self._storage_client = storage_client
+        self._db_client, self._storage_client = get_azure_clients()
+        self._logger = logging.getLogger("backend")
 
     def _handle_workflow_run_requested(self, workflow_name: str, run_payload: dict):
         run_data = run_payload["workflow_run"]
@@ -31,14 +28,14 @@ class WorkflowListener:
                 headSha="undefined",
                 status=run_data["status"],
                 conclusion=run_data["conclusion"] or "unknown",
-                numSteps=7 if TESTING_MODE else 17,
+                numSteps=10,
                 steps=[],
                 blobName=run_data["updated_at"],
                 timestamp=datetime.fromisoformat(run_data["updated_at"]),
                 changeStats={},
                 hasArtifact=False,
             )
-            print("adding new benchmark run", run_id, jsonify(run))
+            self._logger.info("adding new benchmark run", run_id, jsonify(run))
             self._db_client.insert_run(run)
 
         elif workflow_name == "Tune Wave Kernels":
@@ -49,7 +46,7 @@ class WorkflowListener:
                 changeStats={},
                 hasArtifact=False,
             )
-            print("adding new tuning run", run_id, jsonify(run))
+            self._logger.info("adding new tuning run", run_id, jsonify(run))
             self._db_client.insert_tuning_run(run)
 
     def _handle_workflow_run_progress(self, workflow_name: str, run_payload: dict):
@@ -57,7 +54,7 @@ class WorkflowListener:
         run_id = str(run_data["id"])
 
         if workflow_name == "Short Benchmark":
-            print("updating benchmark run", run_id, run_data["status"])
+            self._logger.info("updating benchmark run", run_id, run_data["status"])
             self._db_client.update_run(
                 run_id,
                 {
@@ -68,7 +65,7 @@ class WorkflowListener:
             )
 
         elif workflow_name == "Tune Wave Kernels":
-            print("updating tuning run", run_id, run_data["status"])
+            self._logger.info("updating tuning run", run_id, run_data["status"])
 
             if run_data["status"] == "completed":
                 if run_data["conclusion"] == "success":
@@ -101,7 +98,7 @@ class WorkflowListener:
         run_id = str(job_payload["workflow_job"]["run_id"])
         steps = job_payload["workflow_job"]["steps"]
 
-        print("updating job", json.dumps(steps, indent=4))
+        self._logger.info("updating job", json.dumps(steps, indent=4))
 
         try:
             self._db_client.update_run(run_id, {"steps": steps})

@@ -1,9 +1,8 @@
-from auth import get_azure_clients, get_repo
+from backend.storage.auth import get_azure_clients
+from backend.github_utils import get_repo
 from .conversion import parse_modification
 from .artifacts import (
-    download_artifact_kernels,
     compare_artifact_kernels,
-    save_results_from_local_path,
 )
 from .types import *
 from pathlib import Path
@@ -18,7 +17,7 @@ def rebase_performance(limit=10):
 
     gh_perf_runs = wave.get_workflow("run_bench.yml").get_runs(status="completed")
 
-    perf_runs: list[PerformanceRun] = []
+    perf_runs: list[WorkflowRunBase] = []
     perf_kernels: list[tuple[list[dict], Path]] = []
 
     i = 0
@@ -34,7 +33,7 @@ def rebase_performance(limit=10):
 
             date_str = run.created_at.strftime("%Y-%m-%d %H:%M:%S")
 
-            perf_run = PerformanceRun(
+            perf_run = WorkflowRunBase(
                 _id=str(run.id),
                 blobName=str(run.id),
                 timestamp=run.created_at,
