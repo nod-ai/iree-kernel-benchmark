@@ -1,13 +1,8 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from typing import Optional, Any
+from .repository import create_repository
 
-# @dataclass
-# class RunResultEntry:
-#     triggerId: str
-#     blobName: str
-#     runType: str
-#     timestamp: datetime
 
 type ChangeStats = dict[str, float]
 
@@ -46,12 +41,6 @@ class BenchmarkRun(WorkflowRunBase):
 
 
 @dataclass
-class RunArtifact:
-    kernels: list[dict]
-    mapping: BenchmarkRun
-
-
-@dataclass
 class Kernel:
     id: str
     kernelType: str
@@ -60,6 +49,7 @@ class Kernel:
     dtype: str
     allowedBackends: list[str]
     problem: dict[str, Any]
+    _id: str = None
 
 
 @dataclass
@@ -100,3 +90,24 @@ class RepoPullRequest(RepoModification):
 @dataclass
 class RepoMerge(RepoModification):
     prId: str
+
+
+TuningRunDb = create_repository(TuningRun, "tuningruns")
+"""Repository for tuning run data with full type safety."""
+
+TuningConfigDb = create_repository(TuningConfig, "tuningconfigs")
+"""Repository for tuning configuration data with full type safety."""
+
+BenchmarkRunDb = create_repository(BenchmarkRun, "runresults")
+"""Repository for benchmark run results with full type safety."""
+
+KernelDb = create_repository(Kernel, "kernels")
+"""Repository for kernel data with full type safety."""
+
+RepoPullRequestDb = create_repository(RepoPullRequest, "repomodifications")
+"""Repository for repository pull request data with full type safety."""
+
+RepoMergeDb = create_repository(RepoMerge, "repomodifications")
+"""Repository for repository merge data with full type safety."""
+
+PerformanceDb = create_repository(BenchmarkRun, "performanceruns")

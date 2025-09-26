@@ -8,10 +8,15 @@ from github.WorkflowRun import WorkflowRun
 from dataclass_wizard import fromdict
 
 from backend.github_utils.auth import get_repo
-from backend.runs import RunType, get_artifact_parser
+from backend.runs import RunType, get_artifact_parser, get_run_db
 from backend.runs.run_utils import RUN_INCOMPLETE_STATUSES, parse_run_json
-from backend.storage.auth import get_azure_clients
-from backend.storage.types import BenchmarkRun, TuningRun, WorkflowRunBase
+from backend.storage.auth import get_blob_client
+from backend.storage.types import (
+    BenchmarkRun,
+    BenchmarkRunDb,
+    TuningRun,
+    WorkflowRunBase,
+)
 
 
 class RunTracker:
@@ -23,10 +28,11 @@ class RunTracker:
         main_job: Optional[str] = None,
         identifier: Optional[str] = None,
     ):
-        self._db_client, self._blob_client = get_azure_clients()
+        self._blob_client = get_blob_client()
         self._bench_repo = get_repo("bench")
         self._logger = logging.getLogger("backend")
         self._artifact_parser = get_artifact_parser(run_type)
+        self._run_db = get_run_db(run_type)
 
         self._identifier = identifier
         self._main_job = main_job
@@ -53,13 +59,19 @@ class RunTracker:
         }
 
         if self._identifier:
-            gh_id_job = self._get_gh_job(gh_run, job_name="Identifier")
-            if gh_id_job:
-                for job_step in gh_id_job.steps:
-                    if job_step.name.startswith(f"{self._identifier}_"):
-                        mapping_id = job_step.name.split(f"{self._identifier}_")[1]
-                        db_run_update.update({"mappingId": mapping_id})
-                        break
+            try:
+                gh_id_job = self._get_gh_job(gh_run, job_name="Identifier")
+                if gh_id_job:
+                    for job_step in gh_id_job.steps:
+                        if job_step.name.startswith(f"{self._identifier}_"):
+                            mapping_id = job_step.name.split(f"{self._identifier}_")[1]
+                            db_run_update.update({"mappingId": mapping_id})
+                            break
+            except:
+                self._logger.warning(
+                    f"Failed to load identifier {self._identifier} for run_{self._run_id}"
+                )
+                pass
 
         if gh_main_job:
             job_steps = [
@@ -87,7 +99,7 @@ class RunTracker:
             )
 
         self._logger.debug(f"Updating run_{self._run_id} in db")
-        self._db_client.update_run(self._run_id, db_run_update)
+        self._run_db.update_by_id(self._run_id, db_run_update)
         self._load_data_from_db()
 
     def run_id(self) -> str:
@@ -126,7 +138,7 @@ class RunTracker:
             )
             if save_success:
                 try:
-                    self._db_client.update_run(self._run_id, {"hasArtifact": True})
+                    self._run_db.update_by_id(self._run_id, {"hasArtifact": True})
                 except Exception as e:
                     self._logger.error(
                         f"Failed to mark run_{self._run_id} with saved artifact",
@@ -140,8 +152,7 @@ class RunTracker:
         return False
 
     def _load_data_from_db(self):
-        run_json = self._db_client.find_run_by_id(self._run_id)
-        self._run = parse_run_json(run_json)
+        self._run = self._run_db.find_by_id(self._run_id)
 
     def _get_gh_run(self) -> Optional[WorkflowRun]:
         try:

@@ -11,7 +11,7 @@ import requests
 
 from backend.github_utils.auth import get_github_token
 from backend.storage.artifacts import download_artifact
-from backend.storage.auth import get_azure_clients
+from backend.storage.auth import get_blob_client
 from backend.storage.types import WorkflowRunBase
 
 
@@ -22,7 +22,7 @@ class RunArtifactParser(ABC):
         self._logger = logging.getLogger("backend")
 
     def load_data(self, blob_name: str) -> Optional[Any]:
-        _, dir_client = get_azure_clients()
+        dir_client = get_blob_client()
         local_path = self._local_tmp_dir / str(uuid4())
         dir_client.download(blob_name, str(local_path))
         local_path = local_path / blob_name

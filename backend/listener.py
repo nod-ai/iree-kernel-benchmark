@@ -1,15 +1,11 @@
 from backend.webhook import WorkflowListener, WaveUpdateListener
-from backend.storage.auth import get_azure_clients
 from wsgiref.simple_server import make_server
 from pyramid.config import Configurator
 from pyramid.view import view_config, view_defaults
 from pyramid.response import Response
 
-
-db_client, dir_client = get_azure_clients()
-
-workflow_client = WorkflowListener(db_client, dir_client)
-wave_update_client = WaveUpdateListener(db_client, dir_client)
+workflow_client = WorkflowListener()
+wave_update_client = WaveUpdateListener()
 
 ENDPOINT = "webhook"
 

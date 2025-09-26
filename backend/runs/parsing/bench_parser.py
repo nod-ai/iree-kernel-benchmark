@@ -9,7 +9,8 @@ from uuid import uuid4
 import pandas as pd
 
 from backend.storage.artifacts import compare_artifact_kernels
-from backend.storage.auth import get_azure_clients
+from backend.storage.auth import get_blob_client
+from backend.storage.types import BenchmarkRunDb
 from backend.storage.utils import convert_dict_case
 from .artifact_parsing import RunArtifactParser
 
@@ -21,7 +22,7 @@ class BenchmarkArtifactParser(RunArtifactParser):
 
     @override
     def _save_artifact(self, local_path, artifact_data, run):
-        db_client, dir_client = get_azure_clients()
+        dir_client = get_blob_client()
         blob_name = run.blobName
         run_id = run._id
 
@@ -39,7 +40,7 @@ class BenchmarkArtifactParser(RunArtifactParser):
 
         try:
             change_stats = compare_artifact_kernels(baseline_kernels, artifact_data)
-            db_client.update_run(run_id, {"changeStats": change_stats})
+            BenchmarkRunDb.update_by_id(run_id, {"changeStats": change_stats})
             return True
         except Exception as e:
             self._logger.error(

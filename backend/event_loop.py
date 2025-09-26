@@ -1,12 +1,10 @@
 from backend.github_utils import get_repo
 from backend.runs.manager import RunManager
-from backend.storage.auth import get_azure_clients
 import time
 import traceback
 
 UPDATE_RUNS_INTERVAL = 10  # seconds
 
-db_client, dir_client = get_azure_clients()
 repo = get_repo("bench")
 
 

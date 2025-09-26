@@ -5,7 +5,7 @@ from backend.github_utils.auth import get_repo
 from backend.runs import RunType
 from backend.runs.run_utils import find_incomplete_runs
 from backend.runs.tracker import get_run_tracker
-from backend.storage.auth import get_azure_clients
+from backend.storage.auth import get_blob_client
 from backend.storage.types import WorkflowRunBase
 
 
@@ -15,7 +15,7 @@ class RunManager:
             runs = []
         self._trackers = {run._id: get_run_tracker(run) for run in runs}
         self._logger = logging.getLogger("backend")
-        self._db_client, self._dir_client = get_azure_clients()
+        self._dir_client = get_blob_client()
         self.load_incomplete_runs()
 
     def load_incomplete_runs(self):

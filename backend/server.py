@@ -4,8 +4,9 @@ from backend.runs import RunType, get_artifact_parser
 from backend.runs.run_utils import get_run_by_blob_name
 from backend.runs.tracker import get_run_tracker
 from backend.storage.rebase import rebase_all
+from backend.storage.types import *
 from backend.webhook.wave_update import WaveUpdateListener
-from backend.storage.auth import get_azure_clients
+from backend.storage.auth import get_blob_client
 
 from uuid import uuid4
 from flask import Flask, jsonify, request, make_response
@@ -19,7 +20,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from dotenv import load_dotenv
 
 
-db_client, directory_client = get_azure_clients()
+directory_client = get_blob_client()
 logging.getLogger("backend").setLevel(logging.DEBUG)
 
 app = Flask(__name__)
@@ -110,25 +111,25 @@ def logout():
 
 @app.route("/pull_requests")
 def get_pull_requests():
-    modifications = db_client.find_all_modifications()
+    modifications = RepoPullRequestDb.find_all()
     return jsonify([asdict(modification) for modification in modifications])
 
 
 @app.route("/runs")
 def get_all_runs():
-    runs = db_client.find_all_runs()
+    runs = BenchmarkRunDb.find_all()
     return jsonify([asdict(run) for run in runs])
 
 
 @app.route("/kernels")
 def get_all_kernels():
-    kernels = db_client.find_all_kernels()
+    kernels = KernelDb.find_all()
     return jsonify([asdict(k) for k in kernels])
 
 
 @app.route("/performances")
 def get_all_perfs():
-    perfs = db_client.find_all_performances()
+    perfs = PerformanceDb.find_all()
     return jsonify([asdict(perf) for perf in perfs])
 
 
@@ -144,7 +145,7 @@ def get_artifact_by_run_id(blob_name):
 @app.route("/workflow/trigger", methods=["POST"])
 def trigger_workflow():
     pr_data = request.get_json()
-    wave_client = WaveUpdateListener(db_client, directory_client)
+    wave_client = WaveUpdateListener()
     trigger_success = wave_client.trigger_workflow(
         pr_data["repoName"], pr_data["branchName"], pr_data["headSha"]
     )
@@ -168,8 +169,8 @@ def cancel_workflow():
 @app.route("/rebase", methods=["POST"])
 def rebase_prs():
     rebase_all()
-    modifications = db_client.find_all_modifications()
-    performances = db_client.find_all_performances()
+    modifications = RepoPullRequestDb.find_all()
+    performances = PerformanceDb.find_all()
     return jsonify(
         {
             "modifications": [asdict(modification) for modification in modifications],
@@ -183,7 +184,7 @@ def tune_kernels():
     payload = request.get_json()
     kernel_ids = [str(id) for id in payload["kernel_ids"]]
 
-    kernels = db_client.find_all_kernels()
+    kernels = KernelDb.find_all()
     tuning_kernels = [asdict(k) for k in kernels if k.id in kernel_ids]
 
     tuning_request_id = uuid4()
@@ -217,7 +218,7 @@ def tune_kernels():
 
 @app.route("/tune/results", methods=["GET"])
 def get_tuned_results():
-    return jsonify(db_client.find_all_tuning_configs())
+    return jsonify(TuningConfigDb.find_all())
 
 
 def serve_backend(port=3000):

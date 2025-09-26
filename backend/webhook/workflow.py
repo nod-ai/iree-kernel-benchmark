@@ -1,7 +1,7 @@
 import logging
 from backend.github_utils import get_repo
-from backend.storage.auth import get_azure_clients
-from backend.storage.db import DatabaseClient
+from backend.storage.auth import get_blob_client
+from backend.legacy.db import DatabaseClient
 from backend.storage.directory import DirectoryClient
 from backend.storage.types import *
 from dataclass_wizard import asdict
@@ -15,7 +15,7 @@ def jsonify(model) -> str:
 class WorkflowListener:
     def __init__(self):
         self._repo = get_repo("bench")
-        self._db_client, self._storage_client = get_azure_clients()
+        self._storage_client = get_blob_client()
         self._logger = logging.getLogger("backend")
 
     def _handle_workflow_run_requested(self, workflow_name: str, run_payload: dict):
@@ -36,7 +36,7 @@ class WorkflowListener:
                 hasArtifact=False,
             )
             self._logger.info("adding new benchmark run", run_id, jsonify(run))
-            self._db_client.insert_run(run)
+            BenchmarkRunDb.upsert(run)
 
         elif workflow_name == "Tune Wave Kernels":
             run = TuningRun(
@@ -47,7 +47,7 @@ class WorkflowListener:
                 hasArtifact=False,
             )
             self._logger.info("adding new tuning run", run_id, jsonify(run))
-            self._db_client.insert_tuning_run(run)
+            TuningRunDb.upsert(run)
 
     def _handle_workflow_run_progress(self, workflow_name: str, run_payload: dict):
         run_data = run_payload["workflow_run"]
@@ -55,7 +55,7 @@ class WorkflowListener:
 
         if workflow_name == "Short Benchmark":
             self._logger.info("updating benchmark run", run_id, run_data["status"])
-            self._db_client.update_run(
+            BenchmarkRunDb.update_by_id(
                 run_id,
                 {
                     "status": run_data["status"],
@@ -69,9 +69,9 @@ class WorkflowListener:
 
             if run_data["status"] == "completed":
                 if run_data["conclusion"] == "success":
-                    self._db_client.update_tuning_run(run_id, {"completed": True})
+                    TuningRunDb.update_by_id(run_id, {"completed": True})
                 else:
-                    self._db_client.delete_tuning_run(run_id)
+                    TuningRunDb.delete_by_id(run_id)
 
     def handle_workflow_run_payload(self, run_payload: dict):
         if run_payload["workflow_run"]["event"] != "workflow_dispatch":
@@ -101,6 +101,6 @@ class WorkflowListener:
         self._logger.info("updating job", json.dumps(steps, indent=4))
 
         try:
-            self._db_client.update_run(run_id, {"steps": steps})
+            BenchmarkRunDb.update_by_id(run_id, {"steps": steps})
         except Exception as e:
             return

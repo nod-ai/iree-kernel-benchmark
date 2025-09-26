@@ -1,4 +1,4 @@
-from backend.storage.auth import get_azure_clients
+from backend.storage.auth import get_blob_client
 from backend.github_utils import get_repo
 from .conversion import parse_modification
 from .artifacts import (
@@ -12,7 +12,7 @@ from dataclass_wizard import asdict
 
 
 def rebase_performance(limit=10):
-    db_client, dir_client = get_azure_clients()
+    dir_client = get_blob_client()
     wave = get_repo("bench")
 
     gh_perf_runs = wave.get_workflow("run_bench.yml").get_runs(status="completed")
@@ -82,7 +82,7 @@ def rebase_performance(limit=10):
 
 
 def rebase_modifications(limit=40):
-    db_client, dir_client = get_azure_clients()
+    db_client, dir_client = get_blob_client()
     db_client.clear_all_repos()
 
     wave_repo = get_repo("wave")

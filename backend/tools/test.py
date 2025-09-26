@@ -1,4 +1,4 @@
-from backend.storage.auth import get_azure_clients
+from backend.storage.auth import get_blob_client
 from backend.github_utils import get_repo
 from backend.storage.artifacts import *
 from backend.storage.types import *
@@ -11,7 +11,7 @@ from pathlib import Path
 from dataclass_wizard import asdict
 import os
 
-db_client, dir_client = get_azure_clients()
+db_client, dir_client = get_blob_client()
 
 # db_client.clear_all_kernels()
 # with open("test/configs.json", "r") as file:

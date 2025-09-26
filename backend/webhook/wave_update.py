@@ -1,6 +1,7 @@
 from backend.github_utils import get_repo, get_github_token
 from backend.globals import BENCH_ITERATIONS, MAX_BENCH_KERNELS, RUN_ALL_BACKENDS
-from backend.storage.db import DatabaseClient
+from backend.legacy.db import DatabaseClient
+from backend.storage.auth import get_blob_client
 from backend.storage.directory import DirectoryClient
 from backend.storage.types import *
 from datetime import timezone
@@ -39,11 +40,10 @@ class WaveUpdateListener:
     - unlocked
     """
 
-    def __init__(self, db_client: DatabaseClient, storage_client: DirectoryClient):
+    def __init__(self):
         self._wave_repo = get_repo("wave")
         self._bench_repo = get_repo("bench")
-        self._db_client = db_client
-        self._storage_client = storage_client
+        self._storage_client = get_blob_client()
 
     def trigger_workflow(
         self, repo_name: str, branch_name: str, head_sha: str, metadata: dict = None
@@ -100,7 +100,7 @@ class WaveUpdateListener:
             repoName=pr_obj["head"]["repo"]["full_name"],
             branchName=pr_obj["head"]["ref"],
         )
-        self._db_client.insert_pull_request(pr)
+        RepoPullRequestDb.upsert(pr)
 
         if pr_obj["merged"]:
             merge = RepoMerge(
@@ -112,7 +112,7 @@ class WaveUpdateListener:
                 author=author,
                 prId=str(pr_obj["id"]),
             )
-            self._db_client.insert_merge(merge)
+            RepoMergeDb.upsert(merge)
             return asdict(merge)
         else:
             return asdict(pr)
@@ -135,9 +135,7 @@ class WaveUpdateListener:
         entry_id = f"{pr_obj['id']}_merge" if is_merge else str(pr_obj["id"])
 
         try:
-            mod = self._db_client.find_modification_by_id(
-                "merge" if is_merge else "pr", entry_id
-            )
+            mod = RepoPullRequestDb.find_by_id(entry_id)
             print("Found modification in database")
             has_changed = pr_obj["commits"] != mod.commits
         except:

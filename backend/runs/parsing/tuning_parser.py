@@ -5,10 +5,12 @@ from pathlib import Path
 from typing import Dict, List, override
 from uuid import uuid4
 
+from dataclass_wizard import asdict, fromdict
+
 from backend.github_utils.gist import update_gist
-from backend.storage.auth import get_azure_clients
+from backend.storage.auth import get_blob_client
 from backend.storage.directory import DirectoryClient
-from backend.storage.types import TuningConfig
+from backend.storage.types import TuningConfig, TuningConfigDb
 from backend.storage.utils import get_nested_files
 from .artifact_parsing import RunArtifactParser
 
@@ -20,14 +22,14 @@ class TuningArtifactParser(RunArtifactParser):
 
     @override
     def _save_artifact(self, local_path, artifact_data, run):
-        db_client, dir_client = get_azure_clients()
+        dir_client = get_blob_client()
         blob_name = run.blobName
 
         if len(artifact_data) == 0:
             self._logger.error("Failed to parse artifact")
             return False
 
-        db_client.insert_tuning_configs(artifact_data)
+        TuningConfigDb.upsert_many(artifact_data)
         self._logger.debug(f"Saved {len(artifact_data)} tuning results to database")
 
         try:
@@ -38,8 +40,9 @@ class TuningArtifactParser(RunArtifactParser):
             return False
         self._logger.debug(f"Saved {len(artifact_data)} tuning results to blob storage")
 
-        updated_configs = db_client.find_latest_tuning_configs()
-        updated_gist = update_gist(os.getenv("TUNING_GIST_ID"), updated_configs)
+        updated_configs = TuningConfigDb.find_all()
+        updated_configs_json = [asdict(config) for config in updated_configs]
+        updated_gist = update_gist(os.getenv("TUNING_GIST_ID"), updated_configs_json)
         if updated_gist:
             self._logger.debug(
                 f"Saved updated tuning results to gist {updated_gist.gist_url}"
