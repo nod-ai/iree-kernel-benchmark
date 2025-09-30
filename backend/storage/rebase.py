@@ -1,108 +1,68 @@
-from backend.storage.auth import get_blob_client
+from tqdm import tqdm
+from backend.runs import get_artifact_parser
+from backend.runs.run_utils import parse_run_from_gh
+from backend.runs.workflows import SUPPORTED_WORKFLOWS
 from backend.github_utils import get_repo
-from .conversion import parse_modification
-from .artifacts import (
-    compare_artifact_kernels,
-)
+from .conversion import parse_pr_obj
 from .types import *
-from pathlib import Path
-import shutil
-import json
-from dataclass_wizard import asdict
 
 
-def rebase_performance(limit=10):
-    dir_client = get_blob_client()
+def rebase_runs(limit=10):
     wave = get_repo("bench")
 
-    gh_perf_runs = wave.get_workflow("run_bench.yml").get_runs(status="completed")
+    for workflow in SUPPORTED_WORKFLOWS:
+        gh_runs = wave.get_workflow(workflow.filename).get_runs(status="completed")
 
-    perf_runs: list[WorkflowRunBase] = []
-    perf_kernels: list[tuple[list[dict], Path]] = []
+        i = 0
+        for gh_run in gh_runs:
+            db_run = WorkflowRunDb.find_by_id(str(gh_run.id))
+            if not db_run:
+                try:
+                    db_run = parse_run_from_gh(gh_run)
+                except:
+                    continue
 
-    i = 0
-    for run in gh_perf_runs:
-        for artifact in run.get_artifacts():
-            if artifact.name != "benchmark-results":
-                continue
+            # if db_run.conclusion != "success":
+            #     continue
 
-            try:
-                artifact_kernels, kernel_path = download_artifact_kernels(artifact)
-            except:
+            if not db_run.hasArtifact:
+                artifact_parser = get_artifact_parser(workflow.run_type)
+
+                for artifact in gh_run.get_artifacts():
+                    success, _ = artifact_parser.parse_and_save_artifact(
+                        artifact, db_run
+                    )
+                    if success:
+                        db_run.hasArtifact = True
+                        break
+
+            WorkflowRunDb.upsert(db_run)
+
+            i += 1
+            if i >= limit:
                 break
 
-            date_str = run.created_at.strftime("%Y-%m-%d %H:%M:%S")
 
-            perf_run = WorkflowRunBase(
-                _id=str(run.id),
-                blobName=str(run.id),
-                timestamp=run.created_at,
-                changeStats={},
-            )
-
-            perf_runs.append(perf_run)
-            perf_kernels.append((artifact_kernels, kernel_path))
-
-            print(
-                f"Run {run.id} created at {date_str} with {len(artifact_kernels)} kernels"
-            )
-
-            break
-
-        i += 1
-        if i >= limit:
-            break
-
-    if len(perf_runs) == 0 or len(perf_kernels) == 0:
-        return []
-
-    old_kernels = perf_kernels[-1][0]
-    newest_path = perf_kernels[0][1]
-
-    dir_client.rm("baseline", recursive=True)
-    save_results_from_local_path(
-        dir_client, newest_path, "baseline", delete_local=False
-    )
-
-    for i, (new_kernels, kernel_path) in enumerate(perf_kernels):
-        perf_run = perf_runs[i]
-        try:
-            perf_run.changeStats = compare_artifact_kernels(old_kernels, new_kernels)
-        except:
-            perf_run.changeStats = {}
-
-        db_client.insert_performance(perf_run)
-        save_results_from_local_path(dir_client, kernel_path, perf_run.blobName)
-
-    db_performances = db_client.find_all_performances()
-
-    performance_dicts = [asdict(db_perf) for db_perf in db_performances]
-    # print(json.dumps(performance_dicts, indent=4))
-    return performance_dicts
-
-
-def rebase_modifications(limit=40):
-    db_client, dir_client = get_blob_client()
-    db_client.clear_all_repos()
-
+def rebase_pull_requests(limit=40):
     wave_repo = get_repo("wave")
-
     open_prs = wave_repo.get_pulls(state="all", sort="created", direction="desc")
+
+    pbar = tqdm(total=limit, desc="Rebasing pull requests")
 
     i = 0
     for gh_pr in open_prs:
         pr_dict = gh_pr.raw_data
-        pr, merge = parse_modification(pr_dict)
-
-        db_client.insert_pull_request(pr)
-        if merge:
-            db_client.insert_merge(merge)
+        pr = parse_pr_obj(pr_dict)
+        RepoPullRequestDb.upsert(pr)
 
         i += 1
+        pbar.update()
         if i >= limit:
             return
 
+    pbar.close()
+
 
 def rebase_all(mod_limit=40, perf_limit=20):
-    rebase_modifications(mod_limit)
-    rebase_performance(perf_limit)
+    rebase_pull_requests(mod_limit)
+    rebase_runs(perf_limit)

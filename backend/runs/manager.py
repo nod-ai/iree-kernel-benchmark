@@ -6,11 +6,11 @@ from backend.runs import RunType
 from backend.runs.run_utils import find_incomplete_runs
 from backend.runs.tracker import get_run_tracker
 from backend.storage.auth import get_blob_client
-from backend.storage.types import WorkflowRunBase
+from backend.storage.types import WorkflowRunState
 
 
 class RunManager:
-    def __init__(self, runs: Optional[List[WorkflowRunBase]] = None):
+    def __init__(self, runs: Optional[List[WorkflowRunState]] = None):
         if not runs:
             runs = []
         self._trackers = {run._id: get_run_tracker(run) for run in runs}
@@ -23,7 +23,7 @@ class RunManager:
         for run in runs:
             self.track_run(run)
 
-    def track_run(self, run: WorkflowRunBase):
+    def track_run(self, run: WorkflowRunState):
         if run._id not in self._trackers:
             self._trackers[run._id] = get_run_tracker(run)
 

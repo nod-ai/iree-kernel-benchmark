@@ -354,6 +354,17 @@ class DatabaseRepository(Generic[T]):
         """Check if an entity exists by ID."""
         return self.find_by_id(id) is not None
 
+    def clear_all(self) -> bool:
+        """Clear all entities from the table by deleting and recreating it."""
+        try:
+            service_client, _ = self._get_clients()
+            service_client.delete_table(self.table)
+            self._table_client = service_client.create_table_if_not_exists(self.table)
+            return True
+        except Exception as e:
+            print(f"Error clearing all entities: {e}")
+            return False
+
 
 # Convenience function to create repositories
 def create_repository(model_class: Type[T], table: str) -> DatabaseRepository[T]:

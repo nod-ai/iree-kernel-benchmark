@@ -12,7 +12,7 @@ import requests
 from backend.github_utils.auth import get_github_token
 from backend.storage.artifacts import download_artifact
 from backend.storage.auth import get_blob_client
-from backend.storage.types import WorkflowRunBase
+from backend.storage.types import WorkflowRunState
 
 
 class RunArtifactParser(ABC):
@@ -40,7 +40,7 @@ class RunArtifactParser(ABC):
             return None
 
     def parse_and_save_artifact(
-        self, gh_artifact: Artifact, run: WorkflowRunBase
+        self, gh_artifact: Artifact, run: WorkflowRunState
     ) -> Tuple[bool, Any]:
         artifact_data, local_path = self.parse_artifact(gh_artifact)
         if not artifact_data:
@@ -87,6 +87,6 @@ class RunArtifactParser(ABC):
 
     @abstractmethod
     def _save_artifact(
-        self, local_path: Path, artifact_data: Any, run: WorkflowRunBase
+        self, local_path: Path, artifact_data: Any, run: WorkflowRunState
     ) -> bool:
         pass

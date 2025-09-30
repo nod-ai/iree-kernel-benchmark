@@ -10,7 +10,7 @@ import pandas as pd
 
 from backend.storage.artifacts import compare_artifact_kernels
 from backend.storage.auth import get_blob_client
-from backend.storage.types import BenchmarkRunDb
+from backend.storage.types import BenchChangeStats, ChangeStatDb, WorkflowRunDb
 from backend.storage.utils import convert_dict_case
 from .artifact_parsing import RunArtifactParser
 
@@ -40,7 +40,13 @@ class BenchmarkArtifactParser(RunArtifactParser):
 
         try:
             change_stats = compare_artifact_kernels(baseline_kernels, artifact_data)
-            BenchmarkRunDb.update_by_id(run_id, {"changeStats": change_stats})
+            ChangeStatDb.upsert(
+                BenchChangeStats(
+                    _id=run_id,
+                    runId=run_id,
+                    changeStats=change_stats,
+                )
+            )
             return True
         except Exception as e:
             self._logger.error(

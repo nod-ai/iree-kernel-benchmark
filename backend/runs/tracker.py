@@ -1,22 +1,16 @@
 from datetime import datetime, timezone
-import json
 import logging
 import traceback
 from typing import Any, Dict, Optional
 from github.WorkflowJob import WorkflowJob
 from github.WorkflowRun import WorkflowRun
-from dataclass_wizard import fromdict
 
 from backend.github_utils.auth import get_repo
-from backend.runs import RunType, get_artifact_parser, get_run_db
-from backend.runs.run_utils import RUN_INCOMPLETE_STATUSES, parse_run_json
+from backend.runs import RunType, get_artifact_parser
+from backend.runs.run_utils import RUN_INCOMPLETE_STATUSES
+from backend.runs.workflows import find_workflow
 from backend.storage.auth import get_blob_client
-from backend.storage.types import (
-    BenchmarkRun,
-    BenchmarkRunDb,
-    TuningRun,
-    WorkflowRunBase,
-)
+from backend.storage.types import WorkflowRunDb, WorkflowRunState
 
 
 class RunTracker:
@@ -24,18 +18,20 @@ class RunTracker:
         self,
         run_id: str,
         run_type: RunType,
-        run_data: Optional[WorkflowRunBase] = None,
-        main_job: Optional[str] = None,
-        identifier: Optional[str] = None,
+        run_data: Optional[WorkflowRunState] = None,
     ):
         self._blob_client = get_blob_client()
         self._bench_repo = get_repo("bench")
         self._logger = logging.getLogger("backend")
         self._artifact_parser = get_artifact_parser(run_type)
-        self._run_db = get_run_db(run_type)
+        self._run_db = WorkflowRunDb
 
-        self._identifier = identifier
-        self._main_job = main_job
+        workflow_info = find_workflow(run_type)
+        if not workflow_info:
+            raise ValueError(f"Run type {run_type} unsupported")
+
+        self._identifier = workflow_info.identifier
+        self._main_job = workflow_info.main_job
         self._run_id = run_id
         self._run_type = run_type
 
@@ -179,20 +175,14 @@ class RunTracker:
         return None
 
 
-def get_run_tracker(run: WorkflowRunBase):
-    if isinstance(run, BenchmarkRun):
-        return RunTracker(
-            run_id=run._id,
-            run_type=RunType.BENCHMARK,
-            run_data=run,
-            main_job="Short Benchmark",
-            identifier="headSha",
-        )
-    elif isinstance(run, TuningRun):
-        return RunTracker(
-            run_id=run._id,
-            run_type=RunType.TUNING,
-            run_data=run,
-        )
-    else:
-        raise ValueError("Workflow run type not supported")
+def get_run_tracker(run: WorkflowRunState):
+    try:
+        run_type = RunType[run.type]
+    except:
+        raise ValueError(f"Workflow run type '{run.type}' not supported")
+
+    return RunTracker(
+        run_id=run._id,
+        run_type=run_type,
+        run_data=run,
+    )

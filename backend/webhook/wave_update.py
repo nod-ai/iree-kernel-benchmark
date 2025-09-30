@@ -1,7 +1,17 @@
+from logging import getLogger
 from backend.github_utils import get_repo, get_github_token
-from backend.globals import BENCH_ITERATIONS, MAX_BENCH_KERNELS, RUN_ALL_BACKENDS
-from backend.legacy.db import DatabaseClient
+from backend.github_utils.actions import trigger_workflow_dispatch
+from backend.globals import (
+    BENCH_ITERATIONS,
+    BENCH_REPO_BRANCH,
+    MAX_BENCH_KERNELS,
+    RUN_ALL_BACKENDS,
+    WAVE_REPO_NAME,
+)
+from backend.runs import RunType
+from backend.runs.workflows import find_workflow
 from backend.storage.auth import get_blob_client
+from backend.storage.conversion import parse_pr_obj
 from backend.storage.directory import DirectoryClient
 from backend.storage.types import *
 from datetime import timezone
@@ -44,78 +54,28 @@ class WaveUpdateListener:
         self._wave_repo = get_repo("wave")
         self._bench_repo = get_repo("bench")
         self._storage_client = get_blob_client()
+        self._logger = getLogger("backend")
 
     def trigger_workflow(
         self, repo_name: str, branch_name: str, head_sha: str, metadata: dict = None
     ) -> bool:
-        bench_repo_name = self._bench_repo.full_name
-        workflow_id = "short_bench.yml"
-        token = get_github_token("bench")
-
-        url = f"https://api.github.com/repos/{bench_repo_name}/actions/workflows/{workflow_id}/dispatches"
-        headers = {
-            "Accept": "application/vnd.github+json",
-            "Authorization": f"Bearer {token}",
-            "X-GitHub-Api-Version": "2022-11-28",
-        }
-        body = {
-            "ref": "kernel-dashboard",
-            "inputs": {
-                "iterations": str(BENCH_ITERATIONS),
-                "max_kernels": str(MAX_BENCH_KERNELS),
-                "selected_backend": "all" if RUN_ALL_BACKENDS else "wave",
-                "pr_repository": repo_name,
-                "pr_branch": branch_name,
-                "pr_headsha": head_sha,
-            },
+        inputs = {
+            "max_kernels": MAX_BENCH_KERNELS,
+            "selected_backend": "all" if RUN_ALL_BACKENDS else "wave",
+            "selected_kernel": "all",
+            "pr_repository": repo_name,
+            "pr_branch": branch_name,
+            "pr_headsha": head_sha,
         }
         if metadata:
-            body["inputs"]["metadata"] = json.dumps(metadata)
+            inputs["metadata"] = json.dumps(metadata)
 
-        response = requests.post(url, headers=headers, json=body)
-        if response.status_code != 204:
-            print(f"Workflow failed: {response.json()}")
-            return False
-        print(f"Workflow dispatched successfully: {response.status_code}")
-        return True
-
-    def _save_pr(self, id: str, pr_obj: dict) -> dict:
-        author = ChangeAuthor(
-            name=pr_obj["user"].get("name") or pr_obj["user"].get("login", "Anonymous"),
-            profileUrl=pr_obj["user"]["avatar_url"],
+        return trigger_workflow_dispatch(
+            repo_id="bench",
+            branch_name=BENCH_REPO_BRANCH,
+            workflow_id=find_workflow(RunType.BENCHMARK).filename,
+            inputs=inputs,
         )
-        pr = RepoPullRequest(
-            _id=id,
-            headSha=pr_obj["head"]["sha"],
-            url=pr_obj["html_url"],
-            type="pr",
-            timestamp=datetime.now(
-                timezone.utc
-            ),  # fromisoformat(pr_obj['created_at']),
-            author=author,
-            title=pr_obj["title"],
-            status=pr_obj["state"],
-            commits=[],
-            description=pr_obj["body"],
-            repoName=pr_obj["head"]["repo"]["full_name"],
-            branchName=pr_obj["head"]["ref"],
-        )
-        RepoPullRequestDb.upsert(pr)
-
-        if pr_obj["merged"]:
-            merge = RepoMerge(
-                _id=id,
-                headSha=pr_obj["head"]["sha"],
-                url=pr_obj["html_url"],
-                type="merge",
-                timestamp=datetime.fromisoformat(pr_obj["merged_at"]),
-                author=author,
-                prId=str(pr_obj["id"]),
-            )
-            RepoMergeDb.upsert(merge)
-            return asdict(merge)
-        else:
-            return asdict(pr)
 
     def handle_pr_payload(self, pr_payload: dict):
         action = pr_payload["action"]
@@ -126,13 +86,13 @@ class WaveUpdateListener:
 
         # ignore if not being merged into iree-org/wave/main
         if (
-            pr_obj["base"]["repo"]["full_name"] != "iree-org/wave"
+            pr_obj["base"]["repo"]["full_name"] != WAVE_REPO_NAME
             or pr_obj["base"]["ref"] != "main"
         ):
             return
 
         is_merge = pr_obj["merged"]
-        entry_id = f"{pr_obj['id']}_merge" if is_merge else str(pr_obj["id"])
+        entry_id = str(pr_obj["id"])
 
         try:
             mod = RepoPullRequestDb.find_by_id(entry_id)
@@ -142,7 +102,8 @@ class WaveUpdateListener:
             print("Modification not found in database")
             has_changed = True
 
-        pr_entry = self._save_pr(entry_id, pr_obj)
+        pr = parse_pr_obj(pr_obj)
+        RepoPullRequestDb.upsert(pr)
 
         if has_changed and not is_merge:
             print(f'Pull Request {pr_obj["html_url"]} triggering workflow on {action}')

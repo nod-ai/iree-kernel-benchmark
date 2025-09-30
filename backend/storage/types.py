@@ -4,12 +4,10 @@ from typing import Optional, Any
 from .repository import create_repository
 
 
-type ChangeStats = dict[str, float]
-
-
 @dataclass
-class WorkflowRunBase:
+class WorkflowRunState:
     _id: str
+    type: str
     blobName: str
     timestamp: datetime
     status: str
@@ -22,11 +20,6 @@ class WorkflowRunBase:
 
 
 @dataclass
-class TuningRun(WorkflowRunBase):
-    pass
-
-
-@dataclass
 class TuningConfig:
     _id: str
     timestamp: datetime
@@ -36,8 +29,10 @@ class TuningConfig:
 
 
 @dataclass
-class BenchmarkRun(WorkflowRunBase):
-    changeStats: ChangeStats = field(default_factory=dict)
+class BenchChangeStats:
+    _id: str
+    runId: str
+    changeStats: dict[str, float]
 
 
 @dataclass
@@ -58,56 +53,42 @@ class ChangeAuthor:
     profileUrl: str
 
 
+# @dataclass
+# class RepoCommit:
+#     _id: str
+#     title: str
+#     author: ChangeAuthor
+#     timestamp: datetime
+#     description: Optional[str] = None
+
+
 @dataclass
-class RepoModification:
+class RepoPullRequest:
     _id: str
-    headSha: str
     url: str
     type: str
     timestamp: datetime
     author: ChangeAuthor
-
-
-@dataclass
-class RepoCommit:
-    _id: str
-    title: str
-    author: ChangeAuthor
-    timestamp: datetime
-    description: Optional[str] = None
-
-
-@dataclass
-class RepoPullRequest(RepoModification):
     title: str
     status: str
-    commits: list[RepoCommit]
+    commits: int
     repoName: str
     branchName: str
+    mappingId: Optional[str] = None
     description: Optional[str] = None
+    isMerged: bool = False
 
 
-@dataclass
-class RepoMerge(RepoModification):
-    prId: str
+WorkflowRunDb = create_repository(WorkflowRunState, "workflowruns")
+"""Repository for workflow run data with full type safety."""
 
-
-TuningRunDb = create_repository(TuningRun, "tuningruns")
-"""Repository for tuning run data with full type safety."""
+ChangeStatDb = create_repository(BenchChangeStats, "benchchangestats")
 
 TuningConfigDb = create_repository(TuningConfig, "tuningconfigs")
 """Repository for tuning configuration data with full type safety."""
 
-BenchmarkRunDb = create_repository(BenchmarkRun, "runresults")
-"""Repository for benchmark run results with full type safety."""
-
 KernelDb = create_repository(Kernel, "kernels")
 """Repository for kernel data with full type safety."""
 
-RepoPullRequestDb = create_repository(RepoPullRequest, "repomodifications")
+RepoPullRequestDb = create_repository(RepoPullRequest, "repopullrequests")
 """Repository for repository pull request data with full type safety."""
-
-RepoMergeDb = create_repository(RepoMerge, "repomodifications")
-"""Repository for repository merge data with full type safety."""
-
-PerformanceDb = create_repository(BenchmarkRun, "performanceruns")

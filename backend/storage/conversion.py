@@ -15,9 +15,7 @@ def random_stats() -> dict[str, float]:
     return stats
 
 
-def parse_modification(
-    pr_dict: Dict[str, Any],
-) -> Tuple[RepoPullRequest, Optional[RepoMerge]]:
+def parse_pr_obj(pr_dict: Dict[str, Any]) -> RepoPullRequest:
     user_dict: dict = pr_dict.get("user", {})
 
     author = ChangeAuthor(
@@ -26,43 +24,29 @@ def parse_modification(
     )
 
     pr = RepoPullRequest(
-        headSha=pr_dict["head"]["sha"],
         _id=str(pr_dict.get("id")),
+        url=pr_dict.get("html_url"),
         type="pr",
         timestamp=datetime.fromisoformat(pr_dict.get("created_at")),
-        url=pr_dict.get("html_url"),
         author=author,
         title=pr_dict.get("title"),
         status=pr_dict.get("state"),
-        commits=[],
-        description=pr_dict.get("body"),
+        commits=pr_dict.get("commits"),
         repoName=pr_dict["head"]["repo"]["full_name"],
         branchName=pr_dict["head"]["ref"],
+        mappingId=pr_dict["head"]["sha"],
+        description=pr_dict.get("body"),
+        isMerged=pr_dict.get("merged"),
     )
 
-    if pr_dict.get("merged"):
-        merge = RepoMerge(
-            headSha=pr_dict["head"]["sha"],
-            _id=str(pr_dict.get("id")) + "_merge",
-            url=pr_dict.get("html_url"),
-            type="merge",
-            timestamp=datetime.fromisoformat(pr_dict.get("merged_at")),
-            author=author,
-            prId=str(pr_dict.get("id")),
-        )
-        return pr, merge
-
-    return pr, None
+    return pr
 
 
 def convert_prs_from_github(pr_json: list[dict]) -> list[dict]:
     modifications = []
 
     for pr_dict in tqdm(pr_json, desc="Parsing PRs from JSON"):
-        pr, merge = parse_modification(pr_dict)
-
+        pr = parse_pr_obj(pr_dict)
         modifications.append(asdict(pr))
-        if merge:
-            modifications.append(asdict(merge))
 
     return modifications

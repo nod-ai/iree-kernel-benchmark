@@ -3,7 +3,7 @@ from backend.github_utils import trigger_workflow_dispatch, create_gist, get_rep
 from backend.runs import RunType, get_artifact_parser
 from backend.runs.run_utils import get_run_by_blob_name
 from backend.runs.tracker import get_run_tracker
-from backend.storage.rebase import rebase_all
+from backend.storage.rebase import rebase_all, rebase_pull_requests
 from backend.storage.types import *
 from backend.webhook.wave_update import WaveUpdateListener
 from backend.storage.auth import get_blob_client
@@ -117,7 +117,7 @@ def get_pull_requests():
 
 @app.route("/runs")
 def get_all_runs():
-    runs = BenchmarkRunDb.find_all()
+    runs = WorkflowRunDb.find_all({"type": RunType.BENCHMARK.name})
     return jsonify([asdict(run) for run in runs])
 
 
@@ -129,7 +129,7 @@ def get_all_kernels():
 
 @app.route("/performances")
 def get_all_perfs():
-    perfs = PerformanceDb.find_all()
+    perfs = WorkflowRunDb.find_all({"type": RunType.E2E.name})
     return jsonify([asdict(perf) for perf in perfs])
 
 
@@ -147,7 +147,7 @@ def trigger_workflow():
     pr_data = request.get_json()
     wave_client = WaveUpdateListener()
     trigger_success = wave_client.trigger_workflow(
-        pr_data["repoName"], pr_data["branchName"], pr_data["headSha"]
+        pr_data["repoName"], pr_data["branchName"], pr_data["mappingId"]
     )
     if trigger_success:
         return "Success", 200
@@ -168,9 +168,11 @@ def cancel_workflow():
 
 @app.route("/rebase", methods=["POST"])
 def rebase_prs():
-    rebase_all()
+    # rebase_all()
+    rebase_pull_requests()
     modifications = RepoPullRequestDb.find_all()
-    performances = PerformanceDb.find_all()
+    performances = []
+    # performances = WorkflowRunDb.find_all({"type": RunType.E2E.name})
     return jsonify(
         {
             "modifications": [asdict(modification) for modification in modifications],
