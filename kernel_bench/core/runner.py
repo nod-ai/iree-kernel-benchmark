@@ -53,6 +53,7 @@ class BenchmarkRunner:
     num_iterations: int = 3
 
     title: str = None
+    max_kernels: Optional[int] = None
 
     def __post_init__(self):
         self._benches: List[KernelBenchmark] = None
@@ -60,8 +61,20 @@ class BenchmarkRunner:
         self.machine = self.machine.upper()
         self.logger = get_logger()
 
-    def reduce_configs(self, max_kernels: int = None, seed: int = 42):
-        self.configs = reduce_configs(self.configs, max_kernels, seed)
+    def reduce_benches(self, max_kernels: int = None, seed: int = 42):
+        if max_kernels >= len(self._benches):
+            return
+
+        current_configs = [("null", bench.config) for bench in self._benches]
+        selected_configs = {
+            config.get_name()
+            for tag, config in reduce_configs(current_configs, max_kernels, seed)
+        }
+        self._benches = [
+            bench
+            for bench in self._benches
+            if bench.config.get_name() in selected_configs
+        ]
 
     def load_tuned_results(self, result_path: PathLike):
         with open(result_path, "r") as file:
@@ -159,6 +172,12 @@ class BenchmarkRunner:
 
         if len(self._benches) == 0:
             return []
+
+        if self.max_kernels:
+            self.reduce_benches(self.max_kernels)
+            self.logger.info(
+                f"Reduced to {len(self._benches)} {self.kernel_type} configs for benchmarking on backend {self.backend}."
+            )
 
         results = batch_benchmark(
             self._benches,

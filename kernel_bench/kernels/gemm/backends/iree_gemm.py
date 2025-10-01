@@ -133,6 +133,14 @@ class IREEGemmBenchmark(IREEKernelBenchmark):
             return f"{module}"
 
     @override
+    def validate_config(self):
+        if self.config.tA + self.config.tB == "TT":
+            return False
+        if self.config.accumulator_element_type != self.config.result_element_type:
+            return False
+        return True
+
+    @override
     def compile_to_vmfb(self, mlir_path, vmfb_path):
         config = self.config
 

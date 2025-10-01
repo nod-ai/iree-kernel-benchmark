@@ -17,8 +17,7 @@ from .problems import (
 
 
 def get_default_gemm_configs(kernel_type: str, backend_name: str):
-    return get_paper_gemms()
-    # return get_b200_gemm_configs(backend_name)
+    return get_b200_gemm_configs(backend_name)
     # return get_gemm_configs("f16", backend_name, False)
     # return get_gemm_comparison()
 

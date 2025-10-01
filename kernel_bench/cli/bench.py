@@ -171,8 +171,8 @@ if __name__ == "__main__":
                 debug=True,
                 num_iterations=args.iterations,
                 title=args.title,
+                max_kernels=args.max_kernels,
             )
-            bench.reduce_configs(args.max_kernels)
             logger.info(
                 f"Generated {len(bench.configs)} {kernel_type} configs for backend {backend_name}."
             )

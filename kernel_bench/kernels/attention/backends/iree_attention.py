@@ -90,7 +90,6 @@ return %O : !O
             "--iree-hal-target-device=hip",
             # Device: MI300x
             f"--iree-hip-target={self.target}",
-            "--mlir-print-ir-after-all",
         ]
         if self.dump_dir:
             os.makedirs(self.dump_dir / "iree", exist_ok=True)

@@ -42,7 +42,7 @@ class GemmConfig(OpConfig):
         name = f"gemm_{M}_{N}_{K}_{self.operand_element_type}_{self.accumulator_element_type}"
         if self.tA == "T":
             name += "_tA"
-        elif self.tB == "T":
+        if self.tB == "T":
             name += "_tB"
         if self.runtime_dim is not None:
             name += f"_D={self.runtime_dim}"
