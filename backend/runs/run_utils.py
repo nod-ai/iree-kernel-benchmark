@@ -71,5 +71,5 @@ def parse_run_from_json(run_json: dict[str, Any]) -> WorkflowRunState:
 
 def find_incomplete_runs() -> List[WorkflowRunState]:
     return WorkflowRunDb.query(
-        " or ".join([f"status eq {status}" for status in RUN_INCOMPLETE_STATUSES])
+        " or ".join([f"status eq '{status}'" for status in RUN_INCOMPLETE_STATUSES])
     )

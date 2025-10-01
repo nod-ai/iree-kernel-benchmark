@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Dict, List, override
@@ -14,6 +15,8 @@ from backend.storage.types import TuningConfig, TuningConfigDb
 from backend.storage.utils import get_nested_files
 from .artifact_parsing import RunArtifactParser
 
+logger = logging.getLogger(__name__)
+
 
 class TuningArtifactParser(RunArtifactParser):
     @override
@@ -26,25 +29,25 @@ class TuningArtifactParser(RunArtifactParser):
         blob_name = run.blobName
 
         if len(artifact_data) == 0:
-            self._logger.error("Failed to parse artifact")
+            logger.error("Failed to parse artifact")
             return False
 
         TuningConfigDb.upsert_many(artifact_data)
-        self._logger.debug(f"Saved {len(artifact_data)} tuning results to database")
+        logger.debug(f"Saved {len(artifact_data)} tuning results to database")
 
         try:
-            self._logger.debug(f"Uploading artifacts to azure path {blob_name}")
+            logger.debug(f"Uploading artifacts to azure path {blob_name}")
             dir_client.upload(f"{local_path}/tuning-results", blob_name)
         except:
-            self._logger.error(f"Blob {blob_name} already exists. Skipped upload")
+            logger.error(f"Blob {blob_name} already exists. Skipped upload")
             return False
-        self._logger.debug(f"Saved {len(artifact_data)} tuning results to blob storage")
+        logger.debug(f"Saved {len(artifact_data)} tuning results to blob storage")
 
         updated_configs = TuningConfigDb.find_all()
         updated_configs_json = [asdict(config) for config in updated_configs]
         updated_gist = update_gist(os.getenv("TUNING_GIST_ID"), updated_configs_json)
         if updated_gist:
-            self._logger.debug(
+            logger.debug(
                 f"Saved updated tuning results to gist {updated_gist.gist_url}"
             )
 

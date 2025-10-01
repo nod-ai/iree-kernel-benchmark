@@ -1,6 +1,9 @@
+import logging
 from pathlib import Path
 import os
 from typing import Union, Any
+
+logger = logging.getLogger(__name__)
 
 
 def convert_dict_case(data: dict[Any, Any], to_camel=True):
@@ -50,3 +53,12 @@ def get_nested_files(local_path: Union[os.PathLike, str], file_type: str) -> lis
     matching_files = list(root_path.glob(pattern))
 
     return matching_files
+
+
+def test_logger():
+    print(f"Testing logger in module {__name__}")
+    logger.critical("CRITICAL")
+    logger.error("ERROR")
+    logger.warning("WARNING")
+    logger.info("INFO")
+    logger.debug("DEBUG")

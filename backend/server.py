@@ -5,6 +5,7 @@ from backend.runs.run_utils import get_run_by_blob_name
 from backend.runs.tracker import get_run_tracker
 from backend.storage.rebase import rebase_all, rebase_pull_requests
 from backend.storage.types import *
+from backend.storage.utils import test_logger
 from backend.webhook.wave_update import WaveUpdateListener
 from backend.storage.auth import get_blob_client
 
@@ -19,9 +20,7 @@ import os
 from werkzeug.security import check_password_hash, generate_password_hash
 from dotenv import load_dotenv
 
-
 directory_client = get_blob_client()
-logging.getLogger("backend").setLevel(logging.DEBUG)
 
 app = Flask(__name__)
 CORS(app, supports_credentials=True)
@@ -29,6 +28,8 @@ CORS(app, supports_credentials=True)
 load_dotenv()
 app.config["SECRET_KEY"] = os.getenv("PEM_FILE")
 app.config["PASSWORD_HASH"] = os.getenv("PASSWORD_HASH")
+
+logger = logging.getLogger(__name__)
 
 
 @app.route("/")

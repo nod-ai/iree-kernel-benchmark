@@ -14,6 +14,8 @@ from backend.storage.types import BenchChangeStats, ChangeStatDb, WorkflowRunDb
 from backend.storage.utils import convert_dict_case
 from .artifact_parsing import RunArtifactParser
 
+logger = logging.getLogger(__name__)
+
 
 class BenchmarkArtifactParser(RunArtifactParser):
     @override
@@ -27,15 +29,15 @@ class BenchmarkArtifactParser(RunArtifactParser):
         run_id = run._id
 
         try:
-            self._logger.debug(f"Uploading artifacts to azure path {blob_name}")
+            logger.debug(f"Uploading artifacts to azure path {blob_name}")
             dir_client.upload(f"{local_path}/benchmark-results", blob_name)
         except:
-            self._logger.error(f"Blob {blob_name} already exists. Skipped upload")
+            logger.error(f"Blob {blob_name} already exists. Skipped upload")
             return False
 
         baseline_kernels = self.load_data("baseline")
         if not baseline_kernels:
-            self._logger.error(f"Failed to load baseline kernels for comparison")
+            logger.error(f"Failed to load baseline kernels for comparison")
             return False
 
         try:
@@ -49,7 +51,7 @@ class BenchmarkArtifactParser(RunArtifactParser):
             )
             return True
         except Exception as e:
-            self._logger.error(
+            logger.error(
                 f"Failed to calculate change statistics for run {run_id}",
                 "".join(traceback.format_exception(e)),
             )
@@ -68,8 +70,6 @@ def parse_bench_kernels_from_path(artifact_path: Path) -> List[Dict]:
     elif "csv" in sub_dirs:
         sub_dirs = os.listdir(artifact_path / "csv")
         artifact_path = artifact_path / "csv"
-
-    logger = logging.getLogger("backend")
 
     logger.debug(f"Artifact path: {artifact_path}")
 

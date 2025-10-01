@@ -14,12 +14,13 @@ from backend.storage.artifacts import download_artifact
 from backend.storage.auth import get_blob_client
 from backend.storage.types import WorkflowRunState
 
+logger = logging.getLogger(__name__)
+
 
 class RunArtifactParser(ABC):
     def __init__(self, local_tmp_dir: os.PathLike):
         os.makedirs(local_tmp_dir, exist_ok=True)
         self._local_tmp_dir = Path(local_tmp_dir)
-        self._logger = logging.getLogger("backend")
 
     def load_data(self, blob_name: str) -> Optional[Any]:
         dir_client = get_blob_client()
@@ -32,7 +33,7 @@ class RunArtifactParser(ABC):
             shutil.rmtree(local_path)
             return parsed_data
         except Exception as e:
-            self._logger.error(
+            logger.error(
                 f"Failed to load artifact data: \n"
                 "".join(traceback.format_exception(e))
             )
@@ -52,12 +53,12 @@ class RunArtifactParser(ABC):
             if not save_success:
                 raise RuntimeError("Failed to save artifact")
 
-            self._logger.debug(f"Successfully saved data for artifact_{gh_artifact.id}")
+            logger.debug(f"Successfully saved data for artifact_{gh_artifact.id}")
             shutil.rmtree(local_path)
             return True, artifact_data
 
         except Exception as e:
-            self._logger.error(
+            logger.error(
                 f"Failed to save parsed artifact data: \n"
                 "".join(traceback.format_exception(e))
             )
@@ -74,7 +75,7 @@ class RunArtifactParser(ABC):
             try:
                 parsed_data = self._parse_from_local_path()
             except Exception as e:
-                self._logger.error(
+                logger.error(
                     f"Failed to parse artifact data: \n"
                     "".join(traceback.format_exception(e))
                 )

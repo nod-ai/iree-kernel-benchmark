@@ -8,6 +8,8 @@ from backend.storage.types import *
 from dataclass_wizard import asdict
 import json
 
+logger = logging.getLogger(__name__)
+
 
 def jsonify(model) -> str:
     return json.dumps(asdict(model), indent=4)
@@ -23,14 +25,13 @@ class WorkflowListener:
     def __init__(self):
         self._repo = get_repo("bench")
         self._storage_client = get_blob_client()
-        self._logger = logging.getLogger("backend")
 
     def _handle_workflow_run_requested(
         self, workflow_info: WorkflowRunInfo, run_payload: dict
     ):
         run_data = run_payload["workflow_run"]
         run = parse_run_from_json(run_data)
-        self._logger.info(f"adding new run\n{jsonify(run)}")
+        logger.info(f"adding new run\n{jsonify(run)}")
         WorkflowRunDb.upsert(run)
 
     def _handle_workflow_run_progress(
@@ -40,9 +41,7 @@ class WorkflowListener:
         run_id = str(run_data["id"])
         run_type = workflow_info.run_type.name
 
-        self._logger.info(
-            f"updating run {run_id=} {run_type=} status={run_data['status']}"
-        )
+        logger.info(f"updating run {run_id=} {run_type=} status={run_data['status']}")
         WorkflowRunDb.update_by_id(
             run_id,
             {
@@ -80,7 +79,7 @@ class WorkflowListener:
         run_id = str(job_payload["workflow_job"]["run_id"])
         steps = job_payload["workflow_job"]["steps"]
 
-        self._logger.info("updating job", json.dumps(steps, indent=4))
+        logger.info("updating job", json.dumps(steps, indent=4))
 
         try:
             WorkflowRunDb.update_by_id(run_id, {"steps": steps})

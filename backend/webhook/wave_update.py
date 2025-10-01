@@ -1,4 +1,4 @@
-from logging import getLogger
+import logging
 from backend.github_utils import get_repo, get_github_token
 from backend.github_utils.actions import trigger_workflow_dispatch
 from backend.globals import (
@@ -18,6 +18,8 @@ from datetime import timezone
 from dataclass_wizard import asdict
 import json
 import requests
+
+logger = logging.getLogger(__name__)
 
 
 def jsonify(model) -> str:
@@ -54,7 +56,6 @@ class WaveUpdateListener:
         self._wave_repo = get_repo("wave")
         self._bench_repo = get_repo("bench")
         self._storage_client = get_blob_client()
-        self._logger = getLogger("backend")
 
     def trigger_workflow(
         self, repo_name: str, branch_name: str, head_sha: str, metadata: dict = None
@@ -96,17 +97,19 @@ class WaveUpdateListener:
 
         try:
             mod = RepoPullRequestDb.find_by_id(entry_id)
-            print("Found modification in database")
+            logger.debug("Found modification in database")
             has_changed = pr_obj["commits"] != mod.commits
         except:
-            print("Modification not found in database")
+            logger.debug("Modification not found in database")
             has_changed = True
 
         pr = parse_pr_obj(pr_obj)
         RepoPullRequestDb.upsert(pr)
 
         if has_changed and not is_merge:
-            print(f'Pull Request {pr_obj["html_url"]} triggering workflow on {action}')
+            logger.info(
+                f'Pull Request {pr_obj["html_url"]} triggering workflow on {action}'
+            )
             head_repo_name = pr_obj["head"]["repo"]["full_name"]
             head_branch = pr_obj["head"]["ref"]
             head_sha = pr_obj["head"]["sha"]

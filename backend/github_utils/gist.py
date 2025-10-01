@@ -6,6 +6,8 @@ from datetime import datetime
 import json
 import requests
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass
 class Gist:
@@ -49,9 +51,7 @@ def create_gist(
         return Gist(raw_url, gist_info["html_url"], gist_info["id"], filename)
 
     else:
-        logging.getLogger("backend").error(
-            f"Failed to create gist: {response.status_code} - {response.text}"
-        )
+        logger.error(f"Failed to create gist: {response.status_code} - {response.text}")
         return None
 
 
@@ -112,9 +112,7 @@ def update_gist(
         return Gist(raw_url, gist_info["html_url"], gist_info["id"], filename)
 
     else:
-        logging.getLogger("backend").error(
-            f"Failed to update gist: {response.status_code} - {response.text}"
-        )
+        logger.error(f"Failed to update gist: {response.status_code} - {response.text}")
         return None
 
 

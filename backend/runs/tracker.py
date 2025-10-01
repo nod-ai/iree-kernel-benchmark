@@ -12,6 +12,8 @@ from backend.runs.workflows import find_workflow
 from backend.storage.auth import get_blob_client
 from backend.storage.types import WorkflowRunDb, WorkflowRunState
 
+logger = logging.getLogger(__name__)
+
 
 class RunTracker:
     def __init__(
@@ -22,7 +24,6 @@ class RunTracker:
     ):
         self._blob_client = get_blob_client()
         self._bench_repo = get_repo("bench")
-        self._logger = logging.getLogger("backend")
         self._artifact_parser = get_artifact_parser(run_type)
         self._run_db = WorkflowRunDb
 
@@ -44,7 +45,7 @@ class RunTracker:
                 raise ValueError(f"Could not find run {run_id} in database")
 
     def update(self):
-        self._logger.debug(f"Loading run_{self._run_id}")
+        logger.debug(f"Loading run_{self._run_id}")
         gh_run = self._get_gh_run()
         gh_main_job = self._get_gh_job(gh_run)
 
@@ -64,7 +65,7 @@ class RunTracker:
                             db_run_update.update({"mappingId": mapping_id})
                             break
             except:
-                self._logger.warning(
+                logger.warning(
                     f"Failed to load identifier {self._identifier} for run_{self._run_id}"
                 )
                 pass
@@ -94,7 +95,7 @@ class RunTracker:
                 }
             )
 
-        self._logger.debug(f"Updating run_{self._run_id} in db")
+        logger.debug(f"Updating run_{self._run_id} in db")
         self._run_db.update_by_id(self._run_id, db_run_update)
         self._load_data_from_db()
 
@@ -136,7 +137,7 @@ class RunTracker:
                 try:
                     self._run_db.update_by_id(self._run_id, {"hasArtifact": True})
                 except Exception as e:
-                    self._logger.error(
+                    logger.error(
                         f"Failed to mark run_{self._run_id} with saved artifact",
                         "".join(traceback.format_exception(e)),
                     )
@@ -144,7 +145,7 @@ class RunTracker:
                 self._run.hasArtifact = True
             return save_success
 
-        self._logger.error(f"No artifact returned by run_{self._run_id}")
+        logger.error(f"No artifact returned by run_{self._run_id}")
         return False
 
     def _load_data_from_db(self):

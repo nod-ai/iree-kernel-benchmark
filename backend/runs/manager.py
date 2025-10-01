@@ -8,13 +8,14 @@ from backend.runs.tracker import get_run_tracker
 from backend.storage.auth import get_blob_client
 from backend.storage.types import WorkflowRunState
 
+logger = logging.getLogger(__name__)
+
 
 class RunManager:
     def __init__(self, runs: Optional[List[WorkflowRunState]] = None):
         if not runs:
             runs = []
         self._trackers = {run._id: get_run_tracker(run) for run in runs}
-        self._logger = logging.getLogger("backend")
         self._dir_client = get_blob_client()
         self.load_incomplete_runs()
 
@@ -36,11 +37,16 @@ class RunManager:
 
         for run_id, tracker in self._trackers.items():
             if not tracker.is_complete():
-                self._logger.debug(f"Updating ongoing run_{run_id}")
+                logger.debug(f"Updating ongoing run_{run_id}")
                 tracker.update()
             elif not tracker.has_artifact():
-                self._logger.debug(f"Saving artifact for completed run_{run_id}")
-                tracker.save_artifact()
+                logger.debug(f"Saving artifact for completed run_{run_id}")
+                artifact_success = tracker.save_artifact()
+                if not artifact_success:
+                    logger.debug(
+                        f"Could not save artifact for run_{run_id}: Untracking run"
+                    )
+                    completed_runs.append(run_id)
             else:
                 completed_runs.append(run_id)
 
