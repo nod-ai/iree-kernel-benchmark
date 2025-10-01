@@ -197,19 +197,17 @@ def tune_kernels():
         description=f"Tuning configuration for {len(tuning_kernels)} kernels",
     )
 
-    if not tuning_upload["success"]:
+    if not tuning_upload:
         return "Failed to upload config to gist", 500
 
-    json_url = tuning_upload["raw_url"]
+    json_url = tuning_upload.raw_url
 
     dispatch_success = trigger_workflow_dispatch(
         "bench",
-        "kernel-dashboard",
+        "phased-tuning",
         "tune_kernels.yml",
         {
             "config_url": json_url,
-            "num_trials": "20",
-            "iterations": "1",
         },
     )
 

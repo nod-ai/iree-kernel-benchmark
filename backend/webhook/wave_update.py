@@ -82,8 +82,8 @@ class WaveUpdateListener:
         action = pr_payload["action"]
         pr_obj = pr_payload["pull_request"]
 
-        if pr_obj["draft"]:
-            return
+        # if pr_obj["draft"]:
+        #     return
 
         # ignore if not being merged into iree-org/wave/main
         if (

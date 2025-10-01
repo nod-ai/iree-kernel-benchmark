@@ -26,13 +26,13 @@ SUPPORTED_WORKFLOWS = [
         run_type=RunType.TUNING,
         name="Tune Wave Kernels",
         filename="tune_kernels.yml",
-        main_job="tune_kernels",
+        main_job="Tune Kernels",
     ),
     WorkflowRunInfo(
         run_type=RunType.E2E,
         name="Performance",
         filename="run_bench.yml",
-        main_job="run_bench",
+        main_job="E2E Benchmarks",
     ),
 ]
 
