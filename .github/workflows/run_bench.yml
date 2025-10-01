@@ -15,6 +15,7 @@ concurrency:
 
 jobs:
   benchmark:
+    name: E2E Benchmarks
     runs-on: linux-mi325-1gpu-ossci-nod-ai
 
     concurrency:

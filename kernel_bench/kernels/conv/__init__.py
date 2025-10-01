@@ -13,7 +13,7 @@ def get_default_conv_configs(kernel_type: str, backend_name: str):
 
 CONV_BENCH = {
     "conv": {
-        "wave": WaveConvBenchmark,
+        # "wave": WaveConvBenchmark,
         "iree": IREEConvBenchmark,
         "torch": TorchConvBenchmark,
     }

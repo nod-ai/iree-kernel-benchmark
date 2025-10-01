@@ -14,10 +14,6 @@ on:
         description: "Number of trials per kernel for tuning"
         required: false
         default: "75"
-      iterations:
-        description: "Number of benchmark iterations per trial"
-        required: false
-        default: "1"
       backend:
         description: "Backend to tune"
         required: false
@@ -29,6 +25,7 @@ concurrency:
 
 jobs:
   tuning:
+    name: Tune Kernels
     runs-on: linux-mi325-8gpu-ossci-nod-ai
 
     env:
@@ -62,6 +59,13 @@ jobs:
           pip install -r requirements.txt
           pip install wave-lang
 
+      - name: Install Triton
+        run: |
+          source tune_venv/bin/activate
+          git clone --recursive https://github.com/ROCm/aiter.git
+          cd aiter
+          python setup.py develop
+
       - name: Load Tuning Configuration from URL
         if: ${{ inputs.config_url }}
         run: |
@@ -80,7 +84,7 @@ jobs:
       - name: Tune
         run: |
           source tune_venv/bin/activate
-          python -m kernel_bench.bench --tune --load_problems=tune_config.json --backend=${{ inputs.backend }} --iterations=${{ inputs.iterations }} --num_trials=${{ inputs.num_trials }}
+          python -m kernel_bench.cli.bench --tune --load_problems=tune_config.json --backend=${{ inputs.backend }} --num_trials=${{ inputs.num_trials }} --machine=mi325x
 
       - name: Upload tuning results
         uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1

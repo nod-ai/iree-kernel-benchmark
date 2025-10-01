@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 import math
 from multiprocessing import Pool, cpu_count
 import os
+import signal
 import traceback
 from uuid import uuid4
 from sympy import Symbol
@@ -38,6 +39,37 @@ from ..utils.parallel_utils import (
     istarmap,
 )  # Import to enable monkey-patched istarmap method
 import sympy as sp
+
+
+class CompilationTimeoutError(Exception):
+    """Exception raised when compilation exceeds timeout"""
+
+    pass
+
+
+class TimeoutContext:
+    """Context manager for setting a timeout on function execution"""
+
+    def __init__(self, timeout_seconds: int):
+        self.timeout_seconds = timeout_seconds
+        self.old_handler = None
+
+    def timeout_handler(self, signum, frame):
+        raise CompilationTimeoutError(
+            f"Compilation timed out after {self.timeout_seconds} seconds"
+        )
+
+    def __enter__(self):
+        # Set up the signal handler
+        self.old_handler = signal.signal(signal.SIGALRM, self.timeout_handler)
+        signal.alarm(self.timeout_seconds)
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        # Cancel the alarm and restore the old handler
+        signal.alarm(0)
+        if self.old_handler is not None:
+            signal.signal(signal.SIGALRM, self.old_handler)
 
 
 @dataclass
@@ -271,9 +303,15 @@ def compile_iree_bench(bench: IREEKernelBenchmark, kernel_name: str) -> CompileR
         mlir_path = mlir_dir / f"{kernel_name}.mlir"
         vmfb_path = vmfb_dir / f"{kernel_name}.vmfb"
 
-        success = bench.compile_to_vmfb(mlir_path, vmfb_path)
+        # Set 60-second timeout for compilation
+        with TimeoutContext(60):
+            success = bench.compile_to_vmfb(mlir_path, vmfb_path)
+
         return bench.config, vmfb_path, success
 
+    except CompilationTimeoutError as e:
+        get_logger().error(f"Compilation timed out for {bench.config.get_name()}: {e}")
+        return bench.config, None, False
     except Exception as e:
         get_logger().error(f"Compilation failed for {bench.config.get_name()}: {e}")
         return bench.config, None, False
