@@ -3,6 +3,7 @@ import json
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 from dataclass_wizard import fromdict
+from backend.runs import RunType
 from backend.runs.workflows import find_workflow
 from backend.storage.auth import get_blob_client
 from backend.storage.types import (
@@ -70,11 +71,17 @@ def parse_run_from_json(run_json: dict[str, Any]) -> WorkflowRunState:
     )
 
 
-def find_incomplete_runs() -> List[WorkflowRunState]:
-    incomplete_runs = WorkflowRunDb.query(
-        " or ".join([f"status eq '{status}'" for status in RUN_INCOMPLETE_STATUSES])
+def find_incomplete_runs(run_type: Optional[RunType] = None) -> List[WorkflowRunState]:
+    incomplete_query = " or ".join(
+        [f"status eq '{status}'" for status in RUN_INCOMPLETE_STATUSES]
     )
-    artifactless_runs = WorkflowRunDb.query(
-        f"conclusion eq 'success' and hasArtifact eq false"
-    )
+    artifactless_query = f"conclusion eq 'success' and hasArtifact eq false"
+
+    if run_type:
+        run_type_query = f"type eq '{run_type.name}'"
+        incomplete_query = f"{run_type_query} and ({incomplete_query})"
+        artifactless_query = f"{run_type_query} and ({artifactless_query})"
+
+    incomplete_runs = WorkflowRunDb.query(incomplete_query)
+    artifactless_runs = WorkflowRunDb.query(artifactless_query)
     return incomplete_runs + artifactless_runs

@@ -1,8 +1,9 @@
 import logging
 import traceback
 from backend.github_utils import create_gist, get_repo
+from backend.github_utils.gist import load_gist_by_id
 from backend.runs import RunType, get_artifact_parser
-from backend.runs.run_utils import get_run_by_blob_name
+from backend.runs.run_utils import find_incomplete_runs, get_run_by_blob_name
 from backend.runs.tracker import get_run_tracker
 from backend.runs.workflows import trigger_bench_workflow
 from backend.storage.rebase import rebase_all, rebase_pull_requests
@@ -146,6 +147,28 @@ def trigger_workflow():
     trigger_success = wave_client.trigger_workflow(
         pr_data["repoName"], pr_data["branchName"], pr_data["mappingId"]
     )
+
+    bench_kernels = KernelConfigDb.find_all({"workflow": "all"})
+    bench_kernels_json = [asdict(k) for k in bench_kernels]
+    problems_gist = create_gist(bench_kernels_json)
+
+    tuned_configs = TuningConfigDb.find_all()
+    tuned_configs_json = {c.kernel_name: c.result for c in tuned_configs}
+    tuned_gist = create_gist(tuned_configs_json)
+
+    trigger_success = trigger_bench_workflow(
+        RunType.BENCHMARK,
+        {
+            "selected_backend": "all",
+            "selected_kernel": "all",
+            "problems_url": problems_gist.raw_url,
+            "tuned_config_url": tuned_gist.raw_url,
+            "pr_repository": pr_data["repoName"],
+            "pr_branch": pr_data["branchName"],
+            "pr_headsha": pr_data["mappingId"],
+        },
+    )
+
     if trigger_success:
         return "Success", 200
     else:
@@ -184,7 +207,7 @@ def tune_kernels():
     kernel_ids = [str(id) for id in payload["kernel_ids"]]
 
     kernels = KernelConfigDb.find_all()
-    tuning_kernels = [asdict(k) for k in kernels if k.id in kernel_ids]
+    tuning_kernels = [asdict(k) for k in kernels if k._id in kernel_ids]
 
     tuning_request_id = uuid4()
     tuning_upload = create_gist(
@@ -196,12 +219,11 @@ def tune_kernels():
     if not tuning_upload:
         return "Failed to upload config to gist", 500
 
-    json_url = tuning_upload.raw_url
-
     dispatch_success = trigger_bench_workflow(
         RunType.TUNING,
         {
-            "config_url": json_url,
+            "problems_url": tuning_upload.raw_url,
+            "identifier": tuning_upload.gist_id,
         },
     )
 
@@ -213,7 +235,28 @@ def tune_kernels():
 
 @app.route("/tune/results", methods=["GET"])
 def get_tuned_results():
-    return jsonify(TuningConfigDb.find_all())
+    tuned_results = TuningConfigDb.find_all()
+    return jsonify([asdict(t) for t in tuned_results])
+
+
+@app.route("/tune/runs", methods=["GET"])
+def get_tuning_runs():
+    runs = find_incomplete_runs(RunType.TUNING)
+
+    tuning_kernels = []
+    for run in runs:
+        if not run.mappingId:
+            continue
+        run_kernels = load_gist_by_id(run.mappingId)
+        if run_kernels:
+            tuning_kernels.extend(run_kernels)
+
+    return jsonify(
+        {
+            "runs": [asdict(r) for r in runs],
+            "kernels": tuning_kernels,
+        }
+    )
 
 
 @app.route("/kernel_types", methods=["GET"])

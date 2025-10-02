@@ -116,6 +116,44 @@ def update_gist(
         return None
 
 
-def load_gist(raw_url: str) -> Any:
+def load_gist_by_raw_url(raw_url: str) -> Any:
     response = requests.get(raw_url)
     return response.json()
+
+
+def load_gist_by_id(id: str) -> Any:
+    """Load JSON data from the first JSON file in a gist by gist ID."""
+    github_token = get_gist_token()
+
+    headers = {
+        "Accept": "application/vnd.github.v3+json",
+        "Authorization": f"token {github_token}",
+    }
+
+    # Get the gist details
+    response = requests.get(f"https://api.github.com/gists/{id}", headers=headers)
+
+    if response.status_code != 200:
+        logger.error(
+            f"Failed to retrieve gist: {response.status_code} - {response.text}"
+        )
+        return None
+
+    gist_info = response.json()
+
+    # Find the first JSON file
+    json_files = [f for f in gist_info["files"].keys() if f.endswith(".json")]
+
+    if not json_files:
+        logger.error("No JSON files found in the gist")
+        return None
+
+    # Get the content of the first JSON file
+    first_json_file = json_files[0]
+    file_content = gist_info["files"][first_json_file]["content"]
+
+    try:
+        return json.loads(file_content)
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse JSON content: {e}")
+        return None

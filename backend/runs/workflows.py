@@ -29,6 +29,7 @@ SUPPORTED_WORKFLOWS = [
         name="Tune Wave Kernels",
         filename="tune_kernels.yml",
         main_job="Tune Kernels",
+        identifier="tuningRunId",
     ),
     WorkflowRunInfo(
         run_type=RunType.E2E,

@@ -97,7 +97,7 @@ WorkflowRunDb = create_repository(WorkflowRunState, "workflowruns")
 
 ChangeStatDb = create_repository(BenchChangeStats, "benchchangestats")
 
-TuningConfigDb = create_repository(TuningConfig, "tuningconfigs")
+TuningConfigDb = create_repository(TuningConfig, "tuningconfigsnew")
 """Repository for tuning configuration data with full type safety."""
 
 KernelConfigDb = create_repository(KernelConfig, "kernelconfigs")
