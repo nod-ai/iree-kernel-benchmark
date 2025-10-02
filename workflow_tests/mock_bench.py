@@ -9,6 +9,7 @@ import json
 import random
 import os
 from pathlib import Path
+import time
 from typing import Dict, List, Any, Optional
 
 
@@ -276,6 +277,8 @@ def main():
     if not isinstance(problems, list):
         print("Error: Input JSON must be a list of kernel problems")
         return 1
+
+    time.sleep(30)
 
     # Load tuned configurations if provided
     tuned_configs = None

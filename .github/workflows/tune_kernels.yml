@@ -33,6 +33,7 @@ jobs:
 
   tuning:
     name: Tune Kernels
+    needs: identifier
     runs-on: ubuntu-latest
 
     concurrency:

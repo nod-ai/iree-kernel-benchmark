@@ -49,6 +49,7 @@ jobs:
 
   short_benchmark:
     name: Short Benchmark
+    needs: identifier
     runs-on: linux-mi325-1gpu-ossci-nod-ai
 
     concurrency:

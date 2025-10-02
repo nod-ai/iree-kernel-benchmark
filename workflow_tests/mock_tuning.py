@@ -9,6 +9,7 @@ import json
 import random
 import os
 from pathlib import Path
+import time
 from typing import Dict, List, Any
 
 
@@ -216,6 +217,8 @@ def main():
     )
 
     args = parser.parse_args()
+
+    time.sleep(30)
 
     # Load input problems
     try:
