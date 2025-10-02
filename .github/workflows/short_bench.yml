@@ -16,6 +16,12 @@ on:
         description: "Which kernels to run benchmarks for (conv, gemm, attention, all)"
         required: false
         default: "all"
+      problems_url:
+        description: "URL to problems to benchmark"
+        required: false
+      tuned_config_url:
+        description: "URL to tuning configurations"
+        required: false
       metadata:
         description: "Optional: metadata string for tagging the result"
         required: false
@@ -95,10 +101,27 @@ jobs:
           cd aiter
           python setup.py develop
 
-      - name: Run Benchmarks
+      - name: Load Problems from URL
+        if: ${{ inputs.problems_url }}
+        run: |
+          curl -o problems.json ${{ inputs.problems_url }}
+
+      - name: Load Tuning Configuration from URL
+        if: ${{ inputs.tuned_config_url }}
+        run: |
+          curl -o tuned_config.json ${{ inputs.tuned_config_url }}
+
+      - name: Run Benchmarks with Tuned Results
+        if: ${{ inputs.tuned_config_url }}
         run: |
           source bench_venv/bin/activate
-          python3 -m kernel_bench.cli.bench --backend=${{ env.SELECTED_BACKEND }} --kernel_type=${{ env.SELECTED_KERNEL }} --max_kernels=${{ env.MAX_KERNELS }} --machine=mi325x
+          python3 -m workflow_tests.mock_bench --load_problems=problems.json --load_tuned_configs=tuned_config.json --machine=mi325x
+
+      - name: Run Benchmarks without Tuned Results
+        if: ${{ !inputs.tuned_config_url }}
+        run: |
+          source bench_venv/bin/activate
+          python3 -m workflow_tests.mock_bench --load_problems=problems.json --machine=mi325x
 
       - name: Tag result
         if: ${{ inputs.metadata }}
