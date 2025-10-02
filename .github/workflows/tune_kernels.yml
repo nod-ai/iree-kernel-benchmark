@@ -52,11 +52,6 @@ jobs:
         run: |
           python3 -m venv tune_venv
           source tune_venv/bin/activate
-          pip install --upgrade pip
-          pip install --pre --no-cache-dir --find-links https://iree.dev/pip-release-links.html iree-base-compiler iree-base-runtime --upgrade
-          pip install -r pytorch-rocm-requirements.txt
-          pip install -r requirements.txt
-          pip install wave-lang
 
       - name: Load Tuning Configuration from URL
         run: |

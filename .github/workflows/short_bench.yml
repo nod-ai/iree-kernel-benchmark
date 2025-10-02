@@ -81,18 +81,6 @@ jobs:
         run: |
           python3 -m venv bench_venv
           source bench_venv/bin/activate
-          pip install --upgrade pip
-
-          git clone https://github.com/${{ env.WAVE_REPO }}.git
-          cd wave
-          git checkout ${{ env.WAVE_BRANCH }}
-          pip install -r requirements-iree-pinned.txt
-          pip install -r pytorch-rocm-requirements.txt
-          pip install -r requirements.txt
-          pip install -e .
-
-          cd ..
-          pip install -r requirements.txt
 
       - name: Install Triton
         run: |
