@@ -18,12 +18,23 @@ on:
         description: "Backend to tune"
         required: false
         default: "wave"
+      identifier:
+        description: "Unique identifier to tag tuning run"
+        required: false
+        default: "undefined"
 
 concurrency:
   group: ${{ github.workflow }}
   cancel-in-progress: false
 
 jobs:
+  identifier:
+    name: Tuning Run Identifier
+    runs-on: ubuntu-latest
+    steps:
+      - name: tuningRunId_${{ inputs.identifier }}
+        run: echo run identifier ${{ inputs.identifier }}
+
   tuning:
     name: Tune Kernels
     runs-on: linux-mi325-8gpu-ossci-nod-ai
