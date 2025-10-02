@@ -29,6 +29,7 @@ class WorkflowListener:
     def _handle_workflow_run_requested(
         self, workflow_info: WorkflowRunInfo, run_payload: dict
     ):
+        logger.info(f"New run requested")
         run_data = run_payload["workflow_run"]
         run = parse_run_from_json(run_data)
         logger.info(f"adding new run\n{jsonify(run)}")
@@ -79,7 +80,7 @@ class WorkflowListener:
         run_id = str(job_payload["workflow_job"]["run_id"])
         steps = job_payload["workflow_job"]["steps"]
 
-        logger.info("updating job", json.dumps(steps, indent=4))
+        logger.info(f"updating job: {json.dumps(steps, indent=4)}")
 
         try:
             WorkflowRunDb.update_by_id(run_id, {"steps": steps})

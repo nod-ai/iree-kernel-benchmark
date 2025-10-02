@@ -3,7 +3,7 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Dict, List, override
+from typing import Dict, List, Optional, override
 from uuid import uuid4
 
 from dataclass_wizard import asdict, fromdict
@@ -24,7 +24,7 @@ class TuningArtifactParser(RunArtifactParser):
         return parse_tuning_results_from_path(local_path)
 
     @override
-    def _save_artifact(self, local_path, artifact_data, run):
+    def _save_artifact(self, local_path, artifact_data: list[TuningConfig], run):
         dir_client = get_blob_client()
         blob_name = run.blobName
 
@@ -32,16 +32,19 @@ class TuningArtifactParser(RunArtifactParser):
             logger.error("Failed to parse artifact")
             return False
 
-        TuningConfigDb.upsert_many(artifact_data)
-        logger.debug(f"Saved {len(artifact_data)} tuning results to database")
-
         try:
             logger.debug(f"Uploading artifacts to azure path {blob_name}")
             dir_client.upload(f"{local_path}/tuning-results", blob_name)
         except:
             logger.error(f"Blob {blob_name} already exists. Skipped upload")
-            return False
+            return True
         logger.debug(f"Saved {len(artifact_data)} tuning results to blob storage")
+
+        for i in range(len(artifact_data)):
+            artifact_data[i]._id = f"{run._id}-{i}"
+            artifact_data[i].run_id = run._id
+        TuningConfigDb.upsert_many(artifact_data)
+        logger.debug(f"Saved {len(artifact_data)} tuning results to database")
 
         updated_configs = TuningConfigDb.find_all()
         updated_configs_json = [asdict(config) for config in updated_configs]
@@ -55,7 +58,7 @@ class TuningArtifactParser(RunArtifactParser):
 
 
 def parse_tuning_results_from_path(
-    artifact_path: os.PathLike, run_id: str
+    artifact_path: os.PathLike, run_id: Optional[str] = None
 ) -> list[TuningConfig]:
     artifact_path = Path(artifact_path)
 
@@ -66,7 +69,9 @@ def parse_tuning_results_from_path(
     return results
 
 
-def load_tuning_result_json(json_path: os.PathLike, run_id: str) -> List[TuningConfig]:
+def load_tuning_result_json(
+    json_path: os.PathLike, run_id: Optional[str] = None
+) -> List[TuningConfig]:
     with open(json_path, "r") as file:
         results: dict[str, dict] = json.load(file)
 

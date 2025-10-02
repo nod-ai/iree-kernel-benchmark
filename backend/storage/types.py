@@ -92,12 +92,12 @@ class RepoPullRequest:
 KernelTypeDb = create_repository(KernelTypeDefinition, "kerneltypes")
 """Repository for kernel types and their respective attributes"""
 
-WorkflowRunDb = create_repository(WorkflowRunState, "workflowruns")
+WorkflowRunDb = create_repository(WorkflowRunState, "workflowrunstates")
 """Repository for workflow run data with full type safety."""
 
 ChangeStatDb = create_repository(BenchChangeStats, "benchchangestats")
 
-TuningConfigDb = create_repository(TuningConfig, "tuningconfigsnew")
+TuningConfigDb = create_repository(TuningConfig, "tuningconfigsnew2")
 """Repository for tuning configuration data with full type safety."""
 
 KernelConfigDb = create_repository(KernelConfig, "kernelconfigs")
