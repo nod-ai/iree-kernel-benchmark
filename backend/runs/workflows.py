@@ -1,7 +1,9 @@
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 
+from backend.github_utils.actions import trigger_workflow_dispatch
+from backend.globals import BENCH_REPO_BRANCH
 from backend.runs import RunType
 
 
@@ -61,3 +63,19 @@ def find_workflow(
 
         return workflow_info
     return None
+
+
+def trigger_bench_workflow(
+    run_type: RunType,
+    inputs: Optional[dict[str, Any]] = None,
+) -> bool:
+    workflow = find_workflow(run_type)
+    if not workflow:
+        return False
+
+    return trigger_workflow_dispatch(
+        repo_id="bench",
+        branch_name=BENCH_REPO_BRANCH,
+        workflow_id=workflow.filename,
+        inputs=inputs,
+    )

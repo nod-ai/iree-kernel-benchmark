@@ -1,23 +1,17 @@
 import logging
-from backend.github_utils import get_repo, get_github_token
-from backend.github_utils.actions import trigger_workflow_dispatch
+from backend.github_utils import get_repo
 from backend.globals import (
-    BENCH_ITERATIONS,
-    BENCH_REPO_BRANCH,
     MAX_BENCH_KERNELS,
     RUN_ALL_BACKENDS,
     WAVE_REPO_NAME,
 )
 from backend.runs import RunType
-from backend.runs.workflows import find_workflow
+from backend.runs.workflows import trigger_bench_workflow
 from backend.storage.auth import get_blob_client
 from backend.storage.conversion import parse_pr_obj
-from backend.storage.directory import DirectoryClient
 from backend.storage.types import *
-from datetime import timezone
 from dataclass_wizard import asdict
 import json
-import requests
 
 logger = logging.getLogger(__name__)
 
@@ -71,12 +65,7 @@ class WaveUpdateListener:
         if metadata:
             inputs["metadata"] = json.dumps(metadata)
 
-        return trigger_workflow_dispatch(
-            repo_id="bench",
-            branch_name=BENCH_REPO_BRANCH,
-            workflow_id=find_workflow(RunType.BENCHMARK).filename,
-            inputs=inputs,
-        )
+        return trigger_bench_workflow(RunType.BENCHMARK, inputs)
 
     def handle_pr_payload(self, pr_payload: dict):
         action = pr_payload["action"]

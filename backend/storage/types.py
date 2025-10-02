@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
-from typing import Optional, Any
+from typing import Literal, Optional, Any
 from .repository import create_repository
 
 
@@ -32,20 +32,29 @@ class TuningConfig:
 class BenchChangeStats:
     _id: str
     runId: str
+    machine: str
     old: dict[str, Any]
     new: dict[str, Any]
 
 
 @dataclass
-class Kernel:
-    id: str
-    kernelType: str
+class KernelTypeDefinition:
+    _id: str
     name: str
+    displayName: str
+    attributes: list[dict]
+    description: Optional[str] = None
+
+
+@dataclass
+class KernelConfig:
+    _id: str
+    name: str
+    kernelType: str
     tag: str
-    dtype: str
-    allowedBackends: list[str]
+    machines: list[str]
+    workflow: Literal["none", "e2e", "all"]
     problem: dict[str, Any]
-    _id: str = None
 
 
 @dataclass
@@ -80,6 +89,9 @@ class RepoPullRequest:
     isMerged: bool = False
 
 
+KernelTypeDb = create_repository(KernelTypeDefinition, "kerneltypes")
+"""Repository for kernel types and their respective attributes"""
+
 WorkflowRunDb = create_repository(WorkflowRunState, "workflowruns")
 """Repository for workflow run data with full type safety."""
 
@@ -88,8 +100,8 @@ ChangeStatDb = create_repository(BenchChangeStats, "benchchangestats")
 TuningConfigDb = create_repository(TuningConfig, "tuningconfigs")
 """Repository for tuning configuration data with full type safety."""
 
-KernelDb = create_repository(Kernel, "kernels")
-"""Repository for kernel data with full type safety."""
+KernelConfigDb = create_repository(KernelConfig, "kernelconfigs")
+"""Repository for benchmarkable kernel configurations with full type safety."""
 
 RepoPullRequestDb = create_repository(RepoPullRequest, "repopullrequests")
 """Repository for repository pull request data with full type safety."""

@@ -41,12 +41,6 @@ def download_artifact(
     return local_path
 
 
-def compare_artifact_kernels(
-    old: List[Dict], new: List[Dict] = None, backend: str = "wave"
-) -> BenchChangeStats:
-    pass
-
-
 def fill_new_kernels(old: List[Dict], new: List[Dict]) -> List[Dict]:
     new_wave = [k for k in new if "wave" in k["backend"]]
     old_other = [k for k in old if "wave" not in k["backend"]]

@@ -1,8 +1,10 @@
 import logging
-from backend.github_utils import trigger_workflow_dispatch, create_gist, get_repo
+import traceback
+from backend.github_utils import create_gist, get_repo
 from backend.runs import RunType, get_artifact_parser
 from backend.runs.run_utils import get_run_by_blob_name
 from backend.runs.tracker import get_run_tracker
+from backend.runs.workflows import trigger_bench_workflow
 from backend.storage.rebase import rebase_all, rebase_pull_requests
 from backend.storage.types import *
 from backend.storage.utils import test_logger
@@ -122,12 +124,6 @@ def get_all_runs():
     return jsonify([asdict(run) for run in runs])
 
 
-@app.route("/kernels")
-def get_all_kernels():
-    kernels = KernelDb.find_all()
-    return jsonify([asdict(k) for k in kernels])
-
-
 @app.route("/performances")
 def get_all_perfs():
     perfs = WorkflowRunDb.find_all({"type": RunType.E2E.name})
@@ -187,7 +183,7 @@ def tune_kernels():
     payload = request.get_json()
     kernel_ids = [str(id) for id in payload["kernel_ids"]]
 
-    kernels = KernelDb.find_all()
+    kernels = KernelConfigDb.find_all()
     tuning_kernels = [asdict(k) for k in kernels if k.id in kernel_ids]
 
     tuning_request_id = uuid4()
@@ -202,10 +198,8 @@ def tune_kernels():
 
     json_url = tuning_upload.raw_url
 
-    dispatch_success = trigger_workflow_dispatch(
-        "bench",
-        "phased-tuning",
-        "tune_kernels.yml",
+    dispatch_success = trigger_bench_workflow(
+        RunType.TUNING,
         {
             "config_url": json_url,
         },
@@ -220,6 +214,255 @@ def tune_kernels():
 @app.route("/tune/results", methods=["GET"])
 def get_tuned_results():
     return jsonify(TuningConfigDb.find_all())
+
+
+@app.route("/kernel_types", methods=["GET"])
+def get_all_kernel_types():
+    """Get all kernel types from the database."""
+    kernel_types = KernelTypeDb.find_all()
+    return jsonify([asdict(kt) for kt in kernel_types])
+
+
+@app.route("/kernel_types", methods=["POST"])
+# @token_required
+def add_kernel_type():
+    """Add a new kernel type to the database."""
+    try:
+        data = request.get_json()
+
+        # Validate required fields
+        required_fields = ["_id", "name", "displayName", "attributes"]
+        for field in required_fields:
+            if field not in data:
+                return jsonify({"error": f"Missing required field: {field}"}), 400
+
+        # Create kernel type from the request data
+        kernel_type = fromdict(KernelTypeDefinition, data)
+
+        # Check if kernel type with this ID already exists
+        existing = KernelTypeDb.find_by_id(kernel_type._id)
+        if existing:
+            return jsonify({"error": "Kernel type with this ID already exists"}), 409
+
+        # Save to database
+        success = KernelTypeDb.upsert(kernel_type)
+
+        if success:
+            return jsonify(asdict(kernel_type)), 201
+        else:
+            return jsonify({"error": "Failed to save kernel type"}), 500
+
+    except Exception as e:
+        logger.error(traceback.format_exc())
+        return jsonify({"error": f"Invalid data: {str(e)}"}), 400
+
+
+@app.route("/kernel_types/<kernel_type_id>", methods=["PUT"])
+# @token_required
+def update_kernel_type(kernel_type_id):
+    """Update an existing kernel type."""
+    try:
+        data = request.get_json()
+
+        # Check if kernel type exists
+        existing = KernelTypeDb.find_by_id(kernel_type_id)
+        if not existing:
+            return jsonify({"error": "Kernel type not found"}), 404
+
+        # Update the kernel type
+        updated = KernelTypeDb.update_by_id(kernel_type_id, data)
+
+        if updated:
+            return jsonify(asdict(updated)), 200
+        else:
+            return jsonify({"error": "Failed to update kernel type"}), 500
+
+    except Exception as e:
+        return jsonify({"error": f"Invalid data: {str(e)}"}), 400
+
+
+@app.route("/kernel_types/<kernel_type_id>", methods=["DELETE"])
+# @token_required
+def remove_kernel_type(kernel_type_id):
+    """Remove a kernel type from the database."""
+    try:
+        # Check if kernel type exists
+        existing = KernelTypeDb.find_by_id(kernel_type_id)
+        if not existing:
+            return jsonify({"error": "Kernel type not found"}), 404
+
+        # Delete the kernel type
+        success = KernelTypeDb.delete_by_id(kernel_type_id)
+
+        if success:
+            return jsonify({"message": "Kernel type deleted successfully"}), 200
+        else:
+            return jsonify({"error": "Failed to delete kernel type"}), 500
+
+    except Exception as e:
+        return jsonify({"error": f"Error deleting kernel type: {str(e)}"}), 500
+
+
+@app.route("/kernels", methods=["GET"])
+def get_all_kernels():
+    """Get all kernel configurations from the database."""
+    kernels = KernelConfigDb.find_all()
+    return jsonify([asdict(k) for k in kernels])
+
+
+@app.route("/kernels", methods=["POST"])
+# @token_required
+def add_kernels():
+    """Add multiple new kernel configurations to the database."""
+    try:
+        data = request.get_json()
+
+        # Expect either a single kernel config or a list of kernel configs
+        if not isinstance(data, list):
+            kernel_configs = [data]
+        else:
+            kernel_configs = data
+
+        if not kernel_configs:
+            return jsonify({"error": "No kernel configurations provided"}), 400
+
+        created_kernels = []
+
+        for kernel_data in kernel_configs:
+            # Validate required fields (excluding _id as it can be auto-generated)
+            required_fields = [
+                "name",
+                "kernelType",
+                "tag",
+                "machines",
+                "workflow",
+                "problem",
+            ]
+            for field in required_fields:
+                if field not in kernel_data:
+                    return jsonify({"error": f"Missing required field: {field}"}), 400
+
+            # Generate unique ID if not provided
+            if "_id" not in kernel_data or not kernel_data["_id"]:
+                kernel_data["_id"] = str(uuid4())
+
+            # Check if kernel config with this ID already exists
+            existing = KernelConfigDb.find_by_id(kernel_data["_id"])
+            if existing:
+                return (
+                    jsonify(
+                        {
+                            "error": f"Kernel configuration with ID {kernel_data['_id']} already exists"
+                        }
+                    ),
+                    409,
+                )
+
+            # Create kernel config from the request data
+            kernel_config = fromdict(KernelConfig, kernel_data)
+            created_kernels.append(kernel_config)
+
+        # Save all kernel configs to database
+        success = KernelConfigDb.upsert_many(created_kernels)
+
+        if success:
+            return jsonify([asdict(k) for k in created_kernels]), 201
+        else:
+            return jsonify({"error": "Failed to save kernel configurations"}), 500
+
+    except Exception as e:
+        logger.error(traceback.format_exc())
+        return jsonify({"error": f"Invalid data: {str(e)}"}), 400
+
+
+@app.route("/kernels/<kernel_id>", methods=["PUT"])
+# @token_required
+def update_kernel(kernel_id):
+    """Update an existing kernel configuration."""
+    try:
+        data = request.get_json()
+
+        # Check if kernel config exists
+        existing = KernelConfigDb.find_by_id(kernel_id)
+        if not existing:
+            return jsonify({"error": "Kernel configuration not found"}), 404
+
+        # Update the kernel config
+        updated = KernelConfigDb.update_by_id(kernel_id, data)
+
+        if updated:
+            return jsonify(asdict(updated)), 200
+        else:
+            return jsonify({"error": "Failed to update kernel configuration"}), 500
+
+    except Exception as e:
+        logger.error(traceback.format_exc())
+        return jsonify({"error": f"Invalid data: {str(e)}"}), 400
+
+
+@app.route("/kernels", methods=["DELETE"])
+# @token_required
+def remove_kernels():
+    """Remove multiple kernel configurations from the database."""
+    try:
+        data = request.get_json()
+
+        # Expect a list of kernel IDs to delete
+        if not data or "ids" not in data:
+            return jsonify({"error": "Missing 'ids' field in request body"}), 400
+
+        kernel_ids = data["ids"]
+        if not isinstance(kernel_ids, list):
+            return jsonify({"error": "'ids' must be a list"}), 400
+
+        if not kernel_ids:
+            return jsonify({"error": "No kernel IDs provided"}), 400
+
+        deleted_count = 0
+        not_found_ids = []
+        failed_deletions = []
+
+        for kernel_id in kernel_ids:
+            # Check if kernel config exists
+            existing = KernelConfigDb.find_by_id(kernel_id)
+            if not existing:
+                not_found_ids.append(kernel_id)
+                continue
+
+            # Delete the kernel config
+            success = KernelConfigDb.delete_by_id(kernel_id)
+            if success:
+                deleted_count += 1
+            else:
+                failed_deletions.append(kernel_id)
+
+        response_data = {
+            "message": f"Successfully deleted {deleted_count} kernel configuration(s)",
+            "deleted_count": deleted_count,
+            "total_requested": len(kernel_ids),
+        }
+
+        if not_found_ids:
+            response_data["not_found"] = not_found_ids
+
+        if failed_deletions:
+            response_data["failed_deletions"] = failed_deletions
+
+        # Return appropriate status code based on results
+        if deleted_count == len(kernel_ids):
+            return jsonify(response_data), 200
+        elif deleted_count > 0:
+            return jsonify(response_data), 207  # Partial success
+        else:
+            response_data["message"] = "No kernel configurations were deleted"
+            return jsonify(response_data), 400
+
+    except Exception as e:
+        logger.error(traceback.format_exc())
+        return (
+            jsonify({"error": f"Error deleting kernel configurations: {str(e)}"}),
+            500,
+        )
 
 
 def serve_backend(port=3000):
