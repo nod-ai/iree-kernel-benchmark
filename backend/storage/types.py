@@ -32,7 +32,8 @@ class TuningConfig:
 class BenchChangeStats:
     _id: str
     runId: str
-    changeStats: dict[str, float]
+    old: dict[str, Any]
+    new: dict[str, Any]
 
 
 @dataclass

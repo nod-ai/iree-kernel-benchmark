@@ -1,6 +1,7 @@
 from datetime import datetime
 import json
 from typing import Any, Dict, List, Optional
+from uuid import uuid4
 from dataclass_wizard import fromdict
 from backend.runs.workflows import find_workflow
 from backend.storage.auth import get_blob_client
@@ -57,7 +58,7 @@ def parse_run_from_json(run_json: dict[str, Any]) -> WorkflowRunState:
     return WorkflowRunState(
         _id=run_id,
         type=run_type,
-        blobName=run_json["updated_at"],
+        blobName=str(uuid4()),
         timestamp=datetime.fromisoformat(run_json["updated_at"]),
         status=run_json["status"],
         conclusion=run_json["conclusion"] or "unknown",
@@ -70,6 +71,10 @@ def parse_run_from_json(run_json: dict[str, Any]) -> WorkflowRunState:
 
 
 def find_incomplete_runs() -> List[WorkflowRunState]:
-    return WorkflowRunDb.query(
+    incomplete_runs = WorkflowRunDb.query(
         " or ".join([f"status eq '{status}'" for status in RUN_INCOMPLETE_STATUSES])
     )
+    artifactless_runs = WorkflowRunDb.query(
+        f"conclusion eq 'success' and hasArtifact eq false"
+    )
+    return incomplete_runs + artifactless_runs

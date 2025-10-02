@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 import logging
+import time
 import traceback
 from typing import Any, Dict, Optional
 from github.WorkflowJob import WorkflowJob
@@ -14,6 +15,8 @@ from backend.storage.types import WorkflowRunDb, WorkflowRunState
 
 logger = logging.getLogger(__name__)
 
+UPDATE_TRACKER_INTERVAL = 1  # seconds
+
 
 class RunTracker:
     def __init__(
@@ -26,6 +29,8 @@ class RunTracker:
         self._bench_repo = get_repo("bench")
         self._artifact_parser = get_artifact_parser(run_type)
         self._run_db = WorkflowRunDb
+
+        self._last_update_time = time.time()
 
         workflow_info = find_workflow(run_type)
         if not workflow_info:
@@ -40,7 +45,7 @@ class RunTracker:
             self._run = run_data
         else:
             try:
-                self._load_data_from_db()
+                self._load_data_from_db(force=True)
             except:
                 raise ValueError(f"Could not find run {run_id} in database")
 
@@ -97,7 +102,7 @@ class RunTracker:
 
         logger.debug(f"Updating run_{self._run_id} in db")
         self._run_db.update_by_id(self._run_id, db_run_update)
-        self._load_data_from_db()
+        self._load_data_from_db(force=True)
 
     def run_id(self) -> str:
         return self._run_id
@@ -109,6 +114,10 @@ class RunTracker:
     def is_complete(self) -> bool:
         self._load_data_from_db()
         return self._run.status not in RUN_INCOMPLETE_STATUSES
+
+    def is_success(self) -> bool:
+        self._load_data_from_db()
+        return self.is_complete() and self._run.conclusion == "success"
 
     def has_artifact(self) -> bool:
         self._load_data_from_db()
@@ -148,8 +157,11 @@ class RunTracker:
         logger.error(f"No artifact returned by run_{self._run_id}")
         return False
 
-    def _load_data_from_db(self):
-        self._run = self._run_db.find_by_id(self._run_id)
+    def _load_data_from_db(self, force=False):
+        elapsed_time = time.time() - self._last_update_time
+        if elapsed_time >= UPDATE_TRACKER_INTERVAL or force:
+            self._run = self._run_db.find_by_id(self._run_id)
+            self._last_update_time = time.time()
 
     def _get_gh_run(self) -> Optional[WorkflowRun]:
         try:

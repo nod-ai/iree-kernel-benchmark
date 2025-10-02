@@ -39,11 +39,11 @@ class RunManager:
             if not tracker.is_complete():
                 logger.debug(f"Updating ongoing run_{run_id}")
                 tracker.update()
-            elif not tracker.has_artifact():
+            elif tracker.is_success() and not tracker.has_artifact():
                 logger.debug(f"Saving artifact for completed run_{run_id}")
                 artifact_success = tracker.save_artifact()
                 if not artifact_success:
-                    logger.debug(
+                    logger.error(
                         f"Could not save artifact for run_{run_id}: Untracking run"
                     )
                     completed_runs.append(run_id)

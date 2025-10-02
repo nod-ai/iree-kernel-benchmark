@@ -73,7 +73,7 @@ class RunArtifactParser(ABC):
 
         if local_path:
             try:
-                parsed_data = self._parse_from_local_path()
+                parsed_data = self._parse_from_local_path(local_path)
             except Exception as e:
                 logger.error(
                     f"Failed to parse artifact data: \n"
