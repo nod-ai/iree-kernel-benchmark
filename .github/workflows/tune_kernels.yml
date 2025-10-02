@@ -65,7 +65,7 @@ jobs:
       - name: Tune
         run: |
           source tune_venv/bin/activate
-          python -m workflow_tests.mock_tuning --load_problems=problems.json --backend=${{ inputs.backend }} --num_trials=${{ inputs.num_trials }} --machine=mi325x
+          python -m workflow_tests.mock_tuning --load_problems=problems.json --backend=${{ inputs.backend }} --machine=mi325x
 
       - name: Upload tuning results
         uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1
