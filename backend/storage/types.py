@@ -32,9 +32,9 @@ class TuningConfig:
 class BenchChangeStats:
     _id: str
     runId: str
-    machine: str
-    old: dict[str, Any]
-    new: dict[str, Any]
+    machine: str = "mi325x"
+    old: Optional[dict[str, Any]] = None
+    new: Optional[dict[str, Any]] = None
 
 
 @dataclass

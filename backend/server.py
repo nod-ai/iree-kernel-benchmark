@@ -259,6 +259,22 @@ def get_tuning_runs():
     )
 
 
+@app.route("/change_stats", methods=["GET"])
+def get_all_change_stats():
+    """Get all kernel types from the database."""
+    change_stats = ChangeStatDb.find_all()
+    return jsonify([asdict(cs) for cs in change_stats])
+
+
+@app.route("/change_stats/<run_id>", methods=["GET"])
+def get_change_stat_by_run_id(run_id):
+    """Get all kernel types from the database."""
+    change_stats = ChangeStatDb.find_all({"runId": str(run_id)})
+    if len(change_stats) == 0:
+        return "Failed to find change stats", 500
+    return jsonify(asdict(change_stats[0]))
+
+
 @app.route("/kernel_types", methods=["GET"])
 def get_all_kernel_types():
     """Get all kernel types from the database."""
