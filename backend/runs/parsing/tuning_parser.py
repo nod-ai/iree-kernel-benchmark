@@ -3,6 +3,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import traceback
 from typing import Dict, List, Optional, override
 from uuid import uuid4
 
@@ -25,26 +26,19 @@ class TuningArtifactParser(RunArtifactParser):
 
     @override
     def _save_artifact(self, local_path, artifact_data: list[TuningConfig], run):
-        dir_client = get_blob_client()
-        blob_name = run.blobName
-
         if len(artifact_data) == 0:
             logger.error("Failed to parse artifact")
             return False
 
-        try:
-            logger.debug(f"Uploading artifacts to azure path {blob_name}")
-            dir_client.upload(f"{local_path}/tuning-results", blob_name)
-        except:
-            logger.error(f"Blob {blob_name} already exists. Skipped upload")
-            return True
-        logger.debug(f"Saved {len(artifact_data)} tuning results to blob storage")
-
         for i in range(len(artifact_data)):
             artifact_data[i]._id = f"{run._id}-{i}"
             artifact_data[i].run_id = run._id
-        TuningConfigDb.upsert_many(artifact_data)
-        logger.debug(f"Saved {len(artifact_data)} tuning results to database")
+        upsert_success = TuningConfigDb.upsert_many(artifact_data)
+        if upsert_success:
+            logger.debug(f"Saved {len(artifact_data)} tuning results to database")
+        else:
+            logger.error(f"Failed to save tuned configs")
+            return False
 
         updated_configs = TuningConfigDb.find_all()
         updated_configs_json = [asdict(config) for config in updated_configs]

@@ -172,6 +172,7 @@ class DatabaseRepository(Generic[T]):
         self.table = table
         self._service_client: Optional[TableServiceClient] = None
         self._table_client: Optional[TableClient] = None
+        self._get_clients()
 
     def _get_clients(self) -> tuple[TableServiceClient, TableClient]:
         """Get database clients - lazy initialization."""
@@ -188,6 +189,10 @@ class DatabaseRepository(Generic[T]):
             self._table_client = self._service_client.create_table_if_not_exists(
                 self.table
             )
+            if not self._table_client:
+                raise ValueError(
+                    f"Could not create table client for table {self.table}"
+                )
         return self._service_client, self._table_client
 
     def find_by_id(self, id: str) -> Optional[T]:
