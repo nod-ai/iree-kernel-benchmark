@@ -177,6 +177,7 @@ def generate_benchmark_result(
     # Build the complete result structure
     result = {
         "name": kernel_name,
+        "kernel_spec": kernel_spec.copy(),
         "benchmark": {
             "machine": machine.upper(),
             "kernel_type": kernel_type,
