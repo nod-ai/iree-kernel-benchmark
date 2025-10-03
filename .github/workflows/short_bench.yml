@@ -50,7 +50,7 @@ jobs:
   short_benchmark:
     name: Short Benchmark
     needs: identifier
-    runs-on: linux-mi325-1gpu-ossci-nod-ai
+    runs-on: ubuntu-latest
 
     concurrency:
       group: benchmarking
@@ -82,13 +82,6 @@ jobs:
         run: |
           python3 -m venv bench_venv
           source bench_venv/bin/activate
-
-      - name: Install Triton
-        run: |
-          source bench_venv/bin/activate
-          git clone --recursive https://github.com/ROCm/aiter.git
-          cd aiter
-          python setup.py develop
 
       - name: Load Problems from URL
         if: ${{ inputs.problems_url }}
