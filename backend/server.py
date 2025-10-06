@@ -142,13 +142,32 @@ def get_artifact_by_run_id(blob_name):
 
 @app.route("/workflow/trigger", methods=["POST"])
 def trigger_workflow():
-    pr_data = request.get_json()
+    response_data = request.get_json()
+
+    pr_data = response_data["pr"]
+    config_data = response_data["config"]
+
     wave_client = WaveUpdateListener()
     trigger_success = wave_client.trigger_workflow(
         pr_data["repoName"], pr_data["branchName"], pr_data["mappingId"]
     )
 
-    bench_kernels = KernelConfigDb.find_all({"workflow": "all"})
+    kernel_selection = config_data["kernelSelection"]
+    if kernel_selection["type"] == "specific-tags":
+        tags = kernel_selection["tags"]
+        bench_kernels = KernelConfigDb.query(
+            " or ".join([f"tag eq '{tag}'" for tag in tags])
+        )
+        logger.info(
+            f"Loaded {len(bench_kernels)} kernels for benchmark with {len(tags)} tags"
+        )
+    else:
+        bench_kernels = KernelConfigDb.find_all({"workflow": "all"})
+        logger.info(f"Loaded {len(bench_kernels)} quick kernels for benchmark")
+
+    if len(bench_kernels) == 0:
+        return "No kernels found", 500
+
     bench_kernels_json = [asdict(k) for k in bench_kernels]
     problems_gist = create_gist(bench_kernels_json)
 
@@ -405,18 +424,6 @@ def add_kernels():
             if "_id" not in kernel_data or not kernel_data["_id"]:
                 kernel_data["_id"] = str(uuid4())
 
-            # Check if kernel config with this ID already exists
-            existing = KernelConfigDb.find_by_id(kernel_data["_id"])
-            if existing:
-                return (
-                    jsonify(
-                        {
-                            "error": f"Kernel configuration with ID {kernel_data['_id']} already exists"
-                        }
-                    ),
-                    409,
-                )
-
             # Create kernel config from the request data
             kernel_config = fromdict(KernelConfig, kernel_data)
             created_kernels.append(kernel_config)
@@ -459,6 +466,53 @@ def update_kernel(kernel_id):
         return jsonify({"error": f"Invalid data: {str(e)}"}), 400
 
 
+@app.route("/kernels/batch", methods=["PUT"])
+# @token_required
+def update_kernels_batch():
+    """Update multiple kernel configurations using batched transactions."""
+    try:
+        data = request.get_json()
+
+        # Expect a list of update dictionaries
+        if not isinstance(data, list):
+            return jsonify({"error": "Expected a list of update objects"}), 400
+
+        if not data:
+            return jsonify({"error": "No kernel updates provided"}), 400
+
+        # Validate that each update has an _id field
+        for i, update_dict in enumerate(data):
+            if not isinstance(update_dict, dict):
+                return jsonify({"error": f"Update at index {i} must be an object"}), 400
+            if "_id" not in update_dict:
+                return (
+                    jsonify(
+                        {"error": f"Update at index {i} missing required '_id' field"}
+                    ),
+                    400,
+                )
+
+        # Perform batched update
+        success = KernelConfigDb.update_many(data)
+
+        if success:
+            return (
+                jsonify(
+                    {
+                        "message": f"Successfully updated {len(data)} kernel configurations",
+                        "updated_count": len(data),
+                    }
+                ),
+                200,
+            )
+        else:
+            return jsonify({"error": "Failed to update kernel configurations"}), 500
+
+    except Exception as e:
+        logger.error(traceback.format_exc())
+        return jsonify({"error": f"Invalid data: {str(e)}"}), 400
+
+
 @app.route("/kernels", methods=["DELETE"])
 # @token_required
 def remove_kernels():
@@ -477,51 +531,17 @@ def remove_kernels():
         if not kernel_ids:
             return jsonify({"error": "No kernel IDs provided"}), 400
 
-        deleted_count = 0
-        not_found_ids = []
-        failed_deletions = []
-
-        for kernel_id in kernel_ids:
-            # Check if kernel config exists
-            existing = KernelConfigDb.find_by_id(kernel_id)
-            if not existing:
-                not_found_ids.append(kernel_id)
-                continue
-
-            # Delete the kernel config
-            success = KernelConfigDb.delete_by_id(kernel_id)
-            if success:
-                deleted_count += 1
-            else:
-                failed_deletions.append(kernel_id)
-
-        response_data = {
-            "message": f"Successfully deleted {deleted_count} kernel configuration(s)",
-            "deleted_count": deleted_count,
-            "total_requested": len(kernel_ids),
-        }
-
-        if not_found_ids:
-            response_data["not_found"] = not_found_ids
-
-        if failed_deletions:
-            response_data["failed_deletions"] = failed_deletions
+        success = KernelConfigDb.delete_many_by_ids(kernel_ids)
 
         # Return appropriate status code based on results
-        if deleted_count == len(kernel_ids):
-            return jsonify(response_data), 200
-        elif deleted_count > 0:
-            return jsonify(response_data), 207  # Partial success
+        if success:
+            return f"Successfully deleted {len(kernel_ids)} kernels", 200
         else:
-            response_data["message"] = "No kernel configurations were deleted"
-            return jsonify(response_data), 400
+            return "Failed to delete one or more kernels", 400
 
     except Exception as e:
         logger.error(traceback.format_exc())
-        return (
-            jsonify({"error": f"Error deleting kernel configurations: {str(e)}"}),
-            500,
-        )
+        return f"Error deleting kernel configurations: {str(e)}", 500
 
 
 def serve_backend(port=3000):

@@ -286,24 +286,29 @@ class DatabaseRepository(Generic[T]):
             return False
 
     def upsert_many(self, objects: List[T]) -> bool:
-        """Insert or update multiple entities."""
+        """Insert or update multiple entities using batched transactions."""
         try:
             _, table_client = self._get_clients()
 
-            # Process in batches of 100 (Azure Table Storage limit)
+            # Azure Table Storage transaction limit is 100 operations per batch
             # All entities in a batch must have the same partition key
             batch_size = 100
-            for i in range(0, len(objects), batch_size):
-                batch = objects[i : i + batch_size]
+            operations = []
 
-                for obj in batch:
-                    if not hasattr(obj, "_id"):
-                        raise ValueError("All objects must have an _id attribute")
+            for i, obj in enumerate(objects):
+                if not hasattr(obj, "_id"):
+                    raise ValueError("All objects must have an _id attribute")
 
-                    entity = DatabaseSerializer.serialize_entity(
-                        obj, row_key=obj._id, partition=self.table
-                    )
-                    table_client.upsert_entity(entity)
+                entity = DatabaseSerializer.serialize_entity(
+                    obj, row_key=obj._id, partition=self.table
+                )
+                operations.append(("upsert", entity))
+
+                # Submit batch when we reach the limit or at the end
+                if len(operations) >= batch_size or i == len(objects) - 1:
+                    if operations:  # Only submit if we have operations
+                        table_client.submit_transaction(operations)
+                        operations = []  # Reset for next batch
 
             return True
         except Exception as e:
@@ -330,6 +335,44 @@ class DatabaseRepository(Generic[T]):
             print(f"Error updating entity by ID: {e}")
             return None
 
+    def update_many(self, updates: List[Dict[str, Any]]) -> bool:
+        """Update multiple entities using batched transactions with upsert operations."""
+        try:
+            _, table_client = self._get_clients()
+
+            # Azure Table Storage transaction limit is 100 operations per batch
+            # All entities in a batch must have the same partition key
+            batch_size = 100
+            operations = []
+
+            for i, update_dict in enumerate(updates):
+                if "_id" not in update_dict:
+                    raise ValueError("Each update dict must contain an '_id' field")
+
+                entity_id = update_dict["_id"]
+
+                # Create entity for update with required Azure Table Storage fields
+                entity = {"PartitionKey": self.table, "RowKey": entity_id}
+
+                # Serialize and add the update values (excluding _id)
+                for key, value in update_dict.items():
+                    if key != "_id":  # Skip the _id field as it's handled by RowKey
+                        entity[key] = DatabaseSerializer.serialize_value(value)
+
+                # Use update operation which will update existing or create new
+                operations.append(("update", entity))
+
+                # Submit batch when we reach the limit or at the end
+                if len(operations) >= batch_size or i == len(updates) - 1:
+                    if operations:  # Only submit if we have operations
+                        table_client.submit_transaction(operations)
+                        operations = []  # Reset for next batch
+
+            return True
+        except Exception as e:
+            print(f"Error in update_many: {e}")
+            return False
+
     def delete_by_id(self, id: str) -> bool:
         """Delete an entity by ID."""
         try:
@@ -345,6 +388,32 @@ class DatabaseRepository(Generic[T]):
         if not hasattr(obj, "_id"):
             return False
         return self.delete_by_id(obj._id)
+
+    def delete_many_by_ids(self, ids: List[str]) -> bool:
+        """Delete multiple entities by their IDs using batched transactions."""
+        try:
+            _, table_client = self._get_clients()
+
+            # Azure Table Storage transaction limit is 100 operations per batch
+            # All entities in a batch must have the same partition key
+            batch_size = 100
+            operations = []
+
+            for i, id in enumerate(ids):
+                # Create entity with minimal required fields for deletion
+                entity = {"PartitionKey": self.table, "RowKey": id}
+                operations.append(("delete", entity))
+
+                # Submit batch when we reach the limit or at the end
+                if len(operations) >= batch_size or i == len(ids) - 1:
+                    if operations:  # Only submit if we have operations
+                        table_client.submit_transaction(operations)
+                        operations = []  # Reset for next batch
+
+            return True
+        except Exception as e:
+            print(f"Error in delete_many_by_ids: {e}")
+            return False
 
     def count(self) -> int:
         """Count total entities in the table."""
