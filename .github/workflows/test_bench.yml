@@ -13,7 +13,7 @@ jobs:
     runs-on: linux-mi325-1gpu-ossci-nod-ai
 
     concurrency:
-      group: benchmarking
+      group: kernel-benchmarking
       cancel-in-progress: false
 
     env:
