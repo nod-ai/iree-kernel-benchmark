@@ -15,21 +15,27 @@ def benchmark_function_torch(
     except Exception as e:
         raise RuntimeError(f"Failed torch warmup runs: {e}")
 
+    times_us = [0] * iterations
+
     try:
         torch.cuda.empty_cache()
-        start_event = torch.cuda.Event(enable_timing=True)
-        end_event = torch.cuda.Event(enable_timing=True)
 
-        start_event.record()
-        for _ in range(iterations):
+        for i in range(iterations):
+            start_event = torch.cuda.Event(enable_timing=True)
+            end_event = torch.cuda.Event(enable_timing=True)
+
+            start_event.record()
             fn(*inputs, **kwinputs)
-        end_event.record()
-        torch.cuda.synchronize()
+            end_event.record()
+            torch.cuda.synchronize()
+
+            delta_time_ms = start_event.elapsed_time(end_event)
+            delta_time_us = delta_time_ms * 1e3
+
+            times_us[i] = delta_time_us
+
     except Exception as e:
         raise e
 
-    delta_time_ms = start_event.elapsed_time(end_event)
-    delta_time_us = delta_time_ms * 1e3
-    mean_time_us = delta_time_us / iterations
-
+    mean_time_us = sum(times_us) / iterations
     return mean_time_us

@@ -1,6 +1,10 @@
 from dataclasses import dataclass
 from kernel_bench.utils.bench_utils import *
-from kernel_bench.utils.device_utils import dtype_to_bytes, get_device_specific_dtype
+from kernel_bench.utils.device_utils import (
+    dtype_to_bytes,
+    get_device_specific_dtype,
+    stringify_shape,
+)
 
 FUNC_ARGS = r"""%arg0: tensor<{LHS_TYPE}>, %arg1: tensor<{RHS_TYPE}>"""
 CONSTANTS = r"""
@@ -36,10 +40,6 @@ class ConvConfig(OpConfig):
     input_dtype: str
     output_dtype: str
 
-    def __post_init__(self):
-        self.input_dtype = get_device_specific_dtype(self.input_dtype)
-        self.output_dtype = get_device_specific_dtype(self.output_dtype)
-
     def get_name(self) -> str:
         return (
             self.OP
@@ -63,17 +63,17 @@ class ConvConfig(OpConfig):
         if "nhwc" in self.OP:
             in_h = self.H * self.S + self.P - 1
             in_w = self.W * self.S + self.Q - 1
-            return f"{self.N}x{in_h}x{in_w}x{self.C}x{self.input_dtype}"
+            return stringify_shape((self.N, in_h, in_w, self.C), self.input_dtype)
         if "nchw" in self.OP:
             in_h = self.H * self.S + self.P - 1
             in_w = self.W * self.S + self.Q - 1
-            return f"{self.N}x{self.C}x{in_h}x{in_w}x{self.input_dtype}"
+            return stringify_shape((self.N, self.C, in_h, in_w), self.input_dtype)
 
     def get_kernel_shape(self) -> str:
         if "nhwc" in self.OP:
-            return f"{self.P}x{self.Q}x{self.C}x{self.F}x{self.input_dtype}"
+            return stringify_shape((self.P, self.Q, self.C, self.F), self.input_dtype)
         if "nchw" in self.OP:
-            return f"{self.F}x{self.C}x{self.P}x{self.Q}x{self.input_dtype}"
+            return stringify_shape((self.F, self.C, self.P, self.Q), self.input_dtype)
 
     def get_out_shape(self) -> str:
         padding = 0
@@ -84,9 +84,9 @@ class ConvConfig(OpConfig):
         n = self.N
         nf = self.F
         if "nhwc" in self.OP:
-            return f"{n}x{h_out}x{w_out}x{nf}x{self.output_dtype}"
+            return stringify_shape((n, h_out, w_out, nf), self.output_dtype)
         if "nchw" in self.OP:
-            return f"{n}x{nf}x{h_out}x{w_out}x{self.output_dtype}"
+            return stringify_shape((n, nf, h_out, w_out), self.output_dtype)
 
     def get_byte_count(self) -> int:
         bytes_per_input = dtype_to_bytes(self.input_dtype)
@@ -112,10 +112,6 @@ class ConvConfig(OpConfig):
             + (k_width * k_height * input_channels * output_channels * bytes_per_input)
         )
         return byte_count
-
-    def get_shared_mem_bytes(self, spec):
-        bytes_per_element = dtype_to_bytes(self.input_dtype)
-        return 200 * bytes_per_element
 
     def get_flops(self) -> int:
         batch = self.N
@@ -148,6 +144,20 @@ class ConvConfig(OpConfig):
             runtime_args.append("--function=main")
 
         return runtime_args
+
+    def to_dict(self):
+        return {
+            "N": self.N,
+            "H": self.H,
+            "W": self.W,
+            "C": self.C,
+            "P": self.P,
+            "Q": self.Q,
+            "F": self.F,
+            "S": self.S,
+            "OP": self.OP,
+            "dtype": self.input_dtype,
+        }
 
     def decode_op(self) -> tuple[str, str]:
         if self.OP.startswith("conv_2d_"):

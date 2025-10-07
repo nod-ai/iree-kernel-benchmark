@@ -23,11 +23,7 @@ from kernel_bench.tuning.hyperparam import (
     IntegerBounds,
 )
 from kernel_bench.core.template import WaveKernelBenchmark, WaveTemplate
-from kernel_bench.utils.device_utils import (
-    dtype_to_bits,
-    dtype_to_bytes,
-    dtype_to_torch,
-)
+from kernel_bench.utils.device_utils import dtype_to_torch
 from ..gemm_utils import GemmConfig
 
 
@@ -35,8 +31,8 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
     config: GemmConfig
 
     def validate_config(self):
-        input_dtype = self.config.operand_element_type
-        if input_dtype == "f32" or "f8" in input_dtype:
+        input_dtype = self.config.dtype
+        if input_dtype != "f16":
             return False
 
         variant = self.config.tA + self.config.tB
@@ -46,8 +42,8 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
         return True
 
     def setup_parameters(self):
-        dtype = dtype_to_torch(self.config.operand_element_type)
-        bitwidth = dtype_to_bits(self.config.operand_element_type)
+        dtype = self.device_context.get_bench_dtype(self.config.dtype)
+        bitwidth = dtype.num_bits()
 
         if bitwidth == 8:
             mfma_options = [(MMAType.F32_32x32x16_F8, MMAType.F32_32x32x16_K8_F16)]
@@ -97,7 +93,7 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
             initial_value=min(8, max_wg_m),
         )
 
-        bytes_per_el = dtype_to_bytes(self.config.operand_element_type)
+        bytes_per_el = dtype.num_bytes()
         shared_memory_constraint = (
             (self.BLOCK_M + 4) * self.BLOCK_K + (self.BLOCK_N + 4) * self.BLOCK_K
         ) * bytes_per_el - 65536
@@ -111,10 +107,10 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
     def load_wave_kernel(self):
         config = self.config
 
-        input_dtype = dtype_to_torch(config.operand_element_type)
-        output_dtype = dtype_to_torch(config.result_element_type)
+        input_dtype = dtype_to_torch(config.dtype)
+        output_dtype = "f32"
         quant_dtype = None
-        if "f8" in config.operand_element_type:
+        if "f8" in config.dtype:
             quant_dtype = input_dtype
             input_dtype = dtype_to_torch("f16")
 

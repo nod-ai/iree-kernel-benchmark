@@ -28,7 +28,7 @@ from ..utils.bench_utils import (
     redirect_stderr_to_file,
     OpConfig,
 )
-from kernel_bench.utils.device_utils import machine_to_hip_target
+from kernel_bench.utils.device_utils import BenchDeviceContext, machine_to_hip_target
 from kernel_bench.utils.iree_utils import bench_kernel_ireert
 from kernel_bench.tuning.hyperparam.parameters import (
     TuningParameter,
@@ -91,6 +91,7 @@ class KernelBenchmark(ABC):
 
         self.machine = self.machine.upper()
         self.target = machine_to_hip_target(self.machine)
+        self.device_context = BenchDeviceContext(self.machine)
 
         self.logger = get_logger()
         self.setup_parameters()

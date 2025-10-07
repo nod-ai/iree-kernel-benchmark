@@ -19,8 +19,8 @@ class TritonGemmBenchmark(KernelBenchmark):
     config: GemmConfig
 
     def validate_config(self):
-        input_dtype = self.config.operand_element_type
-        if input_dtype == "f32":
+        input_dtype = self.config.dtype
+        if input_dtype not in ["f16", "bf16"]:
             return False
 
         variant = self.config.tA + self.config.tB
@@ -32,9 +32,9 @@ class TritonGemmBenchmark(KernelBenchmark):
     def run_bench(self, device, num_iterations=1, timeout=None):
         config = self.config
 
-        in_dtype = config.operand_element_type
-        in_dtype_torch = dtype_to_torch(in_dtype, self.target)
-        out_dtype_torch = dtype_to_torch(config.result_element_type, self.target)
+        in_dtype = config.dtype
+        in_dtype_torch = self.device_context.get_bench_dtype(in_dtype).to_torch()
+        out_dtype_torch = self.device_context.get_bench_dtype("f32").to_torch()
 
         variant = config.tA + config.tB
         if variant != "NT":

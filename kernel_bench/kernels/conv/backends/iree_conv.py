@@ -17,7 +17,15 @@ class IREEConvBenchmark(IREEKernelBenchmark):
         f = config.F
         stride = config.S
         operation = config.OP
-        dtypes = f"{config.input_dtype}x{config.input_dtype}x{config.output_dtype}"
+
+        in_dtype = self.device_context.get_bench_dtype(
+            config.input_dtype
+        ).to_full_string()
+        out_dtype = self.device_context.get_bench_dtype(
+            config.output_dtype
+        ).to_full_string()
+
+        dtypes = f"{in_dtype}x{in_dtype}x{out_dtype}"
         elem_types = dtypes.split("x")
         in_h = str(int(h) * int(stride) + int(p) - 1)
         in_w = str(int(w) * int(stride) + int(q) - 1)

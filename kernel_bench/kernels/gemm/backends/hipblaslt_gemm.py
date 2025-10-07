@@ -45,8 +45,8 @@ class HipBLASLtGemmBenchmark(KernelBenchmark):
         if config.tB == "T":
             cmd.append("-tB")
 
-        input_dtype = config.operand_element_type
-        output_dtype = config.result_element_type
+        input_dtype = config.dtype
+        output_dtype = "f32"
 
         cmd.extend(
             [

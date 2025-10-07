@@ -1,0 +1,44 @@
+name: Test Benchmarks
+
+on:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.number || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  test_benchmark:
+    name: Test Benchmarks
+    runs-on: linux-mi325-1gpu-ossci-nod-ai
+
+    concurrency:
+      group: benchmarking
+      cancel-in-progress: false
+
+    env:
+      WAVE_CACHE_ON: 0
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: "Setup Python"
+        uses: actions/setup-python@8d9ed9ac5c53483de85588cdf95a591a75ab9f55
+        with:
+          python-version: "3.12"
+
+      - name: "Setting up Rust"
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Setup venv
+        run: |
+          chmod +x ./setup.sh
+          ./setup.sh --venv-path bench_venv
+
+      - name: Run Benchmarks
+        run: |
+          source bench_venv/bin/activate
+          python3 -m kernel_bench.cli.bench --backend=all --kernel_type=all --max_kernels=40 --machine=mi325x

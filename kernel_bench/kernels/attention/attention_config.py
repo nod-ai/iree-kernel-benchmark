@@ -67,16 +67,16 @@ class AttentionConfigBMNK(OpConfig):
         return f"attention_bmnk1k2_{self.B}x{self.M}x{self.N}x{self.K1}x{self.K2}x{self.dtype}"
 
     def get_query_shape(self) -> str:
-        return f"{self.B}x{self.M}x{self.K1}x{self.dtype}"
+        return stringify_shape((self.B, self.M, self.K1), self.dtype)
 
     def get_key_shape(self) -> str:
-        return f"{self.B}x{self.K2}x{self.K1}x{self.dtype}"
+        return stringify_shape((self.B, self.K2, self.K1), self.dtype)
 
     def get_value_shape(self) -> str:
-        return f"{self.B}x{self.K2}x{self.N}x{self.dtype}"
+        return stringify_shape((self.B, self.K2, self.N), self.dtype)
 
     def get_output_shape(self) -> str:
-        return f"{self.B}x{self.M}x{self.N}x{self.dtype}"
+        return stringify_shape((self.B, self.M, self.N), self.dtype)
 
     def get_byte_count(self) -> int:
         bytes_per_element = dtype_to_bytes(self.dtype)
@@ -89,18 +89,6 @@ class AttentionConfigBMNK(OpConfig):
         byte_count = element_count * bytes_per_element
         return byte_count
 
-    def get_shared_mem_bytes(self, spec):
-        bytes_per_element = dtype_to_bytes(self.dtype)
-        max_element_count = max(
-            [
-                spec.BLOCK_B * spec.BLOCK_M * self.K1,
-                spec.BLOCK_B * spec.BLOCK_K2 * self.K1,
-                spec.BLOCK_B * spec.BLOCK_K2 * spec.BLOCK_N,
-                spec.BLOCK_B * spec.BLOCK_M * spec.BLOCK_N,
-            ]
-        )
-        return max_element_count * bytes_per_element
-
     def get_flops(self) -> int:
         qk_matmul_flops = 2 * self.B * self.M * self.K2 * self.K1
         pv_matmul_flops = 2 * self.B * self.M * self.N * self.K2
@@ -112,7 +100,7 @@ class AttentionConfigBMNK(OpConfig):
         key_shape = self.get_key_shape()
         value_shape = self.get_value_shape()
 
-        if backend_name.startswith("wave"):
+        if backend_name == "wave":
             inputs = [query_shape, key_shape, value_shape]
             if "f8" in self.dtype:
                 inputs = [change_shape_dtype(shape, "f16") for shape in inputs]
@@ -180,18 +168,6 @@ class AttentionConfigBSHD(OpConfig):
         )
         byte_count = element_count * bytes_per_element
         return byte_count
-
-    def get_shared_mem_bytes(self, spec):
-        bytes_per_element = dtype_to_bytes(self.dtype)
-        max_element_count = max(
-            [
-                spec.BLOCK_B * spec.BLOCK_N_Q * spec.BLOCK_H * self.D_Q,
-                spec.BLOCK_B * spec.BLOCK_N_KV * spec.BLOCK_H * self.D_Q,
-                spec.BLOCK_B * spec.BLOCK_N_KV * spec.BLOCK_H * spec.BLOCK_D_KV,
-                spec.BLOCK_B * spec.BLOCK_N_Q * spec.BLOCK_H * spec.BLOCK_D_KV,
-            ]
-        )
-        return max_element_count * bytes_per_element
 
     def get_flops(self) -> int:
         # QK matmul: (B, N_Q, H, D_Q) x (B, N_KV, H_KV, D_Q) -> (B, H, N_Q, N_KV)

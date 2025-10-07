@@ -19,6 +19,12 @@ class TorchGemmBenchmark(KernelBenchmark):
     config: GemmConfig
 
     @override
+    def validate_config(self):
+        if "f8" in self.config.dtype:
+            return False
+        return True
+
+    @override
     def run_bench(self, device, num_iterations, timeout):
         config = self.config
 
@@ -28,12 +34,9 @@ class TorchGemmBenchmark(KernelBenchmark):
         shape_a = (config.K, config.M) if transposeA else (config.M, config.K)
         shape_b = (config.N, config.K) if transposeB else (config.K, config.N)
 
-        a_base = torch.rand(
-            shape_a, dtype=dtype_to_torch(config.operand_element_type), device="cuda"
-        )
-        b_base = torch.rand(
-            shape_b, dtype=dtype_to_torch(config.operand_element_type), device="cuda"
-        )
+        dtype = self.device_context.get_bench_dtype(config.dtype).to_torch()
+        a_base = torch.rand(shape_a, dtype=dtype, device="cuda")
+        b_base = torch.rand(shape_b, dtype=dtype, device="cuda")
 
         try:
             mean_time_us = benchmark_function_torch(

@@ -26,7 +26,7 @@ from kernel_bench.kernels.conv import (
 BENCHMARKS: dict[str, dict[str, Type]] = {}
 BENCHMARKS.update(GEMM_BENCH)
 BENCHMARKS.update(ATTENTION_BENCH)
-# BENCHMARKS.update(CONV_BENCH)
+BENCHMARKS.update(CONV_BENCH)
 
 LOAD_PROBLEMS = {
     "gemm": get_default_gemm_configs,

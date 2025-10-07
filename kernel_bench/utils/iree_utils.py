@@ -83,3 +83,28 @@ def run_iree_command(args: Sequence[str] = ()):
         f"Stdout diagnostics:\n{proc.stdout}\n"
     )
     return 1, proc.stdout, proc.stderr
+
+
+def get_default_accumulator_element_type(operand_element_type: str) -> str:
+    return {
+        "f16": "f32",
+        "bf16": "f32",
+        "f32": "f32",
+        "f8": "f32",
+        "f8E4M3FNUZ": "f32",
+        "f8E5M2FNUZ": "f32",
+        "f8E4M3FN": "f32",
+        "f8E5M2": "f32",
+        "i8": "i32",
+        "i32": "i32",
+    }[operand_element_type]
+
+
+def get_default_result_element_type(
+    operand_element_type: str, raw_accumulators: bool
+) -> str:
+    return (
+        get_default_accumulator_element_type(operand_element_type)
+        if raw_accumulators
+        else operand_element_type
+    )

@@ -16,8 +16,10 @@ class IREEAttentionBenchmark(IREEKernelBenchmark):
         config: AttentionConfigBMNK,
         tuning: Optional[IREEAttentionTuningSpec] = None,
     ):
+        input_dtype = self.device_context.get_bench_dtype(config.dtype).to_full_string()
+
         shapes = f"""\
-!dtype = {config.dtype}
+!dtype = {input_dtype}
 !Q     = tensor<{config.get_query_shape()}>
 !K     = tensor<{config.get_key_shape()}>
 !V     = tensor<{config.get_value_shape()}>
@@ -25,7 +27,7 @@ class IREEAttentionBenchmark(IREEKernelBenchmark):
 """
 
         spec = ""
-        if tuning and config.dtype == "f16":
+        if tuning and input_dtype == "f16":
             spec = f"""\
 #tuning = {tuning.get_compilation_info()}
 """
@@ -46,7 +48,7 @@ func.func @main(%Q : !Q, %K : !K, %V : !V) -> !O {{
         qk_attrs = {{attention_qk_matmul, lowering_config = {tuning.get_qk_config_info()}}},
         pv_attrs = {{attention_pv_matmul, lowering_config = {tuning.get_pv_config_info()}}}
         }}
-        {",compilation_info = #tuning" if tuning and config.dtype == "f16" else ""}
+        {",compilation_info = #tuning" if tuning and input_dtype == "f16" else ""}
     }}
     ins(%Q, %K, %V, %scale : !Q, !K, !V, !dtype) outs(%empty : !O) {{
         ^bb0(%score: f32):

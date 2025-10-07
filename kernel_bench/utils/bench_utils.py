@@ -47,10 +47,6 @@ class OpConfig(ABC):
     def get_runtime_args(self, backend_name: str) -> List[str]:
         pass
 
-    @abstractmethod
-    def get_shared_mem_bytes(self, spec: Dict[str, Any]) -> int:
-        pass
-
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 

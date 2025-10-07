@@ -1,5 +1,6 @@
 import datetime
 import os
+import traceback
 from tqdm import tqdm
 from multiprocessing import Pool, cpu_count
 from dataclasses import asdict, dataclass, field
