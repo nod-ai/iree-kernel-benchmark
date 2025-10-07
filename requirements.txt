@@ -7,3 +7,5 @@ optuna
 scikit-learn
 dacite
 seaborn
+aiter
+setuptools
