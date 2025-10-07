@@ -109,6 +109,9 @@ if [[ "$INSTALL_FROM_SOURCE" == "true" ]]; then
     cd ..
 else
     # Install wave from PyPI
+    echo "Installing torch & IREE dependencies"
+    pip install --pre --no-cache-dir --find-links https://iree.dev/pip-release-links.html iree-base-compiler iree-base-runtime --upgrade
+    pip install -r pytorch-rocm-requirements.txt
     echo "Installing wave-lang from PyPI..."
     pip install wave-lang
 fi
