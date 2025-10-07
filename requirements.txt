@@ -7,5 +7,5 @@ optuna
 scikit-learn
 dacite
 seaborn
-aiter
+triton
 setuptools
