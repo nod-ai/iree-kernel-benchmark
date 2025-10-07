@@ -60,7 +60,7 @@ jobs:
       - name: Setup venv
         run: |
           chmod +x ./setup.sh
-          ./setup.sh --venv-path=tune_venv
+          ./setup.sh --venv-path tune_venv
 
       - name: Load Tuning Problems from URL
         run: |

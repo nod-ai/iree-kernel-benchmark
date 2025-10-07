@@ -37,7 +37,7 @@ jobs:
       - name: Setup venv
         run: |
           chmod +x ./setup.sh
-          ./setup.sh --venv-path=bench_venv
+          ./setup.sh --venv-path bench_venv
 
       - name: Run GEMM Benchmarks
         run: |
