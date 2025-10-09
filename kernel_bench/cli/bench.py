@@ -6,6 +6,7 @@ from kernel_bench.utils.device_utils import HIP_TARGETS
 from wave_lang.kernel.wave.constraints import MMAType
 
 from kernel_bench.core.runner import BenchmarkRunner
+from kernel_bench.utils.paths import PathConfig
 from kernel_bench.utils.bench_utils import OpConfig, load_configs
 from kernel_bench.core.base import LOAD_PROBLEMS, BENCHMARKS, CONFIG_CLASSES
 from kernel_bench.utils.print_utils import get_logger
@@ -139,9 +140,13 @@ if __name__ == "__main__":
             if len(configs) == 0:
                 configs = LOAD_PROBLEMS[kernel_type](kernel_type, backend_name)
 
-            kernel_dir = Path("results/kernels")
-            kernel_dir.mkdir(parents=True, exist_ok=True)
-            dump_dir = Path(args.dump_dir) if args.dump_dir else None
+            if args.dump_dir:
+                path_config = PathConfig.from_workspace(
+                    workspace_root=Path.cwd(), dump_root=Path(args.dump_dir)
+                )
+            else:
+                path_config = PathConfig.default()
+
             device = args.device
 
             if kernel_type not in BENCHMARKS:
@@ -160,8 +165,7 @@ if __name__ == "__main__":
                 device=device,
                 machine=args.machine,
                 configs=configs,
-                kernel_dir=kernel_dir,
-                dump_dir=dump_dir,
+                path_config=path_config,
                 debug=True,
                 num_iterations=args.iterations,
                 title=args.title,

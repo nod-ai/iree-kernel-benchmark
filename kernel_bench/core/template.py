@@ -21,6 +21,7 @@ from kernel_bench.utils.parallel_utils.isolated_runtime import (
     isolated_validate_numerics,
 )
 from kernel_bench.utils.print_utils import get_logger
+from kernel_bench.utils.paths import PathConfig
 
 from kernel_bench.config.base import OpConfig
 from ..utils.bench_utils import (
@@ -85,6 +86,7 @@ class KernelBenchmark(ABC):
     kernel_type: str
     machine: str
     config: OpConfig
+    path_config: PathConfig
 
     def __post_init__(self):
         if not self.validate_config():
@@ -195,9 +197,6 @@ class KernelBenchmark(ABC):
 
 @dataclass
 class IREEKernelBenchmark(KernelBenchmark):
-    kernel_dir: Path
-    dump_dir: Optional[Path] = None
-
     @abstractmethod
     def compile_to_vmfb(self, mlir_path: Path, vmfb_path: Path) -> bool:
         pass
@@ -219,12 +218,8 @@ class IREEKernelBenchmark(KernelBenchmark):
         return self.get_bench_result(runtime_us, ok)
 
     def run_bench(self, device, num_iterations=1, timeout=None):
-        local_kernel_dir = self.kernel_dir / self.kernel_type / self.backend
-        mlir_dir = local_kernel_dir / "mlir"
-        vmfb_dir = local_kernel_dir / "vmfb"
-
-        os.makedirs(mlir_dir, exist_ok=True)
-        os.makedirs(vmfb_dir, exist_ok=True)
+        mlir_dir = self.path_config.mlir_for(self.kernel_type, self.backend)
+        vmfb_dir = self.path_config.vmfb_for(self.kernel_type, self.backend)
 
         mlir_path = mlir_dir / f"{self.config.get_name()}.mlir"
         vmfb_path = vmfb_dir / f"{self.config.get_name()}.vmfb"
@@ -274,10 +269,8 @@ class WaveKernelBenchmark(IREEKernelBenchmark):
             kernel = self.load_wave_kernel()
             compile_options = self.get_compile_options(kernel, vmfb_path)
 
-            if self.dump_dir:
-                dump_file = (
-                    self.dump_dir / "wave" / (self.config.get_name() + ".debug.mlir")
-                )
+            dump_file = self.path_config.dump_for("wave", self.config.get_name())
+            if dump_file:
                 with redirect_stderr_to_file(dump_file):
                     compile_options.mlir_print_ir_after_all = True
                     result = wave_compile(compile_options, kernel.launchable)
@@ -300,9 +293,8 @@ type CompileResult = Tuple[OpConfig, Optional[Path], bool]
 
 def compile_iree_bench(bench: IREEKernelBenchmark, kernel_name: str) -> CompileResult:
     try:
-        local_kernel_dir = bench.kernel_dir / bench.kernel_type / bench.backend
-        mlir_dir = local_kernel_dir / "mlir"
-        vmfb_dir = local_kernel_dir / "vmfb"
+        mlir_dir = bench.path_config.mlir_for(bench.kernel_type, bench.backend)
+        vmfb_dir = bench.path_config.vmfb_for(bench.kernel_type, bench.backend)
 
         os.makedirs(mlir_dir, exist_ok=True)
         os.makedirs(vmfb_dir, exist_ok=True)
@@ -310,7 +302,6 @@ def compile_iree_bench(bench: IREEKernelBenchmark, kernel_name: str) -> CompileR
         mlir_path = mlir_dir / f"{kernel_name}.mlir"
         vmfb_path = vmfb_dir / f"{kernel_name}.vmfb"
 
-        # Set 60-second timeout for compilation
         with TimeoutContext(60):
             success = bench.compile_to_vmfb(mlir_path, vmfb_path)
 

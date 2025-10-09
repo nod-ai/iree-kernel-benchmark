@@ -100,8 +100,10 @@ class IREEConvBenchmark(IREEKernelBenchmark):
 
         # Name with tag is used for filenames so that duplicate configs with
         # different tags will not clobber eachother.
-        if self.dump_dir:
-            dump_file = self.dump_dir / (config.get_name() + ".stderr.mlir")
+        if self.path_config.dumps:
+            dump_file = self.path_config.dump_for(
+                "iree", config.get_name() + ".stderr.mlir"
+            )
 
         # Generate mlir content
         mlir_content = self._generate_mlir(config)
@@ -125,23 +127,23 @@ class IREEConvBenchmark(IREEKernelBenchmark):
             f"--iree-hip-target={self.target}",
         ]
 
-        if self.dump_dir:
-            os.makedirs(self.dump_dir / "iree", exist_ok=True)
-            dump_file = self.dump_dir / "iree" / (config.get_name() + ".debug.mlir")
-            phase_dump = self.dump_dir / "iree" / config.get_name()
+        if self.path_config.dumps:
+            dump_file = self.path_config.dump_for(
+                "iree", config.get_name() + ".debug.mlir"
+            )
+            phase_dump = self.path_config.dumps / "iree" / config.get_name()
             exec_args.append(f"--dump-compilation-phases-to={phase_dump}")
 
         ret_value, stdout, stderr = run_iree_command(exec_args)
         if ret_value == 0:
-            if stderr and self.dump_dir:
+            if stderr and self.path_config.dumps:
                 with open(dump_file, "w") as f:
                     f.write(stderr.decode("utf-8"))
         else:
-            if self.dump_dir:
-                error_file = (
-                    self.dump_dir / "iree" / "log" / (config.get_name() + "_error.txt")
+            if self.path_config.dumps:
+                error_file = self.path_config.dump_for(
+                    "iree", "log", config.get_name() + "_error.txt"
                 )
-                os.makedirs(os.path.dirname(error_file), exist_ok=True)
                 self.logger.error(
                     f"Failed to compile {mlir_path}. Error dumped in {error_file}"
                 )

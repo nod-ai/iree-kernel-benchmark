@@ -1,7 +1,7 @@
 import datetime
 import traceback
 from tqdm import tqdm
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 import pandas as pd
 import json
 from os import PathLike
@@ -12,6 +12,7 @@ from kernel_bench.tuning.hyperparam.paradigm.tree import MultiPassTreeTuner
 from kernel_bench.tuning.hyperparam.parallel_tuning import ParallelTuner
 from kernel_bench.tuning import tune_kernel_schedule
 from kernel_bench.utils.print_utils import get_logger
+from kernel_bench.utils.paths import PathConfig
 from ..utils.bench_utils import (
     BenchmarkResult,
     get_kernel_perf_stats,
@@ -32,15 +33,11 @@ class BenchmarkRunner:
     kernel_type: str
     configs: ConfigList
     device: str
+    path_config: PathConfig = field(default_factory=PathConfig.default)
 
-    kernel_dir: Path
-
-    dump_dir: Optional[Path] = None
     debug: bool = False
-
     machine: str = "MI325X"
     num_iterations: int = 3
-
     title: str = None
     max_kernels: Optional[int] = None
 
@@ -99,8 +96,8 @@ class BenchmarkRunner:
 
         output_base = self.title or f"{self.kernel_type}_{self.backend}"
 
-        output_csv_dir = Path(f"results/csv/{self.kernel_type}")
-        output_json_dir = Path(f"results/json/{self.kernel_type}")
+        output_csv_dir = self.path_config.csv_for(self.kernel_type)
+        output_json_dir = self.path_config.json_for(self.kernel_type)
 
         output_csv_path = output_csv_dir / f"{output_base}.csv"
         output_json_path = output_json_dir / f"{output_base}.json"
@@ -123,15 +120,8 @@ class BenchmarkRunner:
             "kernel_type": self.kernel_type,
             "machine": self.machine,
             "config": config,
+            "path_config": self.path_config,
         }
-        if "wave" in self.backend or "iree" in self.backend:
-            kwargs.update(
-                {
-                    "kernel_dir": self.kernel_dir,
-                    "dump_dir": self.dump_dir,
-                }
-            )
-
         try:
             bench = create_benchmark(
                 self.kernel_type, self.backend, kwargs, serialize=False
@@ -185,10 +175,8 @@ class BenchmarkRunner:
 
     def tune_scheduling(self, max_iterations=100):
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_dir = Path(f"results/tuning/{self.kernel_type}")
-        output_path = (
-            output_dir / f"{self.kernel_type}_{self.backend}_schedule_tuned.json"
-        )
+        output_basename = f"{self.kernel_type}_{self.backend}_schedule_tuned.json"
+        output_path = self.path_config.tuning_for(self.kernel_type, output_basename)
 
         results = {}
 
@@ -200,7 +188,7 @@ class BenchmarkRunner:
                 load_kernel_func=self.load_kernel,
                 compile_kernel_func=self.compile_kernel,
                 bench_kernel_func=self.bench_kernel,
-                kernel_dir=self.kernel_dir,
+                kernel_dir=self.path_config.kernel_root,
                 max_iterations=max_iterations,
                 extra_compile_options={},
             )
@@ -225,9 +213,10 @@ class BenchmarkRunner:
         """Runs benchmarks sequentially after parallel compilation."""
         self._load_benches()
 
-        tuning_dir = Path(f"results/tuning")
         tuning_result_basename = f"{self.kernel_type}_{self.backend}_tuned_results.json"
-        tuning_result_path = tuning_dir / self.kernel_type / tuning_result_basename
+        tuning_result_path = self.path_config.tuning_for(
+            self.kernel_type, tuning_result_basename
+        )
 
         # tuning_paradigm = BayesianTuningParadigm()
         tuning_paradigm = MultiPassTreeTuner()
