@@ -1,5 +1,5 @@
 from typing import Any, Type
-from dacite import from_dict
+from dataclass_wizard import fromdict
 
 from kernel_bench.core.template import KernelBenchmark
 from kernel_bench.kernels.attention.attention_config import (
@@ -23,7 +23,7 @@ from kernel_bench.kernels.conv import (
     get_default_conv_configs,
 )
 
-BENCHMARKS: dict[str, dict[str, Type]] = {}
+BENCHMARKS: dict[str, dict[str, Type[KernelBenchmark]]] = {}
 BENCHMARKS.update(GEMM_BENCH)
 BENCHMARKS.update(ATTENTION_BENCH)
 BENCHMARKS.update(CONV_BENCH)
@@ -44,7 +44,13 @@ CONFIG_CLASSES = {
 
 
 def create_benchmark(
-    kernel_type: str, backend: str, kwargs: dict[str, Any]
+    kernel_type: str,
+    backend: str,
+    kwargs: dict[str, Any],
+    serialize=True,
 ) -> KernelBenchmark:
     BenchType = BENCHMARKS[kernel_type][backend]
-    return from_dict(BenchType, kwargs)
+    if serialize:
+        return fromdict(BenchType, kwargs)
+    else:
+        return BenchType(**kwargs)

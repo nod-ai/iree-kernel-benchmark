@@ -47,6 +47,12 @@ class CompilationTimeoutError(Exception):
     pass
 
 
+class KernelValidationError(Exception):
+    """Exception raised when kernel configuration is invalid"""
+
+    pass
+
+
 class TimeoutContext:
     """Context manager for setting a timeout on function execution"""
 
@@ -82,7 +88,7 @@ class KernelBenchmark(ABC):
 
     def __post_init__(self):
         if not self.validate_config():
-            raise ValueError(
+            raise KernelValidationError(
                 f"Config {self.config.get_name()} invalid for {self.kernel_type} on backend {self.backend}"
             )
 

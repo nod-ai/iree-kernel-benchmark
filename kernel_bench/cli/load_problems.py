@@ -38,32 +38,32 @@ all_problems += [
     for tag, problem in get_gemm_configs("f16", "wave", False)
 ]
 
-all_problems += [
-    {
-        "id": str(uuid4()),
-        "kernelType": "attention",
-        "name": problem.get_name(),
-        "tag": tag,
-        "dtype": problem.dtype,
-        "allowedBackends": ["iree"]
-        + (["torch", "wave"] if problem.dtype == "f16" else []),
-        "problem": asdict(problem.to_bmnk1k2()),
-    }
-    for tag, problem in get_attention_configs(use_fp8=True)
-]
+# all_problems += [
+#     {
+#         "id": str(uuid4()),
+#         "kernelType": "attention",
+#         "name": problem.get_name(),
+#         "tag": tag,
+#         "dtype": problem.dtype,
+#         "allowedBackends": ["iree"]
+#         + (["torch", "wave"] if problem.dtype == "f16" else []),
+#         "problem": asdict(problem.to_bmnk1k2()),
+#     }
+#     for tag, problem in get_attention_configs(use_fp8=True)
+# ]
 
-all_problems += [
-    {
-        "id": str(uuid4()),
-        "kernelType": "attention",
-        "name": problem.get_name(),
-        "tag": tag,
-        "dtype": problem.dtype,
-        "allowedBackends": ["wavegqa"],
-        "problem": asdict(problem.to_bshd()),
-    }
-    for tag, problem in get_attention_configs_gqa()
-]
+# all_problems += [
+#     {
+#         "id": str(uuid4()),
+#         "kernelType": "attention",
+#         "name": problem.get_name(),
+#         "tag": tag,
+#         "dtype": problem.dtype,
+#         "allowedBackends": ["wavegqa"],
+#         "problem": asdict(problem.to_bshd()),
+#     }
+#     for tag, problem in get_attention_configs_gqa()
+# ]
 
 result_path = Path("results/configs.json")
 with open(result_path, "w") as file:

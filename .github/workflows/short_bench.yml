@@ -3,6 +3,13 @@ name: Short Benchmark
 on:
   workflow_dispatch:
     inputs:
+      machine:
+        type: choice
+        description: Which machine to run benchmarks on
+        options:
+          - mi325
+          - mi355
+        default: mi325
       selected_backend:
         description: "Which backends to run benchmarks for (wave, iree, torch, hipblaslt, all)"
         required: false
@@ -45,7 +52,7 @@ jobs:
   short_benchmark:
     name: Short Benchmark
     needs: identifier
-    runs-on: linux-mi325-1gpu-ossci-nod-ai
+    runs-on: "linux-${{ inputs.machine }}-1gpu-ossci-nod-ai"
 
     concurrency:
       group: kernel-benchmarking
@@ -89,7 +96,7 @@ jobs:
       - name: Run Benchmarks
         run: |
           source bench_venv/bin/activate
-          python3 -m kernel_bench.cli.bench --backend=${{ inputs.selected_backend }} --kernel_type=${{ inputs.selected_kernel }} --load_problems=problems.json --use_tuned=tuned_config.json --machine=mi325x
+          python3 -m kernel_bench.cli.bench --backend=${{ inputs.selected_backend }} --kernel_type=${{ inputs.selected_kernel }} --load_problems=problems.json --use_tuned=tuned_config.json --machine=${{ inputs.machine }}x
 
       - name: Tag result
         if: ${{ inputs.metadata }}

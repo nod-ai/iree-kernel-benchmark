@@ -31,12 +31,17 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
     config: GemmConfig
 
     def validate_config(self):
-        input_dtype = self.config.dtype
+        config = self.config
+
+        input_dtype = config.dtype
         if input_dtype != "f16":
             return False
 
-        variant = self.config.tA + self.config.tB
+        variant = config.tA + config.tB
         if variant != "NT":
+            return False
+
+        if config.M < 4 or config.N < 2 or config.K < 2:
             return False
 
         return True
@@ -72,18 +77,18 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
         )
         self.BLOCK_M = self.add_param(
             "BLOCK_M",
-            IntegerBounds(min=16, max=self.config.M, step=4),
-            initial_value=128,
+            IntegerBounds(min=4, max=self.config.M, step=4),
+            initial_value=min(128, self.config.M),
         )
         self.BLOCK_N = self.add_param(
             "BLOCK_N",
-            IntegerBounds(min=16, max=self.config.N, step=2),
-            initial_value=256,
+            IntegerBounds(min=2, max=self.config.N, step=2),
+            initial_value=min(256, self.config.N),
         )
         self.BLOCK_K = self.add_param(
             "BLOCK_K",
-            IntegerBounds(min=16, max=self.config.K, step=1),
-            initial_value=64,
+            IntegerBounds(min=2, max=self.config.K, step=1),
+            initial_value=min(64, self.config.K),
         )
 
         max_wg_m = ceil(self.config.M / 16) - 1
@@ -144,11 +149,6 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
             canonicalize=True,
             schedule=use_scheduling,
             use_buffer_ops=True,
-            multi_buffer_count=(
-                2
-                if use_scheduling in [SchedulingType.FOUR_STAGE, SchedulingType.MODULO]
-                else None
-            ),
         )
 
     @override

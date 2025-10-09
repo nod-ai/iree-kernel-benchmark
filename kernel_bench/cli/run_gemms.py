@@ -4,11 +4,10 @@ from pathlib import Path
 import argparse
 from kernel_bench.kernels.gemm.gemm_utils import GemmConfig
 from kernel_bench.utils.device_utils import HIP_TARGETS
-from wave_lang.kernel.wave.constraints import MMAType
 
 from kernel_bench.core.runner import BenchmarkRunner
-from kernel_bench.utils.bench_utils import BenchmarkResult, OpConfig, load_configs
-from kernel_bench.core.base import LOAD_PROBLEMS, BENCHMARKS, CONFIG_CLASSES
+from kernel_bench.utils.bench_utils import BenchmarkResult
+from kernel_bench.core.base import BENCHMARKS
 from kernel_bench.utils.print_utils import get_logger
 
 import matplotlib.pyplot as plt
@@ -219,8 +218,6 @@ if __name__ == "__main__":
                     variant[0],
                     variant[1],
                     dtype,
-                    dtype,
-                    "f32",
                 ),
             )
             for problem in problem_shapes

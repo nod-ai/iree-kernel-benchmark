@@ -1,19 +1,13 @@
 import datetime
-import os
 import traceback
 from tqdm import tqdm
-from multiprocessing import Pool, cpu_count
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 import pandas as pd
 import json
 from os import PathLike
 from pathlib import Path
 from tqdm import tqdm
-from typing import Any, Dict, List, Optional, Tuple, Type
-from wave_lang.kernel.wave.constraints import MMAType
-
-from kernel_bench.tuning.hyperparam.paradigm.bayesian import BayesianTuningParadigm
-from kernel_bench.tuning.hyperparam.paradigm.test_progress import ParallelProgressTester
+from typing import List, Optional
 from kernel_bench.tuning.hyperparam.paradigm.tree import MultiPassTreeTuner
 from kernel_bench.tuning.hyperparam.parallel_tuning import ParallelTuner
 from kernel_bench.tuning import tune_kernel_schedule
@@ -28,14 +22,8 @@ from ..utils.bench_utils import (
     write_results_to_json,
     write_to_json_file,
 )
-from .template import (
-    KernelBenchmark,
-    IREEKernelBenchmark,
-    WaveKernelBenchmark,
-    batch_benchmark,
-    batch_compile_iree_benches,
-)
-from kernel_bench.core.base import BENCHMARKS, create_benchmark
+from .template import KernelBenchmark, KernelValidationError, batch_benchmark
+from kernel_bench.core.base import create_benchmark
 
 
 @dataclass
@@ -79,15 +67,15 @@ class BenchmarkRunner:
 
     def load_tuned_results(self, result_path: PathLike):
         with open(result_path, "r") as file:
-            tuned_data: dict[str, dict] = json.load(file)
+            tuned_data = json.load(file)
 
-        tuned_data = {
-            kernel_name: tune_result
-            for kernel_name, tune_result in tuned_data.items()
-            if tune_result["improvement"]
+        improved_configs = {
+            name: data
+            for name, data in tuned_data.items()
+            if data.get("improvement", False) and data.get("speedup", 0) > 1
         }
 
-        speedups = [tune_result["speedup"] for tune_result in tuned_data.values()]
+        speedups = [tune_result["speedup"] for tune_result in improved_configs.values()]
         avg_speedup = sum(speedups) / len(speedups)
         avg_speedup_percent = (avg_speedup - 1) * 100
         self.logger.info(
@@ -97,13 +85,12 @@ class BenchmarkRunner:
         self.configs = [
             (tag, config)
             for tag, config in self.configs
-            if config.get_name() in tuned_data.keys()
+            if config.get_name() in improved_configs.keys()
         ]
 
         self.specs = {
-            kernel_name: tune_result["hyperparams"]
-            for kernel_name, tune_result in tuned_data.items()
-            if tune_result["improvement"]
+            kernel_name: tune_result.get("hyperparams", {})
+            for kernel_name, tune_result in improved_configs.items()
         }
 
     def save_results(self, results: List[BenchmarkResult]):
@@ -146,8 +133,15 @@ class BenchmarkRunner:
             )
 
         try:
-            bench = create_benchmark(self.kernel_type, self.backend, kwargs)
-        except:
+            bench = create_benchmark(
+                self.kernel_type, self.backend, kwargs, serialize=False
+            )
+        except KernelValidationError:
+            return None
+        except Exception:
+            self.logger.error(
+                f"Failed to benchmark kernel {config.get_name()}\n{traceback.format_exc()}"
+            )
             return None
 
         tuned_config = self.specs.get(config.get_name())
@@ -160,25 +154,22 @@ class BenchmarkRunner:
         """Create benchmark instances for all configurations."""
         benches = [self._create_benchmark(tag, config) for tag, config in self.configs]
         self._benches = [bench for bench in benches if bench]
-
-    def benchmark_kernels(self, validate_numerics=True) -> List[BenchmarkResult]:
-        """
-        Run benchmarks sequentially. Compiles all IREE-based kernels beforehand.
-        """
-        self._load_benches()
         if len(self._benches) != len(self.configs):
             self.logger.info(
                 f"Filtered {len(self._benches)} {self.kernel_type} configs for benchmarking on backend {self.backend}."
             )
-
-        if len(self._benches) == 0:
-            return []
 
         if self.max_kernels:
             self.reduce_benches(self.max_kernels)
             self.logger.info(
                 f"Reduced to {len(self._benches)} {self.kernel_type} configs for benchmarking on backend {self.backend}."
             )
+
+    def benchmark_kernels(self, validate_numerics=True) -> List[BenchmarkResult]:
+        """
+        Run benchmarks sequentially. Compiles all IREE-based kernels beforehand.
+        """
+        self._load_benches()
 
         results = batch_benchmark(
             self._benches,

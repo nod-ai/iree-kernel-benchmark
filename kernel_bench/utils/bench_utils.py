@@ -6,6 +6,7 @@ from pathlib import Path
 import csv
 from typing import Optional, Sequence
 from collections import namedtuple, defaultdict
+from dataclass_wizard import fromdict
 import matplotlib.pyplot as plt
 from itertools import cycle
 import numpy as np
@@ -349,7 +350,7 @@ def reduce_configs(
 
 
 def load_configs(
-    config_path: os.PathLike, kernel_type: str, backend: str, config_class
+    config_path: os.PathLike, config_class: Type[OpConfig]
 ) -> List[Tuple[str, OpConfig]]:
     try:
         with open(config_path, "r") as file:
@@ -357,15 +358,9 @@ def load_configs(
     except:
         return []
 
-    filtered_data = [
-        config
-        for config in config_data
-        if config["kernelType"] == kernel_type and backend in config["allowedBackends"]
-    ]
-
     config_list = [
-        (str(config["tag"]), config_class(**config["problem"]))
-        for config in filtered_data
+        (config["tag"], fromdict(config_class, config["problem"]))
+        for config in config_data
     ]
 
     return config_list

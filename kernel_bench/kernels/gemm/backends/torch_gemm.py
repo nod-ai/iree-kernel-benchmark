@@ -12,7 +12,8 @@ def run_torch_matmul(
 ):
     a = a_base.transpose(-2, -1) if transposeA else a_base
     b = b_base.transpose(-2, -1) if transposeB else b_base
-    torch.matmul(a, b)
+    c = torch.matmul(a, b)
+    return c
 
 
 class TorchGemmBenchmark(KernelBenchmark):

@@ -9,33 +9,35 @@ def benchmark_function_torch(
         raise RuntimeError("CUDA not available: could not benchmark torch function")
 
     try:
-        torch.cuda.empty_cache()
-        for _ in range(warmup):
-            fn(*inputs, **kwinputs)
+        # compiled_fn = torch.compile(fn)
+        compiled_fn = fn
     except Exception as e:
-        raise RuntimeError(f"Failed torch warmup runs: {e}")
-
-    times_us = [0] * iterations
+        raise RuntimeError(f"Failed to compile torch kernel: {e}")
 
     try:
         torch.cuda.empty_cache()
+        for _ in range(warmup):
+            compiled_fn(*inputs, **kwinputs)
+    except Exception as e:
+        torch.cuda.synchronize()
+        raise RuntimeError(f"Failed torch warmup runs: {e}")
 
-        for i in range(iterations):
-            start_event = torch.cuda.Event(enable_timing=True)
-            end_event = torch.cuda.Event(enable_timing=True)
+    try:
+        torch.cuda.empty_cache()
+        start_event = torch.cuda.Event(enable_timing=True)
+        end_event = torch.cuda.Event(enable_timing=True)
+        start_event.record()
 
-            start_event.record()
-            fn(*inputs, **kwinputs)
-            end_event.record()
-            torch.cuda.synchronize()
+        for _ in range(iterations):
+            compiled_fn(*inputs, **kwinputs)
 
-            delta_time_ms = start_event.elapsed_time(end_event)
-            delta_time_us = delta_time_ms * 1e3
-
-            times_us[i] = delta_time_us
+        end_event.record()
+        torch.cuda.synchronize()
 
     except Exception as e:
         raise e
 
-    mean_time_us = sum(times_us) / iterations
+    delta_time_ms = start_event.elapsed_time(end_event)
+    delta_time_us = delta_time_ms * 1e3
+    mean_time_us = delta_time_us / iterations
     return mean_time_us

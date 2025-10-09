@@ -1,4 +1,5 @@
 import json
+import os
 import numpy as np
 from typing import Dict, List, Tuple, Any, Callable, Optional
 from dataclasses import asdict, dataclass, replace
@@ -377,6 +378,7 @@ class MultiPassTreeTuner(TuningParadigm):
                 f"Total evaluations: {sum(h['num_evaluations'] for h in self.history)}"
             )
 
+        os.makedirs("results/tuning/history", exist_ok=True)
         with open(
             f"results/tuning/history/{context.bench.kernel_type}_{context.bench.backend}_{context.device_id}.json",
             "w",
