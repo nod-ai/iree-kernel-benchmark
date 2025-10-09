@@ -1,6 +1,9 @@
 from typing import List, Tuple
 from wave_lang.kernel.wave.constraints import MMAType
 
+# Import config from new location
+from kernel_bench.config.types.gemm import GemmConfig
+
 from kernel_bench.kernels.gemm.backends.triton_gemm import TritonGemmBenchmark
 
 from .backends.iree_gemm import IREEGemmBenchmark

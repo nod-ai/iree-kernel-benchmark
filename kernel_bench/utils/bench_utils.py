@@ -29,30 +29,11 @@ from wave_lang.kernel._support.indexing import index_symbol
 from kernel_bench.utils.clustering import KernelConfigurationClustering
 from kernel_bench.utils.print_utils import get_logger
 
+# Import OpConfig from new config module
+from kernel_bench.config.base import OpConfig
 
-@dataclass
-class OpConfig(ABC):
-    @abstractmethod
-    def get_name(self) -> str:
-        pass
-
-    @abstractmethod
-    def get_flops(self) -> int:
-        pass
-
-    @abstractmethod
-    def get_byte_count(self) -> int:
-        pass
-
-    @abstractmethod
-    def get_runtime_args(self, backend_name: str) -> List[str]:
-        pass
-
-    def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
-
-    def get_dim_names(self) -> List[str]:
-        return list(self.to_dict().keys())
+# Backwards compatibility: re-export OpConfig from this module
+__all__ = ["OpConfig"]  # Keep OpConfig available for imports from this module
 
 
 @total_ordering
@@ -352,18 +333,19 @@ def reduce_configs(
 def load_configs(
     config_path: os.PathLike, config_class: Type[OpConfig]
 ) -> List[Tuple[str, OpConfig]]:
+    """
+    Load configurations from a file (backwards compatibility wrapper).
+
+    This function is kept for backwards compatibility but now delegates
+    to the new config.loaders module.
+    """
+    from kernel_bench.config import loaders
+
     try:
-        with open(config_path, "r") as file:
-            config_data = json.load(file)
-    except:
+        return loaders.load_configs(config_path, config_class)
+    except Exception:
+        # Fallback to old behavior for compatibility
         return []
-
-    config_list = [
-        (config["tag"], fromdict(config_class, config["problem"]))
-        for config in config_data
-    ]
-
-    return config_list
 
 
 @contextmanager

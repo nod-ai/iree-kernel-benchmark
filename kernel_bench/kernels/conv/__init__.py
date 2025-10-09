@@ -1,3 +1,6 @@
+# Import config from new location
+from kernel_bench.config.types.conv import ConvConfig
+
 from .backends.wave_conv import WaveConvBenchmark
 from .backends.iree_conv import IREEConvBenchmark
 from .backends.torch_conv import TorchConvBenchmark

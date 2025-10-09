@@ -3,12 +3,12 @@ import os
 
 from kernel_bench.core.template import IREEKernelBenchmark
 from kernel_bench.utils.iree_utils import *
-from ..attention_config import AttentionConfigBMNK
+from kernel_bench.config.types.attention import AttentionConfigBMNK
 from ..attention_utils import IREEAttentionTuningSpec, IntrinsicType
 from typing import Optional, override
 
 
-class IREEAttentionBenchmark(IREEKernelBenchmark):
+class IREEVanillaAttentionBenchmark(IREEKernelBenchmark):
     config: AttentionConfigBMNK
 
     def _generate_attention_mlir_iree(

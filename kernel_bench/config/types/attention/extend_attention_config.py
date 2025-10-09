@@ -1,10 +1,17 @@
 from dataclasses import dataclass
 from typing import Any, Union, Optional, Literal
+from dataclass_wizard import json_field, json_key
 import torch
 from abc import ABC, abstractmethod
 import pickle
 from pathlib import Path
 
+from kernel_bench.config.types.attention.bshd_attention_config import (
+    AttentionConfigBSHD,
+    bshd_to_attention_attributes,
+)
+
+from .base_attention_config import AttentionAttributes
 from kernel_bench.utils.bench_utils import OpConfig, change_shape_dtype
 from kernel_bench.utils.device_utils import (
     dtype_to_bytes,
@@ -23,203 +30,13 @@ from wave_lang.kernel.wave.utils.torch_utils import (
 
 
 @dataclass
-class AttentionAttributes:
-    """Unified attributes for all attention types"""
-
-    num_query_heads: int
-    num_kv_heads: int
-    head_size: int
-    head_size_kv: int
-    batch_size: Optional[int] = None
-    dtype: str = "f16"
-    # -----------------------
-    # Prefill specific
-    num_seqs: Optional[int] = None
-    max_seq_len: Optional[int] = None
-    total_seq_len: Optional[int] = None
-    context_len: Optional[int] = None
-    fixed_seq_len_prefix: Optional[int] = None
-    fixed_seq_len_extend: Optional[int] = None
-    # -----------------------
-    # Vanilla attention
-    query_seq_len: Optional[int] = None
-    kv_seq_len: Optional[int] = None
-    # -----------------------
-    # Decode specific
-    block_size: Optional[int] = None
-
-
-@dataclass
-class AttentionConfigBMNK(OpConfig):
-    B: int
-    M: int
-    N: int
-    K1: int
-    K2: int
-    dtype: str
+class AttentionConfigExtend(AttentionConfigBSHD):
     attributes: AttentionAttributes = None
-
-    def __post_init__(self):
-        if not self.attributes:
-            self.attributes = bmnk1k2_to_attention_attributes(self)
-
-    def get_name(self) -> str:
-        return f"attention_bmnk1k2_{self.B}x{self.M}x{self.N}x{self.K1}x{self.K2}x{self.dtype}"
-
-    def get_query_shape(self) -> str:
-        return stringify_shape((self.B, self.M, self.K1), self.dtype)
-
-    def get_key_shape(self) -> str:
-        return stringify_shape((self.B, self.K2, self.K1), self.dtype)
-
-    def get_value_shape(self) -> str:
-        return stringify_shape((self.B, self.K2, self.N), self.dtype)
-
-    def get_output_shape(self) -> str:
-        return stringify_shape((self.B, self.M, self.N), self.dtype)
-
-    def get_byte_count(self) -> int:
-        bytes_per_element = dtype_to_bytes(self.dtype)
-        element_count = (
-            (self.B * self.M * self.K1)
-            + (self.B * self.K2 * self.K1)
-            + (self.B * self.K2 * self.N)
-            + (self.B * self.M * self.N)
-        )
-        byte_count = element_count * bytes_per_element
-        return byte_count
-
-    def get_flops(self) -> int:
-        qk_matmul_flops = 2 * self.B * self.M * self.K2 * self.K1
-        pv_matmul_flops = 2 * self.B * self.M * self.N * self.K2
-        total_flops = qk_matmul_flops + pv_matmul_flops
-        return total_flops
-
-    def get_runtime_args(self, backend_name):
-        query_shape = self.get_query_shape()
-        key_shape = self.get_key_shape()
-        value_shape = self.get_value_shape()
-
-        if backend_name == "wave":
-            inputs = [query_shape, key_shape, value_shape]
-            if "f8" in self.dtype:
-                inputs = [change_shape_dtype(shape, "f16") for shape in inputs]
-            out_shape = change_shape_dtype(self.get_output_shape(), "f32")
-            inputs.append(out_shape)
-            bench_function = "isolated_benchmark"
-
-        else:
-            inputs = [query_shape, key_shape, value_shape]
-            bench_function = "main"
-
-        return [f"--input={input}" for input in inputs] + [
-            f"--function={bench_function}"
-        ]
-
-    def to_dict(self):
-        return {
-            "B": self.B,
-            "M": self.M,
-            "N": self.N,
-            "K1": self.K1,
-            "K2": self.K2,
-            "dtype": self.dtype,
-        }
-
-
-@dataclass
-class AttentionConfigBSHD(OpConfig):
-    B: int  # num_seqs
-    H: int  # num_query_heads
-    H_KV: int  # num_kv_heads
-    N_Q: int  # query_seq_len
-    D_KV: int  # head_size_kv
-    D_Q: int  # head_size
-    N_KV: int  # kv_seq_len
-    dtype: str
-    attributes: AttentionAttributes
+    inputs: "ExtendAttentionInputs" = json_field("inputs", default=None, dump=False)
 
     def __post_init__(self):
         if not self.attributes:
             self.attributes = bshd_to_attention_attributes(self)
-
-    def get_name(self) -> str:
-        return f"attention_bshd_{self.B}x{self.H}x{self.H_KV}x{self.N_Q}x{self.D_KV}x{self.D_Q}x{self.N_KV}x{self.dtype}"
-
-    def get_query_shape(self) -> str:
-        return f"{self.B}x{self.N_Q}x{self.H}x{self.D_Q}x{self.dtype}"
-
-    def get_key_shape(self) -> str:
-        return f"{self.B}x{self.N_KV}x{self.H_KV}x{self.D_Q}x{self.dtype}"
-
-    def get_value_shape(self) -> str:
-        return f"{self.B}x{self.N_KV}x{self.H_KV}x{self.D_KV}x{self.dtype}"
-
-    def get_output_shape(self) -> str:
-        return f"{self.B}x{self.N_Q}x{self.H}x{self.D_KV}x{self.dtype}"
-
-    def get_byte_count(self) -> int:
-        bytes_per_element = dtype_to_bytes(self.dtype)
-        element_count = (
-            (self.B * self.N_Q * self.H * self.D_Q)  # Query
-            + (self.B * self.N_KV * self.H_KV * self.D_Q)  # Key
-            + (self.B * self.N_KV * self.H_KV * self.D_KV)  # Value
-            + (self.B * self.N_Q * self.H * self.D_KV)  # Output
-        )
-        byte_count = element_count * bytes_per_element
-        return byte_count
-
-    def get_flops(self) -> int:
-        # QK matmul: (B, N_Q, H, D_Q) x (B, N_KV, H_KV, D_Q) -> (B, H, N_Q, N_KV)
-        # Assuming H_KV is broadcast to H for computation
-        qk_matmul_flops = 2 * self.B * self.H * self.N_Q * self.N_KV * self.D_Q
-
-        # PV matmul: (B, H, N_Q, N_KV) x (B, N_KV, H_KV, D_KV) -> (B, N_Q, H, D_KV)
-        # Assuming H_KV is broadcast to H for computation
-        pv_matmul_flops = 2 * self.B * self.H * self.N_Q * self.N_KV * self.D_KV
-
-        total_flops = qk_matmul_flops + pv_matmul_flops
-        return total_flops
-
-    def get_runtime_args(self, backend_name):
-        query_shape = self.get_query_shape()
-        key_shape = self.get_key_shape()
-        value_shape = self.get_value_shape()
-
-        if backend_name.startswith("wave"):
-            inputs = [query_shape, key_shape, value_shape]
-            if "f8" in self.dtype:
-                inputs = [change_shape_dtype(shape, "f16") for shape in inputs]
-            out_shape = change_shape_dtype(self.get_output_shape(), "f32")
-            inputs.append(out_shape)
-            bench_function = "isolated_benchmark"
-
-        else:
-            inputs = [query_shape, key_shape, value_shape]
-            bench_function = "main"
-
-        return [f"--input={input}" for input in inputs] + [
-            f"--function={bench_function}"
-        ]
-
-    def to_dict(self):
-        return {
-            "B": self.B,
-            "H": self.H,
-            "H_KV": self.H_KV,
-            "N_Q": self.N_Q,
-            "D_KV": self.D_KV,
-            "D_Q": self.D_Q,
-            "N_KV": self.N_KV,
-            "dtype": self.dtype,
-        }
-
-
-class AttentionConfigExtend(AttentionConfigBSHD):
-    inputs: "ExtendAttentionInputs" = None
-
-    def __post_init__(self):
-        super().__post_init__()
 
     def get_runtime_args(self, backend_name):
         if not self.inputs:
@@ -254,41 +71,6 @@ class AttentionConfigExtend(AttentionConfigBSHD):
         return self.inputs
 
 
-def bmnk1k2_to_attention_attributes(
-    config_bmnk: AttentionConfigBMNK,
-) -> AttentionAttributes:
-    if config_bmnk.attributes:
-        return config_bmnk.attributes
-    return AttentionAttributes(
-        num_query_heads=config_bmnk.B,
-        num_kv_heads=config_bmnk.B,
-        head_size=config_bmnk.K1,
-        head_size_kv=config_bmnk.N,
-        batch_size=1,
-        query_seq_len=config_bmnk.M,
-        kv_seq_len=config_bmnk.K2,
-        dtype=config_bmnk.dtype,
-    )
-
-
-def bshd_to_attention_attributes(
-    config_bshd: AttentionConfigBSHD,
-) -> AttentionAttributes:
-    if config_bshd.attributes:
-        return config_bshd.attributes
-    return AttentionAttributes(
-        num_query_heads=config_bshd.H,
-        num_kv_heads=config_bshd.H_KV,
-        head_size=config_bshd.D_Q,
-        head_size_kv=config_bshd.D_KV,
-        num_seqs=config_bshd.B,
-        max_seq_len=max(config_bshd.N_Q, config_bshd.N_KV),
-        query_seq_len=config_bshd.N_Q,
-        kv_seq_len=config_bshd.N_KV,
-        dtype=config_bshd.dtype,
-    )
-
-
 def validate_obj_attrs(obj: Any, attrs: list[str]):
     try:
         for attr in attrs:
@@ -296,60 +78,6 @@ def validate_obj_attrs(obj: Any, attrs: list[str]):
                 raise Exception()
     except:
         raise ValueError(f"Could not find attribute {attr} in {obj}")
-
-
-def attention_attributes_to_bmnk1k2(
-    shape: AttentionAttributes,
-) -> AttentionConfigBMNK:
-    validate_obj_attrs(
-        shape,
-        [
-            "num_query_heads",
-            "query_seq_len",
-            "head_size_kv",
-            "head_size",
-            "kv_seq_len",
-            "dtype",
-        ],
-    )
-    return AttentionConfigBMNK(
-        B=shape.num_query_heads,
-        M=shape.query_seq_len,
-        N=shape.head_size_kv,
-        K1=shape.head_size,
-        K2=shape.kv_seq_len,
-        dtype=shape.dtype,
-        attributes=shape,
-    )
-
-
-def attention_attributes_to_bshd(
-    shape: AttentionAttributes,
-) -> AttentionConfigBSHD:
-    validate_obj_attrs(
-        shape,
-        [
-            "num_seqs",
-            "num_query_heads",
-            "num_kv_heads",
-            "query_seq_len",
-            "head_size_kv",
-            "head_size",
-            "kv_seq_len",
-            "dtype",
-        ],
-    )
-    return AttentionConfigBSHD(
-        B=shape.num_seqs,
-        H=shape.num_query_heads,
-        H_KV=shape.num_kv_heads,
-        N_Q=shape.query_seq_len,
-        D_KV=shape.head_size_kv,
-        D_Q=shape.head_size,
-        N_KV=shape.kv_seq_len,
-        dtype=shape.dtype,
-        attributes=shape,
-    )
 
 
 def attention_attributes_to_extend(

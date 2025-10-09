@@ -1,7 +1,27 @@
 import os
 from kernel_bench.core.template import IREEKernelBenchmark
 from kernel_bench.utils.iree_utils import run_iree_command
-from ..conv_utils import *
+from ..conv_utils import ConvConfig
+
+# MLIR template strings for convolution operations
+FUNC_ARGS = r"""%arg0: tensor<{LHS_TYPE}>, %arg1: tensor<{RHS_TYPE}>"""
+CONSTANTS = r"""
+    %arg0 = util.unfoldable_constant dense<{ONE}> : tensor<{LHS_TYPE}>
+    %arg1 = util.unfoldable_constant dense<{ONE}> : tensor<{RHS_TYPE}>"""
+
+CONV = r"""%11 = linalg.conv_2d_{CONV_TYPE} {{dilations = dense<1> : vector<2xi64>, strides = dense<{STRIDE}> : vector<2xi64>}} ins(%arg0, %arg1 : tensor<{INPUT_TYPE}>, tensor<{FILTER_TYPE}>) outs(%10 : tensor<{OUTPUT_TYPE}>) -> tensor<{OUTPUT_TYPE}>"""
+
+CONV_Q = r"""%c0_i32 = arith.constant 0 : i32
+    %11 = linalg.conv_2d_{CONV_TYPE}_q {{dilations = dense<1> : vector<2xi64>, strides = dense<{STRIDE}> : vector<2xi64>}} ins(%arg0, %arg1, %c0_i32, %c0_i32 : tensor<{INPUT_TYPE}>, tensor<{FILTER_TYPE}>, i32, i32) outs(%10 : tensor<{OUTPUT_TYPE}>) -> tensor<{OUTPUT_TYPE}>"""
+
+TEST = r"""util.func public @{FUNC_NAME}({FUNC_ARGS}) -> tensor<{OUT_TYPE}> {{{CONSTANT_INPUTS}
+    %cst = arith.constant {ZERO} : {OUT_ELEM_TYPE}
+    %9 = tensor.empty() : tensor<{OUT_TYPE}>
+    %10 = linalg.fill ins(%cst : {OUT_ELEM_TYPE}) outs(%9 : tensor<{OUT_TYPE}>) -> tensor<{OUT_TYPE}>
+    {OPERATION}
+    util.return %11 : tensor<{OUT_TYPE}>
+}}
+"""
 
 
 class IREEConvBenchmark(IREEKernelBenchmark):

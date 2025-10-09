@@ -22,11 +22,11 @@ from kernel_bench.utils.parallel_utils.isolated_runtime import (
 )
 from kernel_bench.utils.print_utils import get_logger
 
+from kernel_bench.config.base import OpConfig
 from ..utils.bench_utils import (
     BenchmarkResult,
     get_kernel_perf_stats,
     redirect_stderr_to_file,
-    OpConfig,
 )
 from kernel_bench.utils.device_utils import BenchDeviceContext, machine_to_hip_target
 from kernel_bench.utils.iree_utils import bench_kernel_ireert

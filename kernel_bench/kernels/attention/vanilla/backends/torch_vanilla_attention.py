@@ -1,19 +1,28 @@
 from typing import override
 import torch
 
+from kernel_bench.config.types.attention.vanilla_attention_config import (
+    bmnk1k2_to_attention_attributes,
+)
 from kernel_bench.core.template import KernelBenchmark
 from kernel_bench.utils.device_utils import dtype_to_torch
 from kernel_bench.utils.torch_utils import benchmark_function_torch
-from ..attention_config import AttentionConfigBMNK
+from kernel_bench.config.types.attention import AttentionConfigBMNK
 
 
-class TorchAttentionBenchmark(KernelBenchmark):
+class TorchVanillaAttentionBenchmark(KernelBenchmark):
     config: AttentionConfigBMNK
+
+    @override
+    def validate_config(self):
+        if "f8" in self.config.dtype:
+            return False
+        return True
 
     @override
     def run_bench(self, device, num_iterations, timeout):
         config = self.config
-        shape = config.attributes
+        shape = bmnk1k2_to_attention_attributes(config)
 
         q_shape = (shape.num_query_heads, shape.query_seq_len, shape.head_size)
         k_shape = (shape.num_query_heads, shape.kv_seq_len, shape.head_size)
@@ -31,6 +40,7 @@ class TorchAttentionBenchmark(KernelBenchmark):
                 v,
                 attn_mask=None,
                 iterations=num_iterations,
+                compile=True,
             )
 
         except Exception as e:
