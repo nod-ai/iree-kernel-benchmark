@@ -2,7 +2,6 @@ import os
 import logging
 from pathlib import Path
 import argparse
-from kernel_bench.utils.device_utils import HIP_TARGETS
 from wave_lang.kernel.wave.constraints import MMAType
 
 from kernel_bench.core.runner import BenchmarkRunner
@@ -31,7 +30,6 @@ if __name__ == "__main__":
     parser.add_argument(
         "--machine",
         help="Machine used for benchmarking (ex: mi300x, mi325x, etc.).",
-        choices=list(HIP_TARGETS.keys()),
         type=str,
         required=True,
     )

@@ -49,19 +49,6 @@ class OpConfig(ABC):
         """
         pass
 
-    @abstractmethod
-    def get_runtime_args(self, backend_name: str) -> List[str]:
-        """
-        Get backend-specific runtime arguments for execution.
-
-        Args:
-            backend_name: The backend name (e.g., "wave", "iree", "torch")
-
-        Returns:
-            List of string arguments for the runtime.
-        """
-        pass
-
     def to_dict(self) -> Dict[str, Any]:
         """
         Convert configuration to dictionary format.

@@ -1,9 +1,12 @@
 from kernel_bench.config.types.attention.vanilla_attention_config import (
     bmnk1k2_to_attention_attributes,
 )
+from kernel_bench.kernels.attention.vanilla.attention_utils import (
+    get_iree_attention_shapes,
+)
 from kernel_bench.tuning.hyperparam import CategoricalBounds, IntegerBounds
 from kernel_bench.core.template import WaveTemplate, WaveKernelBenchmark
-from kernel_bench.utils.device_utils import dtype_to_bytes, dtype_to_torch
+from kernel_bench.utils.iree_utils import shape_to_iree
 from wave_lang.kernel.wave.templates.quantized_attention import (
     get_brevitas_pertensor_fp8_attention_kernel,
 )
@@ -53,7 +56,7 @@ class WaveVanillaAttentionBenchmark(WaveKernelBenchmark):
         self.BLOCK_N = self.add_param("BLOCK_N", IntegerBounds(min=32, max=config.N))
         self.BLOCK_K2 = self.add_param("BLOCK_K2", IntegerBounds(min=32, max=config.K2))
 
-        bytes_per_el = dtype_to_bytes(config.dtype)
+        bytes_per_el = self.device_ctx.resolve_dtype(config.dtype).num_bytes()
         memory_constraint = (
             self.BLOCK_B * self.BLOCK_K2 * (self.BLOCK_N + 4) * bytes_per_el
             + self.BLOCK_B * self.BLOCK_K2 * (config.K1 + 4) * bytes_per_el
@@ -69,7 +72,7 @@ class WaveVanillaAttentionBenchmark(WaveKernelBenchmark):
             base_attention, hyperparams, dynamic_symbols = (
                 get_brevitas_pertensor_fp8_attention_kernel(
                     shape=shape,
-                    f8_dtype=dtype_to_torch(config.dtype, self.target),
+                    f8_dtype=self.device_ctx.dtype_to_torch(config.dtype),
                     mfma_variant=self.mfma_variant.value,
                     dynamic_dims=False,
                 )
@@ -97,3 +100,19 @@ class WaveVanillaAttentionBenchmark(WaveKernelBenchmark):
             canonicalize=True,
             use_buffer_ops=True,
         )
+
+    @override
+    def get_runtime_args(self):
+        config = self.config
+        in_dtype = "f16" if config.dtype == "f8" else config.dtype
+        out_dtype = "f32"
+        query_shape, key_shape, value_shape, output_shape = get_iree_attention_shapes(
+            config, self.device_ctx, in_dtype, out_dtype
+        )
+
+        runtime_args = [
+            f"--input={shape}"
+            for shape in [query_shape, key_shape, value_shape, output_shape]
+        ]
+        runtime_args += ["--function=isolated_benchmark"]
+        return runtime_args

@@ -1,7 +1,7 @@
 import os
 from kernel_bench.core.template import IREEKernelBenchmark
-from kernel_bench.utils.iree_utils import run_iree_command
-from ..conv_utils import ConvConfig
+from kernel_bench.utils.iree_utils import run_iree_command, shape_to_iree
+from ..conv_utils import ConvConfig, get_iree_conv_img_shape, get_iree_conv_kernel_shape
 
 # MLIR template strings for convolution operations
 FUNC_ARGS = r"""%arg0: tensor<{LHS_TYPE}>, %arg1: tensor<{RHS_TYPE}>"""
@@ -38,30 +38,32 @@ class IREEConvBenchmark(IREEKernelBenchmark):
         stride = config.S
         operation = config.OP
 
-        in_dtype = self.device_context.get_bench_dtype(
-            config.input_dtype
-        ).to_full_string()
-        out_dtype = self.device_context.get_bench_dtype(
-            config.output_dtype
-        ).to_full_string()
+        # Get machine-specific dtype strings via DeviceContext
+        in_dtype_str = self.device_ctx.dtype_to_iree(config.input_dtype)
+        out_dtype_str = self.device_ctx.dtype_to_iree(config.output_dtype)
 
-        dtypes = f"{in_dtype}x{in_dtype}x{out_dtype}"
-        elem_types = dtypes.split("x")
-        in_h = str(int(h) * int(stride) + int(p) - 1)
-        in_w = str(int(w) * int(stride) + int(q) - 1)
+        # Compute input dimensions
+        in_h = int(h) * int(stride) + int(p) - 1
+        in_w = int(w) * int(stride) + int(q) - 1
+
+        # Generate IREE tensor shapes using shape_to_iree
         if "nhwc" in operation:
             conv_type = "nhwc_hwcf"
-            lhs = f"{n}x{in_h}x{in_w}x{c}x{elem_types[0]}"
-            rhs = f"{p}x{q}x{c}x{f}x{elem_types[1]}"
-            out = f"{n}x{h}x{w}x{f}x{elem_types[2]}"
-        if "nchw" in operation:
+            lhs = shape_to_iree((n, in_h, in_w, c), config.input_dtype, self.device_ctx)
+            rhs = shape_to_iree((p, q, c, f), config.input_dtype, self.device_ctx)
+            out = shape_to_iree((n, h, w, f), config.output_dtype, self.device_ctx)
+        elif "nchw" in operation:
             conv_type = "nchw_fchw"
-            lhs = f"{n}x{c}x{in_h}x{in_w}x{elem_types[0]}"
-            rhs = f"{f}x{c}x{p}x{q}x{elem_types[1]}"
-            out = f"{n}x{f}x{h}x{w}x{elem_types[2]}"
+            lhs = shape_to_iree((n, c, in_h, in_w), config.input_dtype, self.device_ctx)
+            rhs = shape_to_iree((f, c, p, q), config.input_dtype, self.device_ctx)
+            out = shape_to_iree((n, f, h, w), config.output_dtype, self.device_ctx)
+        else:
+            raise ValueError(f"Unknown convolution operation: {operation}")
+
+        # Determine constants based on dtype
         one = "1"
         zero = "0"
-        if elem_types[0][0] == "f" or elem_types[0][0] == "b":
+        if in_dtype_str[0] == "f" or in_dtype_str[0] == "b":
             one = "1.0"
             zero = "0.0"
         conv_template = CONV
@@ -89,7 +91,7 @@ class IREEConvBenchmark(IREEKernelBenchmark):
             LHS_TYPE=lhs,
             RHS_TYPE=rhs,
             OUT_TYPE=out,
-            OUT_ELEM_TYPE=elem_types[2],
+            OUT_ELEM_TYPE=out_dtype_str,
             ZERO=zero,
             OPERATION=operation,
         )
@@ -124,7 +126,7 @@ class IREEConvBenchmark(IREEKernelBenchmark):
             # Target Device: hip
             "--iree-hal-target-device=hip",
             # Device: MI300x
-            f"--iree-hip-target={self.target}",
+            f"--iree-hip-target={self.device_ctx.hip_target}",
         ]
 
         if self.path_config.dumps:
@@ -157,3 +159,13 @@ class IREEConvBenchmark(IREEKernelBenchmark):
             return False
 
         return True
+
+    def get_runtime_args(self):
+        image_shape = get_iree_conv_img_shape(self.config, self.device_ctx)
+        filter_shape = get_iree_conv_kernel_shape(self.config, self.device_ctx)
+        runtime_args = [
+            f"--input={image_shape}",
+            f"--input={filter_shape}",
+            "--function=main",
+        ]
+        return runtime_args

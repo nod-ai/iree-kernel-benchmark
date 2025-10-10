@@ -3,10 +3,10 @@ from kernel_bench.config.types.attention.bshd_attention_config import (
 )
 from kernel_bench.tuning.hyperparam import CategoricalBounds, IntegerBounds
 from kernel_bench.core.template import WaveTemplate, WaveKernelBenchmark
-from kernel_bench.utils.device_utils import dtype_to_torch
 from kernel_bench.config.types.attention import AttentionConfigBSHD
 from typing import override
 
+from kernel_bench.utils.iree_utils import shape_to_iree
 from wave_lang.kernel.lang.global_symbols import *
 from wave_lang.kernel.wave.constraints import MMAType
 from wave_lang.kernel.wave.compile import WaveCompileOptions
@@ -54,8 +54,8 @@ class WaveBSHDAttentionBenchmark(WaveKernelBenchmark):
         base_attention, hyperparams, dynamic_symbols = get_gqa_bshd_attention_kernel(
             shape=shape,
             mfma_variant=self.mfma_variant.value,
-            input_dtype=dtype_to_torch(config.dtype),
-            output_dtype=dtype_to_torch("f32"),
+            input_dtype=self.device_ctx.dtype_to_torch(config.dtype),
+            output_dtype=self.device_ctx.dtype_to_torch("f32"),
         )
 
         hyperparams.update(self.tuning_spec.hyperparams())
@@ -67,9 +67,40 @@ class WaveBSHDAttentionBenchmark(WaveKernelBenchmark):
             dynamic_symbols=dynamic_symbols,
         )
 
+    @override
     def extra_compile_options(self):
         return WaveCompileOptions(
             schedule=SchedulingType.NONE,
             canonicalize=True,
             iree_launch_async=False,
         )
+
+    @override
+    def get_runtime_args(self):
+        config = self.config
+        in_dtype = "f16" if config.dtype == "f8" else config.dtype
+        out_dtype = "f32"
+
+        query_shape = shape_to_iree(
+            (config.B, config.N_Q, config.H, config.D_Q), in_dtype, self.device_ctx
+        )
+        key_shape = shape_to_iree(
+            (config.B, config.N_KV, config.H_KV, config.D_Q),
+            in_dtype,
+            self.device_ctx,
+        )
+        value_shape = shape_to_iree(
+            (config.B, config.N_KV, config.H_KV, config.D_KV),
+            in_dtype,
+            self.device_ctx,
+        )
+        output_shape = shape_to_iree(
+            (config.B, config.N_Q, config.H, config.D_KV), out_dtype, self.device_ctx
+        )
+
+        runtime_args = [
+            f"--input={shape}"
+            for shape in [query_shape, key_shape, value_shape, output_shape]
+        ]
+        runtime_args += ["--function=isolated_benchmark"]
+        return runtime_args

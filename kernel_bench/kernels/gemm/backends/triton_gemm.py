@@ -7,11 +7,6 @@ from aiter.ops.triton.gemm_a16w16 import gemm_a16w16
 from aiter.ops.triton.gemm_a8w8 import gemm_a8w8
 
 from kernel_bench.kernels.gemm.gemm_utils import GemmConfig
-from kernel_bench.utils.device_utils import (
-    dtype_max_value,
-    dtype_to_bits,
-    dtype_to_torch,
-)
 from kernel_bench.utils.torch_utils import benchmark_function_torch
 
 
@@ -33,8 +28,8 @@ class TritonGemmBenchmark(KernelBenchmark):
         config = self.config
 
         in_dtype = config.dtype
-        in_dtype_torch = self.device_context.get_bench_dtype(in_dtype).to_torch()
-        out_dtype_torch = self.device_context.get_bench_dtype("f32").to_torch()
+        in_dtype_torch = self.device_ctx.dtype_to_torch(in_dtype)
+        out_dtype_torch = self.device_ctx.dtype_to_torch("f32")
 
         variant = config.tA + config.tB
         if variant != "NT":
@@ -57,7 +52,7 @@ class TritonGemmBenchmark(KernelBenchmark):
                     iterations=num_iterations,
                 )
             elif "f8" in in_dtype:
-                in_dtype_max = dtype_max_value(in_dtype_torch)
+                in_dtype_max = self.device_ctx.resolve_dtype(in_dtype).max_value()
 
                 max_x = x.abs().float().amax(dim=1, keepdim=True)
                 x_scale = max_x / in_dtype_max
@@ -82,7 +77,7 @@ class TritonGemmBenchmark(KernelBenchmark):
                     bias,
                     in_dtype_torch,
                     y,
-                    iterations=num_iterations,
+                    iterations=100,
                 )
 
         except Exception as e:

@@ -4,7 +4,11 @@ import os
 from kernel_bench.core.template import IREEKernelBenchmark
 from kernel_bench.utils.iree_utils import *
 from kernel_bench.config.types.attention import AttentionConfigBMNK
-from ..attention_utils import IREEAttentionTuningSpec, IntrinsicType
+from ..attention_utils import (
+    IREEAttentionTuningSpec,
+    IntrinsicType,
+    get_iree_attention_shapes,
+)
 from typing import Optional, override
 
 
@@ -16,14 +20,17 @@ class IREEVanillaAttentionBenchmark(IREEKernelBenchmark):
         config: AttentionConfigBMNK,
         tuning: Optional[IREEAttentionTuningSpec] = None,
     ):
-        input_dtype = self.device_context.get_bench_dtype(config.dtype).to_full_string()
+        input_dtype = self.device_ctx.dtype_to_iree(config.dtype)
+        query_shape, key_shape, value_shape, output_shape = get_iree_attention_shapes(
+            config, self.device_ctx
+        )
 
         shapes = f"""\
 !dtype = {input_dtype}
-!Q     = tensor<{config.get_query_shape()}>
-!K     = tensor<{config.get_key_shape()}>
-!V     = tensor<{config.get_value_shape()}>
-!O     = tensor<{config.get_output_shape()}>
+!Q     = tensor<{query_shape}>
+!K     = tensor<{key_shape}>
+!V     = tensor<{value_shape}>
+!O     = tensor<{output_shape}>
 """
 
         spec = ""
@@ -91,7 +98,7 @@ return %O : !O
             # Target Device: hip
             "--iree-hal-target-device=hip",
             # Device: MI300x
-            f"--iree-hip-target={self.target}",
+            f"--iree-hip-target={self.device_ctx.hip_target}",
         ]
         if self.path_config.dumps:
             dump_file = self.path_config.dump_for(
@@ -124,3 +131,14 @@ return %O : !O
             return False
 
         return True
+
+    @override
+    def get_runtime_args(self):
+        query_shape, key_shape, value_shape, _ = get_iree_attention_shapes(
+            self.config, self.device_ctx
+        )
+        runtime_args = [
+            f"--input={shape}" for shape in [query_shape, key_shape, value_shape]
+        ]
+        runtime_args += ["--function=main"]
+        return runtime_args

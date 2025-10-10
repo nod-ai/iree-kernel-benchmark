@@ -10,15 +10,10 @@ from kernel_bench.config.types.attention.bshd_attention_config import (
     AttentionConfigBSHD,
     bshd_to_attention_attributes,
 )
+from kernel_bench.utils.dtypes import DeviceContext
 
 from .base_attention_config import AttentionAttributes
 from kernel_bench.utils.bench_utils import OpConfig, change_shape_dtype
-from kernel_bench.utils.device_utils import (
-    dtype_to_bytes,
-    dtype_to_torch,
-    stringify_shape,
-    stringify_tensor_shape,
-)
 from wave_lang.kernel.wave.utils.torch_utils import (
     device_randn,
     device_zeros,
@@ -38,30 +33,22 @@ class AttentionConfigExtend(AttentionConfigBSHD):
         if not self.attributes:
             self.attributes = bshd_to_attention_attributes(self)
 
-    def get_runtime_args(self, backend_name):
-        if not self.inputs:
-            self.get_inputs()
-        bench_inputs = [
-            stringify_shape(self.inputs.q_extend.shape, self.dtype),
-            stringify_shape(self.inputs.k_extend.shape, self.dtype),
-            stringify_shape(self.inputs.v_extend.shape, self.dtype),
-            stringify_shape(self.inputs.k_buffer.shape, self.dtype),
-            stringify_shape(self.inputs.v_buffer.shape, self.dtype),
-            stringify_shape(self.inputs.qo_indptr.shape, "i32"),
-            stringify_shape(self.inputs.kv_indptr.shape, "i32"),
-            stringify_shape(self.inputs.kv_indices.shape, "i32"),
-            stringify_shape(self.inputs.output.shape, "f32"),
-            stringify_shape(self.inputs.max_len_extend, "i32"),
-        ]
-        bench_function = "isolated_benchmark" if backend_name == "wave" else "main"
-        return [f"--input={input}" for input in bench_inputs] + [
-            f"--function={bench_function}"
-        ]
+    def get_inputs(self, device_ctx: Optional["DeviceContext"] = None):
+        """
+        Get or create extend attention inputs.
 
-    def get_inputs(self):
-        self.inputs = create_extend_attention_inputs(
-            self.attributes, dtype_to_torch(self.dtype)
-        )
+        Args:
+            device_ctx: Optional DeviceContext for dtype resolution. If not provided,
+                       falls back to default torch.float16 for compatibility.
+        """
+        # Resolve dtype to torch dtype
+        if device_ctx is not None:
+            torch_dtype = device_ctx.dtype_to_torch(self.dtype)
+        else:
+            # Fallback for backward compatibility - assume f16
+            torch_dtype = torch.float16
+
+        self.inputs = create_extend_attention_inputs(self.attributes, torch_dtype)
         seq_len = self.inputs.max_len_extend
         self.attributes.max_seq_len = seq_len
         self.attributes.kv_seq_len = seq_len

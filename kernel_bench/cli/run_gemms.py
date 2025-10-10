@@ -3,7 +3,6 @@ import logging
 from pathlib import Path
 import argparse
 from kernel_bench.kernels.gemm.gemm_utils import GemmConfig
-from kernel_bench.utils.device_utils import HIP_TARGETS
 
 from kernel_bench.core.runner import BenchmarkRunner
 from kernel_bench.utils.bench_utils import BenchmarkResult
@@ -157,7 +156,6 @@ if __name__ == "__main__":
     parser.add_argument(
         "--machine",
         help="Machine used for benchmarking (ex: mi300x, mi325x, etc.).",
-        choices=list(HIP_TARGETS.keys()),
         type=str,
         required=True,
     )

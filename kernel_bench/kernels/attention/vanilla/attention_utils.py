@@ -3,6 +3,12 @@ from typing import Optional
 from enum import Enum
 from typing import Optional
 
+from kernel_bench.config.types.attention.vanilla_attention_config import (
+    AttentionConfigBMNK,
+)
+from kernel_bench.utils.dtypes.device_context import DeviceContext
+from kernel_bench.utils.iree_utils import shape_to_iree
+
 
 class IntrinsicType(Enum):
     """
@@ -129,3 +135,22 @@ class IREEAttentionTuningSpec:
             + f", promote_operands = [1]"
             + f"}}>"
         )
+
+
+def get_iree_attention_shapes(
+    config: AttentionConfigBMNK,
+    device_ctx: DeviceContext,
+    in_dtype: Optional[str] = None,
+    out_dtype: Optional[str] = None,
+):
+    if not in_dtype:
+        in_dtype = config.dtype
+    if not out_dtype:
+        out_dtype = config.dtype
+
+    query_shape = shape_to_iree((config.B, config.M, config.K1), in_dtype, device_ctx)
+    key_shape = shape_to_iree((config.B, config.K2, config.K1), in_dtype, device_ctx)
+    value_shape = shape_to_iree((config.B, config.K2, config.N), in_dtype, device_ctx)
+    output_shape = shape_to_iree((config.B, config.M, config.N), out_dtype, device_ctx)
+
+    return query_shape, key_shape, value_shape, output_shape

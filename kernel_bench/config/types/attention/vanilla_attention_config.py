@@ -1,12 +1,7 @@
 from dataclasses import dataclass
 from kernel_bench.config.base import OpConfig
 from kernel_bench.utils.bench_utils import OpConfig, change_shape_dtype
-from kernel_bench.utils.device_utils import (
-    dtype_to_bytes,
-    dtype_to_torch,
-    stringify_shape,
-    stringify_tensor_shape,
-)
+from kernel_bench.utils.dtypes import dtype_to_bytes
 from .base_attention_config import AttentionAttributes
 
 
@@ -21,18 +16,6 @@ class AttentionConfigBMNK(OpConfig):
 
     def get_name(self) -> str:
         return f"attention_bmnk1k2_{self.B}x{self.M}x{self.N}x{self.K1}x{self.K2}x{self.dtype}"
-
-    def get_query_shape(self) -> str:
-        return stringify_shape((self.B, self.M, self.K1), self.dtype)
-
-    def get_key_shape(self) -> str:
-        return stringify_shape((self.B, self.K2, self.K1), self.dtype)
-
-    def get_value_shape(self) -> str:
-        return stringify_shape((self.B, self.K2, self.N), self.dtype)
-
-    def get_output_shape(self) -> str:
-        return stringify_shape((self.B, self.M, self.N), self.dtype)
 
     def get_byte_count(self) -> int:
         bytes_per_element = dtype_to_bytes(self.dtype)
@@ -50,27 +33,6 @@ class AttentionConfigBMNK(OpConfig):
         pv_matmul_flops = 2 * self.B * self.M * self.N * self.K2
         total_flops = qk_matmul_flops + pv_matmul_flops
         return total_flops
-
-    def get_runtime_args(self, backend_name):
-        query_shape = self.get_query_shape()
-        key_shape = self.get_key_shape()
-        value_shape = self.get_value_shape()
-
-        if backend_name == "wave":
-            inputs = [query_shape, key_shape, value_shape]
-            if "f8" in self.dtype:
-                inputs = [change_shape_dtype(shape, "f16") for shape in inputs]
-            out_shape = change_shape_dtype(self.get_output_shape(), "f32")
-            inputs.append(out_shape)
-            bench_function = "isolated_benchmark"
-
-        else:
-            inputs = [query_shape, key_shape, value_shape]
-            bench_function = "main"
-
-        return [f"--input={input}" for input in inputs] + [
-            f"--function={bench_function}"
-        ]
 
     def to_dict(self):
         return {

@@ -1,7 +1,6 @@
 import torch
 from typing import override
 
-from kernel_bench.utils.device_utils import dtype_to_torch
 from kernel_bench.core.template import KernelBenchmark
 from kernel_bench.utils.torch_utils import benchmark_function_torch
 from ..conv_utils import ConvConfig
@@ -15,7 +14,7 @@ class TorchConvBenchmark(KernelBenchmark):
         config = self.config
 
         operation = config.OP
-        dtype = dtype_to_torch(config.input_dtype)
+        dtype = self.device_ctx.dtype_to_torch(config.input_dtype)
 
         batch_size = config.N
         filter_batch_size = config.F
@@ -49,7 +48,8 @@ class TorchConvBenchmark(KernelBenchmark):
                 padding=0,
                 dilation=1,
                 groups=1,
-                iterations=num_iterations,
+                iterations=100,
+                compile=True,
             )
 
         except Exception as e:

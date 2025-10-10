@@ -2,7 +2,6 @@ from typing import override
 import torch
 
 from kernel_bench.core.template import KernelBenchmark
-from kernel_bench.utils.device_utils import dtype_to_torch
 from kernel_bench.utils.torch_utils import benchmark_function_torch
 from ..gemm_utils import GemmConfig
 
@@ -35,7 +34,7 @@ class TorchGemmBenchmark(KernelBenchmark):
         shape_a = (config.K, config.M) if transposeA else (config.M, config.K)
         shape_b = (config.N, config.K) if transposeB else (config.K, config.N)
 
-        dtype = self.device_context.get_bench_dtype(config.dtype).to_torch()
+        dtype = self.device_ctx.dtype_to_torch(config.dtype)
         a_base = torch.rand(shape_a, dtype=dtype, device="cuda")
         b_base = torch.rand(shape_b, dtype=dtype, device="cuda")
 
@@ -46,7 +45,7 @@ class TorchGemmBenchmark(KernelBenchmark):
                 b_base,
                 transposeA,
                 transposeB,
-                iterations=num_iterations,
+                iterations=100,
             )
 
         except Exception as e:

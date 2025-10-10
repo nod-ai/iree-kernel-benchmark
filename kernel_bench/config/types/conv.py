@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import override
 
 from kernel_bench.config.base import OpConfig
-from kernel_bench.utils.device_utils import dtype_to_bytes, stringify_shape
+from kernel_bench.utils.dtypes import dtype_to_bytes
 
 
 @dataclass
@@ -62,38 +62,6 @@ class ConvConfig(OpConfig):
     def __hash__(self):
         return hash(self.get_name())
 
-    def get_img_shape(self) -> str:
-        """Get input image shape string."""
-        if "nhwc" in self.OP:
-            in_h = self.H * self.S + self.P - 1
-            in_w = self.W * self.S + self.Q - 1
-            return stringify_shape((self.N, in_h, in_w, self.C), self.input_dtype)
-        if "nchw" in self.OP:
-            in_h = self.H * self.S + self.P - 1
-            in_w = self.W * self.S + self.Q - 1
-            return stringify_shape((self.N, self.C, in_h, in_w), self.input_dtype)
-
-    def get_kernel_shape(self) -> str:
-        """Get convolution kernel shape string."""
-        if "nhwc" in self.OP:
-            return stringify_shape((self.P, self.Q, self.C, self.F), self.input_dtype)
-        if "nchw" in self.OP:
-            return stringify_shape((self.F, self.C, self.P, self.Q), self.input_dtype)
-
-    def get_out_shape(self) -> str:
-        """Get output shape string."""
-        padding = 0
-        in_h = self.H * self.S + self.P - 1
-        in_w = self.W * self.S + self.Q - 1
-        h_out = (in_h + 2 * padding - self.P) // self.S + 1
-        w_out = (in_w + 2 * padding - self.Q) // self.S + 1
-        n = self.N
-        nf = self.F
-        if "nhwc" in self.OP:
-            return stringify_shape((n, h_out, w_out, nf), self.output_dtype)
-        if "nchw" in self.OP:
-            return stringify_shape((n, nf, h_out, w_out), self.output_dtype)
-
     @override
     def get_byte_count(self) -> int:
         bytes_per_input = dtype_to_bytes(self.input_dtype)
@@ -133,24 +101,6 @@ class ConvConfig(OpConfig):
         output_pixels_per_batch = output_width * output_height * output_channels
         flops = operation_per_pixel * output_pixels_per_batch * batch
         return flops
-
-    @override
-    def get_runtime_args(self, backend_name):
-        image_shape = self.get_img_shape()
-        filter_shape = self.get_kernel_shape()
-
-        runtime_args = [
-            f"--input={image_shape}",
-            f"--input={filter_shape}",
-        ]
-
-        if backend_name == "wave":
-            out_shape = self.get_out_shape()
-            runtime_args += [f"--input={out_shape}", "--function=isolated_benchmark"]
-        else:
-            runtime_args.append("--function=main")
-
-        return runtime_args
 
     @override
     def to_dict(self):

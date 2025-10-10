@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from tqdm import tqdm, trange
+from kernel_bench.utils.dtypes.device_context import DeviceContext
 from wave_lang.kernel.wave.compile import wave_compile, WaveKernel
 from wave_lang.kernel.wave.compile_options import WaveCompileOptions
 from wave_lang.kernel.wave.utils.general_utils import get_default_scheduling_params
@@ -29,7 +30,6 @@ from ..utils.bench_utils import (
     get_kernel_perf_stats,
     redirect_stderr_to_file,
 )
-from kernel_bench.utils.device_utils import BenchDeviceContext, machine_to_hip_target
 from kernel_bench.utils.iree_utils import bench_kernel_ireert
 from kernel_bench.tuning.hyperparam.parameters import (
     TuningParameter,
@@ -97,9 +97,7 @@ class KernelBenchmark(ABC):
         self._tuning_spec = TuningSpec()
         self._param_symbols = {}
 
-        self.machine = self.machine.upper()
-        self.target = machine_to_hip_target(self.machine)
-        self.device_context = BenchDeviceContext(self.machine)
+        self.device_ctx = DeviceContext.from_machine(self.machine)
 
         self.logger = get_logger()
         self.setup_parameters()
@@ -154,7 +152,7 @@ class KernelBenchmark(ABC):
         tuning_config = self._tuning_spec.to_dict() or None
 
         return BenchmarkResult(
-            machine=self.machine,
+            machine=self.device_ctx.machine,
             kernel_type=self.kernel_type,
             backend=self.backend,
             tag=self.tag,
@@ -201,6 +199,10 @@ class IREEKernelBenchmark(KernelBenchmark):
     def compile_to_vmfb(self, mlir_path: Path, vmfb_path: Path) -> bool:
         pass
 
+    @abstractmethod
+    def get_runtime_args(self) -> List[str]:
+        pass
+
     def bench_vmfb(
         self,
         vmfb_filename: PathLike,
@@ -210,7 +212,7 @@ class IREEKernelBenchmark(KernelBenchmark):
     ) -> BenchmarkResult:
         runtime_us, ok = bench_kernel_ireert(
             vmfb_filename,
-            self.config.get_runtime_args(self.backend),
+            self.get_runtime_args(),
             num_iterations=1,
             device=device,
             timeout=timeout,
@@ -260,7 +262,7 @@ class WaveKernelBenchmark(IREEKernelBenchmark):
         compile_options.iree_launch_async = False
         compile_options.run_bench = False
         compile_options.device = "hip"
-        compile_options.target = self.target
+        compile_options.target = self.device_ctx.hip_target
 
         return compile_options
 

@@ -5,7 +5,6 @@ from kernel_bench.config.types.attention.vanilla_attention_config import (
     bmnk1k2_to_attention_attributes,
 )
 from kernel_bench.core.template import KernelBenchmark
-from kernel_bench.utils.device_utils import dtype_to_torch
 from kernel_bench.utils.torch_utils import benchmark_function_torch
 from kernel_bench.config.types.attention import AttentionConfigBMNK
 
@@ -28,9 +27,11 @@ class TorchVanillaAttentionBenchmark(KernelBenchmark):
         k_shape = (shape.num_query_heads, shape.kv_seq_len, shape.head_size)
         v_shape = (shape.num_query_heads, shape.kv_seq_len, shape.head_size_kv)
 
-        q = torch.randn(q_shape, dtype=dtype_to_torch(config.dtype), device="cuda")
-        k = torch.randn(k_shape, dtype=dtype_to_torch(config.dtype), device="cuda")
-        v = torch.randn(v_shape, dtype=dtype_to_torch(config.dtype), device="cuda")
+        dtype = self.device_ctx.dtype_to_torch(config.dtype)
+
+        q = torch.randn(q_shape, dtype=dtype, device="cuda")
+        k = torch.randn(k_shape, dtype=dtype, device="cuda")
+        v = torch.randn(v_shape, dtype=dtype, device="cuda")
 
         try:
             mean_time_us = benchmark_function_torch(
@@ -39,7 +40,7 @@ class TorchVanillaAttentionBenchmark(KernelBenchmark):
                 k,
                 v,
                 attn_mask=None,
-                iterations=num_iterations,
+                iterations=50,
                 compile=True,
             )
 

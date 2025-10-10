@@ -4,6 +4,7 @@ import traceback
 from typing import override
 import torch
 from torch.testing import assert_close
+from kernel_bench.utils.iree_utils import shape_to_iree
 from wave_lang.kernel.wave.constraints import MMAType
 from wave_lang.kernel.lang.global_symbols import *
 from wave_lang.kernel.wave.compile import WaveCompileOptions, wave_compile
@@ -23,7 +24,6 @@ from kernel_bench.tuning.hyperparam import (
     IntegerBounds,
 )
 from kernel_bench.core.template import WaveKernelBenchmark, WaveTemplate
-from kernel_bench.utils.device_utils import dtype_to_torch
 from ..gemm_utils import GemmConfig
 
 
@@ -47,12 +47,14 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
         return True
 
     def setup_parameters(self):
-        dtype = self.device_context.get_bench_dtype(self.config.dtype)
-        bitwidth = dtype.num_bits()
+        # Get machine-specific dtype spec
+        dtype_spec = self.device_ctx.resolve_dtype(self.config.dtype)
+        bitwidth = dtype_spec.bitwidth()
+        target = self.device_ctx.hip_target
 
         if bitwidth == 8:
             mfma_options = [(MMAType.F32_32x32x16_F8, MMAType.F32_32x32x16_K8_F16)]
-        elif dtype == torch.bfloat16 and self.target == "gfx950":
+        elif dtype_spec.to_torch() == torch.bfloat16 and target == "gfx950":
             mfma_options = [
                 MMAType.F32_32x32x16_BF16,
                 MMAType.F32_16x16x32_BF16,
@@ -63,7 +65,7 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
                 MMAType.F32_32x32x8_F16,
                 MMAType.F32_32x32x16_K8_F16,
             ]
-            if self.target == "gfx950":
+            if target == "gfx950":
                 mfma_options = [
                     MMAType.F32_32x32x16_F16,
                     MMAType.F32_16x16x32_F16,
@@ -98,7 +100,8 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
             initial_value=min(8, max_wg_m),
         )
 
-        bytes_per_el = dtype.num_bytes()
+        # Use dtype_spec for memory calculations
+        bytes_per_el = dtype_spec.num_bytes()
         shared_memory_constraint = (
             (self.BLOCK_M + 4) * self.BLOCK_K + (self.BLOCK_N + 4) * self.BLOCK_K
         ) * bytes_per_el - 65536
@@ -110,35 +113,17 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
 
     @override
     def load_wave_kernel(self):
-        config = self.config
-
-        input_dtype = dtype_to_torch(config.dtype)
-        output_dtype = "f32"
-        quant_dtype = None
-        if "f8" in config.dtype:
-            quant_dtype = input_dtype
-            input_dtype = dtype_to_torch("f16")
-
-        tA, tB = config.tA, config.tB
-
         base_gemm, hyperparams = get_reordered_matmul(
-            config.M,
-            config.N,
-            config.K,
+            self.config.M,
+            self.config.N,
+            self.config.K,
             self.BLOCK_M.value,
             self.BLOCK_N.value,
             self.BLOCK_K.value,
             self.GROUP_SIZE_M.value,
             mfma_variant=self.mfma_variant.value,
-            # input_dtype=input_dtype,
-            # output_dtype=output_dtype,
-            # quantized_dtype=quant_dtype,
-            # tA=tA,
-            # tB=tB,
         )
-
         hyperparams.update(get_default_scheduling_params())
-
         return WaveTemplate(launchable=base_gemm, hyperparams=hyperparams)
 
     @override
@@ -187,3 +172,22 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
                 "".join(traceback.format_exception(e)),
             )
             return True
+
+    @override
+    def get_runtime_args(self):
+        config = self.config
+        shape_A = (config.K, config.M) if config.tA == "T" else (config.M, config.K)
+        shape_B = (config.N, config.K) if config.tB == "T" else (config.K, config.N)
+        shape_C = (config.M, config.N)
+
+        inp1 = shape_to_iree(shape_A, config.dtype, self.device_ctx)
+        inp2 = shape_to_iree(shape_B, config.dtype, self.device_ctx)
+        out = shape_to_iree(shape_C, "f32", self.device_ctx)
+
+        runtime_args = [
+            f"--input={inp1}",
+            f"--input={inp2}",
+            f"--input={out}",
+            "--function=isolated_benchmark",
+        ]
+        return runtime_args

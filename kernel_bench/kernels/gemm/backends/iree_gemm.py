@@ -4,11 +4,12 @@ from iree.compiler import ir
 from iree.compiler.dialects import arith, func, linalg, tensor
 
 from kernel_bench.core.template import IREEKernelBenchmark
-from kernel_bench.utils.device_utils import BenchDeviceContext
+from kernel_bench.utils.dtypes.device_context import DeviceContext
 from kernel_bench.utils.iree_utils import (
     get_default_accumulator_element_type,
     get_default_result_element_type,
     run_iree_command,
+    shape_to_iree,
 )
 from ..gemm_utils import GemmConfig
 
@@ -27,7 +28,7 @@ class IREEGemmBenchmark(IREEKernelBenchmark):
         config = self.config
 
         with ir.Context():
-            mlir_content = generate_iree_gemm_mlir(config, self.device_context)
+            mlir_content = generate_iree_gemm_mlir(config, self.device_ctx)
 
         # Write MLIR content to file
         with open(mlir_path, "w") as f:
@@ -41,7 +42,7 @@ class IREEGemmBenchmark(IREEKernelBenchmark):
             f"{vmfb_path}",
         ]
 
-        if self.target == "host_cpu":
+        if self.device_ctx.hip_target == "host_cpu":
             exec_args += [
                 "--iree-hal-target-backends=llvm-cpu",
                 "--iree-llvmcpu-target-cpu=host",
@@ -49,7 +50,7 @@ class IREEGemmBenchmark(IREEKernelBenchmark):
         else:
             exec_args += [
                 "--iree-hal-target-backends=rocm",
-                f"--iree-hip-target={self.target}",
+                f"--iree-hip-target={self.device_ctx.hip_target}",
                 "--iree-llvmgpu-enable-prefetch=true",
             ]
 
@@ -84,6 +85,22 @@ class IREEGemmBenchmark(IREEKernelBenchmark):
 
         return True
 
+    @override
+    def get_runtime_args(self):
+        config = self.config
+        shape_A = (config.K, config.M) if config.tA == "T" else (config.M, config.K)
+        shape_B = (config.N, config.K) if config.tB == "T" else (config.K, config.N)
+
+        inp1 = shape_to_iree(shape_A, config.dtype, self.device_ctx)
+        inp2 = shape_to_iree(shape_B, config.dtype, self.device_ctx)
+
+        runtime_args = [
+            f"--input={inp1}",
+            f"--input={inp2}",
+            "--function=main",
+        ]
+        return runtime_args
+
 
 def convert_dtype_to_mlir(dtype: str) -> ir.Type:
     dtypes = {
@@ -103,7 +120,7 @@ def convert_dtype_to_mlir(dtype: str) -> ir.Type:
     return dtypes[dtype]()
 
 
-def generate_iree_gemm_mlir(config: GemmConfig, device_context: BenchDeviceContext):
+def generate_iree_gemm_mlir(config: GemmConfig, device_context: DeviceContext):
     K = config.K
     M = config.M
     N = config.N
@@ -111,7 +128,7 @@ def generate_iree_gemm_mlir(config: GemmConfig, device_context: BenchDeviceConte
     tB = config.tB
 
     with ir.Location.name(config.get_name()):
-        in_dtype = device_context.get_bench_dtype(config.dtype).to_full_string()
+        in_dtype = device_context.dtype_to_iree(config.dtype)
         operand_element_type = convert_dtype_to_mlir(in_dtype)
         acc_element_type = convert_dtype_to_mlir(
             get_default_accumulator_element_type(in_dtype)

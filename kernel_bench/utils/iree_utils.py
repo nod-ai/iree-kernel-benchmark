@@ -5,10 +5,7 @@ from typing import List, Tuple
 import iree.runtime as ireert
 import torch
 from kernel_bench.utils.bench_utils import unit_to_microseconds
-from kernel_bench.utils.device_utils import (
-    get_device_specific_dtype,
-    torch_dtype_to_str,
-)
+from kernel_bench.utils.dtypes.device_context import DeviceContext
 from kernel_bench.utils.print_utils import get_logger
 
 
@@ -115,25 +112,25 @@ def get_default_result_element_type(
     )
 
 
-# def stringify_shape(
-#     shape: tuple[int, ...] | Any, dtype: str | torch.dtype, target: Optional[str] = None
-# ) -> str:
-#     if isinstance(dtype, torch.dtype):
-#         dtype = torch_dtype_to_str(dtype)
-#     else:
-#         dtype = get_device_specific_dtype(dtype, target)
-#     if isinstance(shape, tuple):
-#         return "x".join(map(str, [*shape, dtype]))
-#     else:
-#         return f"1x{dtype}"
+def shape_to_iree(
+    shape: tuple[int, ...] | Any, dtype: str | torch.dtype, device_ctx: DeviceContext
+) -> str:
+    if isinstance(dtype, torch.dtype):
+        dtype = device_ctx.dtype_from_torch(dtype).to_iree_string()
+    else:
+        dtype = device_ctx.dtype_to_iree(dtype)
+    if isinstance(shape, tuple):
+        return "x".join(map(str, [*shape, dtype]))
+    else:
+        return f"1x{dtype}"
 
 
-# def stringify_tensor_shape(tensor: Any, target: Optional[str] = None) -> str:
-#     if isinstance(tensor, torch.Tensor):
-#         return stringify_shape(tensor.shape, tensor.dtype, target)
-#     if isinstance(tensor, float):
-#         return "1xf32"
-#     if isinstance(tensor, int):
-#         return "1xi32"
-#     if isinstance(tensor, bool):
-#         return "1xbool"
+def tensor_to_iree_shape(tensor: Any, device_ctx: DeviceContext) -> str:
+    if isinstance(tensor, torch.Tensor):
+        return shape_to_iree(tensor.shape, tensor.dtype, device_ctx)
+    if isinstance(tensor, float):
+        return "1xf32"
+    if isinstance(tensor, int):
+        return "1xi32"
+    if isinstance(tensor, bool):
+        return "1xbool"

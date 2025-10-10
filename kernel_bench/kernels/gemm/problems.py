@@ -6,8 +6,8 @@
 
 import os
 import pandas as pd
-from kernel_bench.utils.device_utils import dtype_to_bytes
 from .gemm_utils import GemmConfig
+from kernel_bench.utils.dtypes import dtype_to_bytes
 
 
 def is_compute_bound(M: int, N: int, K: int, dtype: str) -> bool:

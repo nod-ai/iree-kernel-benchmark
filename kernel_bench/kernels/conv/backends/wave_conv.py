@@ -8,7 +8,12 @@ from wave_lang.kernel.wave.scheduling.schedule_enums import SchedulingType
 from kernel_bench.core.template import WaveKernelBenchmark, WaveTemplate
 from kernel_bench.tuning.hyperparam import IntegerBounds
 from kernel_bench.utils import *
-from ..conv_utils import ConvConfig
+from ..conv_utils import (
+    ConvConfig,
+    get_iree_conv_img_shape,
+    get_iree_conv_kernel_shape,
+    get_iree_conv_out_shape,
+)
 
 
 class WaveConvBenchmark(WaveKernelBenchmark):
@@ -63,6 +68,18 @@ class WaveConvBenchmark(WaveKernelBenchmark):
             canonicalize=True,
             schedule=SchedulingType.NONE,
         )
+
+    def get_runtime_args(self):
+        image_shape = get_iree_conv_img_shape(self.config, self.device_ctx)
+        filter_shape = get_iree_conv_kernel_shape(self.config, self.device_ctx)
+        out_shape = get_iree_conv_out_shape(self.config, self.device_ctx)
+        runtime_args = [
+            f"--input={image_shape}",
+            f"--input={filter_shape}",
+            f"--input={out_shape}",
+            "--function=isolated_benchmark",
+        ]
+        return runtime_args
 
     def _convert_dtype(self, dtype: str):
         dtypes = {

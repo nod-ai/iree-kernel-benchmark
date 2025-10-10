@@ -9,7 +9,7 @@ class TritonExtendAttentionBenchmark(KernelBenchmark):
     config: AttentionConfigExtend
 
     def run_bench(self, device, num_iterations, timeout=None):
-        inputs = self.config.get_inputs()
+        inputs = self.config.get_inputs(self.device_ctx)
 
         try:
             mean_time_us = benchmark_function_torch(
