@@ -1,6 +1,7 @@
 from .backends.wave_vanilla_attention import WaveVanillaAttentionBenchmark
 from .backends.iree_vanilla_attention import IREEVanillaAttentionBenchmark
 from .backends.torch_vanilla_attention import TorchVanillaAttentionBenchmark
+from .backends.triton_vanilla_attention import TritonVanillaAttentionBenchmark
 from .problems import get_vanilla_attention_configs
 
 
@@ -14,5 +15,6 @@ __all__ = [
     "WaveVanillaAttentionBenchmark",
     "IREEVanillaAttentionBenchmark",
     "TorchVanillaAttentionBenchmark",
+    "TritonVanillaAttentionBenchmark",
     "get_default_attention_configs",
 ]

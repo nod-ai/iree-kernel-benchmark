@@ -33,6 +33,11 @@ def bench_kernel_ireert(
             continue
         extra_flags[key] = value
 
+    # command = f"iree-benchmark-module --module={vmfb_filename} --function={func_name} --device={device} "
+    # for input in inputs:
+    #     command += f"--input={input} "
+    # logger.info(command)
+
     try:
         bench_results = ireert.benchmark.benchmark_module(
             vmfb_filename,

@@ -51,11 +51,18 @@ class WaveBSHDAttentionBenchmark(WaveKernelBenchmark):
         config = self.config
         shape = bshd_to_attention_attributes(config)
 
+        use_fp8 = config.dtype == "f8"
+        if use_fp8:
+            in_dtype = self.device_ctx.dtype_to_torch("f16")
+        else:
+            in_dtype = self.device_ctx.dtype_to_torch(config.dtype)
+
         base_attention, hyperparams, dynamic_symbols = get_gqa_bshd_attention_kernel(
             shape=shape,
             mfma_variant=self.mfma_variant.value,
-            input_dtype=self.device_ctx.dtype_to_torch(config.dtype),
+            input_dtype=in_dtype,
             output_dtype=self.device_ctx.dtype_to_torch("f32"),
+            use_fp8=use_fp8,
         )
 
         hyperparams.update(self.tuning_spec.hyperparams())

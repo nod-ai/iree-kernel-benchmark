@@ -7,9 +7,12 @@ ATTENTION_BENCH = {
         "wave": WaveVanillaAttentionBenchmark,
         "iree": IREEVanillaAttentionBenchmark,
         "torch": TorchVanillaAttentionBenchmark,
+        "triton": TritonVanillaAttentionBenchmark,
     },
     "bshd_attention": {
         "wave": WaveBSHDAttentionBenchmark,
+        "triton": TritonBSHDAttentionBenchmark,
+        "torch": TorchBSHDAttentionBenchmark,
     },
     "extend_attention": {
         "wave": WaveExtendAttentionBenchmark,

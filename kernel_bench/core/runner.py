@@ -1,27 +1,20 @@
-import datetime
 import traceback
-from tqdm import tqdm
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 import pandas as pd
 import json
 from os import PathLike
-from pathlib import Path
-from tqdm import tqdm
 from typing import List, Optional
+from kernel_bench.config.base import OpConfig
 from kernel_bench.tuning.hyperparam.paradigm.tree import MultiPassTreeTuner
 from kernel_bench.tuning.hyperparam.parallel_tuning import ParallelTuner
-from kernel_bench.tuning import tune_kernel_schedule
 from kernel_bench.utils.print_utils import get_logger
 from kernel_bench.utils.paths import PathConfig
 from ..utils.bench_utils import (
     BenchmarkResult,
-    get_kernel_perf_stats,
     write_results_to_csv,
     reduce_configs,
-    OpConfig,
     ConfigList,
     write_results_to_json,
-    write_to_json_file,
 )
 from .template import KernelBenchmark, KernelValidationError, batch_benchmark
 from kernel_bench.core.base import create_benchmark
@@ -173,39 +166,6 @@ class BenchmarkRunner:
 
         return results
 
-    def tune_scheduling(self, max_iterations=100):
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_basename = f"{self.kernel_type}_{self.backend}_schedule_tuned.json"
-        output_path = self.path_config.tuning_for(self.kernel_type, output_basename)
-
-        results = {}
-
-        for tag, config in tqdm(self.configs, desc="Tuning Scheduling"):
-            self.logger.info(f"Tuning scheduling for kernel {config.get_name()}")
-            result, runtime_us = tune_kernel_schedule(
-                config,
-                run_name=timestamp,
-                load_kernel_func=self.load_kernel,
-                compile_kernel_func=self.compile_kernel,
-                bench_kernel_func=self.bench_kernel,
-                kernel_dir=self.path_config.kernel_root,
-                max_iterations=max_iterations,
-                extra_compile_options={},
-            )
-            arithmetic_intensity, tflops_per_second = get_kernel_perf_stats(
-                config, runtime_us
-            )
-            results[config.get_name()] = {
-                "result": result,
-                "mean_microseconds": runtime_us,
-                "arithmetic_intensity": arithmetic_intensity,
-                "tflops": tflops_per_second,
-                "problem": asdict(config),
-            }
-            write_to_json_file(results, output_path)
-
-        return results
-
     def tune_kernels(
         self,
         num_trials: int = 100,
@@ -218,9 +178,7 @@ class BenchmarkRunner:
             self.kernel_type, tuning_result_basename
         )
 
-        # tuning_paradigm = BayesianTuningParadigm()
         tuning_paradigm = MultiPassTreeTuner()
-        # tuning_paradigm = ParallelProgressTester()
         tuner = ParallelTuner(tuning_paradigm)
         tuner.tune_kernels(
             benches=self._benches,

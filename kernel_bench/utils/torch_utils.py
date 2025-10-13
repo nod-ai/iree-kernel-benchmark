@@ -1,3 +1,4 @@
+import traceback
 from typing import Callable, Optional
 import torch
 
@@ -25,7 +26,7 @@ def benchmark_function_torch(
             fn(*inputs, **kwinputs)
     except Exception as e:
         torch.cuda.synchronize()
-        raise RuntimeError(f"Failed torch warmup runs: {e}")
+        raise RuntimeError(f"Failed torch warmup runs: {traceback.print_exc()}")
 
     try:
         torch.cuda.empty_cache()

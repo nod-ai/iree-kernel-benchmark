@@ -4,10 +4,11 @@ from pathlib import Path
 import argparse
 from wave_lang.kernel.wave.constraints import MMAType
 
+from kernel_bench.config.base import OpConfig
+from kernel_bench.config.loaders import load_configs
 from kernel_bench.core.runner import BenchmarkRunner
-from kernel_bench.utils.paths import PathConfig
-from kernel_bench.utils.bench_utils import OpConfig, load_configs
 from kernel_bench.core.base import LOAD_PROBLEMS, BENCHMARKS, CONFIG_CLASSES
+from kernel_bench.utils.paths import PathConfig
 from kernel_bench.utils.print_utils import get_logger
 
 if __name__ == "__main__":

@@ -2,7 +2,9 @@ import os
 import logging
 from pathlib import Path
 import argparse
-from kernel_bench.kernels.gemm.gemm_utils import GemmConfig
+from kernel_bench.config.types.attention.vanilla_attention_config import (
+    AttentionConfigBMNK,
+)
 
 from kernel_bench.core.runner import BenchmarkRunner
 from kernel_bench.utils.bench_utils import BenchmarkResult
@@ -16,7 +18,7 @@ import pandas as pd
 import json
 
 
-def create_gemm_plot(
+def create_vanilla_attention_plot(
     results: list[BenchmarkResult],
     save_path: str = None,
     backend_names: list[str] = None,
@@ -29,7 +31,7 @@ def create_gemm_plot(
 
     def hash_result(result: BenchmarkResult) -> str:
         shape = result.shape
-        return f'{shape["M"]}x{shape["N"]}x{shape["K"]}'
+        return f'{shape["B"]}x{shape["M"]}x{shape["N"]}x{shape["K1"]}x{shape["K2"]}'
 
     # Get all backends and shapes from results
     result_backends = list(set([result.backend for result in results]))
@@ -63,7 +65,7 @@ def create_gemm_plot(
 
     if problems:
         # Convert problems to hash format and filter to only those with results
-        problem_hashes = [f"{p[0]}x{p[1]}x{p[2]}" for p in problems]
+        problem_hashes = [f"{p[0]}x{p[1]}x{p[2]}x{p[3]}x{p[4]}" for p in problems]
         ordered_problems = [h for h in problem_hashes if h in common_shapes]
     else:
         ordered_problems = list(common_shapes)
@@ -104,7 +106,7 @@ def create_gemm_plot(
         bars_dict[backend] = bars
 
     # Customize the plot
-    ax.set_xlabel(f"Problem Configuration (MxNxK)", fontsize=14)
+    ax.set_xlabel(f"Problem Configuration (BxMxNxK1xK2)", fontsize=14)
     ax.set_ylabel("TFLOPs", fontsize=14)
     ax.set_xticks(x)
     ax.set_xticklabels(ordered_problems, rotation=45, ha="right")
@@ -146,7 +148,9 @@ def create_gemm_plot(
 if __name__ == "__main__":
     os.environ["WAVE_CACHE_ON"] = "0"
 
-    parser = argparse.ArgumentParser(description="Benchmarking GEMMs.")
+    parser = argparse.ArgumentParser(
+        description="Benchmarking Vanilla Attention (BMNK format)."
+    )
     parser.add_argument(
         "--device",
         help="The IREE device to execute benchmarks on",
@@ -167,17 +171,11 @@ if __name__ == "__main__":
         help=("Input datatype for kernels (eg: f16, bf16, f8, etc.)\n",),
     )
     parser.add_argument(
-        "--variant",
-        choices=["NT", "TN", "NN"],
-        default="NT",
-        help=("Transpose variant for GEMM\n",),
-    )
-    parser.add_argument(
         "--backend",
         type=str,
         required=True,
         help=(
-            "Backend to run kernels (eg: wave, iree, torch, all, etc.)\n",
+            "Backend to run kernels (eg: wave, iree, torch, triton, all, etc.)\n",
             "Multiple backends can be specified as a comma-separated list",
         ),
     )
@@ -186,8 +184,13 @@ if __name__ == "__main__":
         type=str,
         required=True,
         help=(
-            "Comma-separated list of GEMM problems (512x512x512,1024x1024x1024,...)"
-            "or path to JSON file containing configurations"
+            "Comma-separated list of vanilla attention problems (1x1024x64x64x1024,2x2048x128x128x2048,...)\n"
+            "Format: BxMxNxK1xK2 where:\n"
+            "  B = number of heads\n"
+            "  M = query sequence length\n"
+            "  N = head dimension for value (output)\n"
+            "  K1 = head dimension for query/key\n"
+            "  K2 = key/value sequence length"
         ),
     )
     parser.add_argument(
@@ -201,27 +204,26 @@ if __name__ == "__main__":
 
     dtype = str(args.dtype)
     device = str(args.device)
-    variant = str(args.variant)
 
     try:
         problems = [problem.strip() for problem in str(args.problems).split(",")]
         problem_shapes = [tuple(map(int, problem.split("x"))) for problem in problems]
         configs = [
             (
-                "gemm",
-                GemmConfig(
-                    problem[0],
-                    problem[1],
-                    problem[2],
-                    variant[0],
-                    variant[1],
-                    dtype,
+                "attention",
+                AttentionConfigBMNK(
+                    B=problem[0],
+                    M=problem[1],
+                    N=problem[2],
+                    K1=problem[3],
+                    K2=problem[4],
+                    dtype=dtype,
                 ),
             )
             for problem in problem_shapes
         ]
-    except:
-        logger.error("Failed to parse problems")
+    except Exception as e:
+        logger.error(f"Failed to parse problems: {e}")
         exit(1)
 
     backend_names = [backend.strip() for backend in str(args.backend).split(",")]
@@ -237,17 +239,17 @@ if __name__ == "__main__":
     results = []
 
     for backend_name in backend_names:
-        if backend_name not in BENCHMARKS["gemm"]:
+        if backend_name not in BENCHMARKS["attention"]:
             logger.error(
-                f"Backend {backend_name} is currently unsupported for GEMMs. Exiting..."
+                f"Backend {backend_name} is currently unsupported for Vanilla Attention. Exiting..."
             )
             continue
 
-        logger.info(f"Running GEMM benchmarks for backend {backend_name}")
+        logger.info(f"Running Vanilla Attention benchmarks for backend {backend_name}")
 
         bench = BenchmarkRunner(
             backend=backend_name,
-            kernel_type="gemm",
+            kernel_type="attention",
             device=device,
             machine=args.machine,
             configs=configs,
@@ -256,9 +258,9 @@ if __name__ == "__main__":
             title=None,
         )
         logger.info(
-            f"Generated {len(bench.configs)} GEMM configs for backend {backend_name}."
+            f"Generated {len(bench.configs)} Vanilla Attention configs for backend {backend_name}."
         )
 
         results.extend(bench.benchmark_kernels(validate_numerics=args.validate))
 
-    create_gemm_plot(results, args.plot, backend_names, problem_shapes)
+    create_vanilla_attention_plot(results, args.plot, backend_names, problem_shapes)

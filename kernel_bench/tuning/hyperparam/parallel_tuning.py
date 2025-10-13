@@ -2,8 +2,7 @@ import os
 import json
 import threading
 import time
-from abc import ABC, abstractmethod
-from dataclasses import asdict, dataclass
+from dataclass_wizard import asdict
 from multiprocessing import Process, Queue
 import traceback
 from typing import (

@@ -1,11 +1,10 @@
 from enum import Enum
 from abc import ABC, abstractmethod
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from typing import Any, List, Optional, override, Dict
 import wave_lang.kernel.lang as tkl
 from wave_lang.kernel._support.indexing import index_symbol
 import sympy as sp
-from sympy import sympify, symbols
 
 
 class ParameterSymbol:

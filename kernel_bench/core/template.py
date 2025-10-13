@@ -6,7 +6,8 @@ import signal
 import traceback
 from uuid import uuid4
 from sympy import Symbol
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
+from dataclass_wizard import asdict
 from os import PathLike
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple

@@ -1,6 +1,3 @@
-from dataclasses import asdict
-import os
-
 from kernel_bench.core.template import IREEKernelBenchmark
 from kernel_bench.utils.iree_utils import *
 from kernel_bench.config.types.attention import AttentionConfigBMNK

@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 from kernel_bench.config.base import OpConfig
-from kernel_bench.utils.bench_utils import OpConfig, change_shape_dtype
 from kernel_bench.utils.dtypes import dtype_to_bytes
 from .base_attention_config import AttentionAttributes
 

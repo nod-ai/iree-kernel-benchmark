@@ -5,7 +5,8 @@ This module defines the abstract base class for all kernel configurations.
 """
 
 from abc import ABC, abstractmethod
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
+from dataclass_wizard import asdict
 from typing import Any, Dict, List
 
 

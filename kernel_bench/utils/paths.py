@@ -218,7 +218,7 @@ class PathConfig:
             workspace=workspace,
             results=workspace / "results",
             kernels=workspace / "results" / "kernels",
-            dumps=None,
+            dumps=workspace / "dump",
         )
 
     @classmethod
