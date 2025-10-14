@@ -1,3 +1,4 @@
+import copy
 import json
 import os
 import numpy as np
@@ -239,9 +240,7 @@ class MultiPassTreeTuner(TuningParadigm):
 
         batch_benches: List[KernelBenchmark] = []
         for config in unique_configs:
-            candidate_bench = create_benchmark(
-                base_bench.kernel_type, base_bench.backend, asdict(base_bench)
-            )
+            candidate_bench = copy.deepcopy(base_bench)
             candidate_bench.update_parameter_values(config)
             batch_benches.append(candidate_bench)
 

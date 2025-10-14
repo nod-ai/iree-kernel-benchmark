@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, replace
-from dataclass_wizard import asdict
+import copy
+from dataclasses import dataclass, replace, asdict
 import math
 import time
 from typing import (
@@ -57,9 +57,10 @@ class TuningParadigm(ABC):
         self.base_exec_time = None
 
         bench = context.bench
-        context.bench = create_benchmark(
-            bench.kernel_type, bench.backend, asdict(bench)
-        )
+        # context.bench = create_benchmark(
+        #     bench.kernel_type, bench.backend, asdict(bench), serialize=False
+        # )
+        context.bench = copy.deepcopy(bench)
         config = context.bench.config
 
         # Create progress context for this worker
