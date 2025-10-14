@@ -170,9 +170,12 @@ class TorchBSHDAttentionBenchmark(KernelBenchmark):
         try:
             mean_time_us = benchmark_function_torch(
                 scaled_dot_product_gqa_torch,
-                q,
-                k,
-                v,
+                iterations=50,
+                compile=False,
+                # GQA inputs
+                query=q,
+                key=k,
+                value=v,
             )
 
         except Exception as e:

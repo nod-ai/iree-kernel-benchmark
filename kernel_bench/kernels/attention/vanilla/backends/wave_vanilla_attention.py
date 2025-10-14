@@ -1,9 +1,11 @@
+import torch
 from kernel_bench.config.types.attention.vanilla_attention_config import (
     bmnk1k2_to_attention_attributes,
 )
 from kernel_bench.kernels.attention.vanilla.attention_utils import (
     get_iree_attention_shapes,
 )
+from kernel_bench.kernels.attention.vanilla.data import create_bmnk_attention_inputs
 from kernel_bench.tuning.hyperparam import CategoricalBounds, IntegerBounds
 from kernel_bench.core.template import WaveTemplate, WaveKernelBenchmark
 from kernel_bench.utils.iree_utils import shape_to_iree
@@ -15,7 +17,7 @@ from typing import override
 
 from wave_lang.kernel.lang.global_symbols import *
 from wave_lang.kernel.wave.constraints import MMAType
-from wave_lang.kernel.wave.compile import WaveCompileOptions
+from wave_lang.kernel.wave.compile import WaveCompileOptions, wave_compile
 from wave_lang.kernel.wave.utils.general_utils import get_default_scheduling_params
 from wave_lang.kernel.wave.templates.vanilla_attention import (
     get_vanilla_attention_kernel,
@@ -87,11 +89,20 @@ class WaveVanillaAttentionBenchmark(WaveKernelBenchmark):
         hyperparams.update(self._tuning_spec.hyperparams())
         hyperparams.update(get_default_scheduling_params())
 
-        return WaveTemplate(
+        template = WaveTemplate(
             launchable=base_attention,
             hyperparams=hyperparams,
             dynamic_symbols=dynamic_symbols,
         )
+
+        compile_options = self.get_compile_options(template)
+        attention_exec = wave_compile(compile_options, base_attention)
+        q, k, v, o = create_bmnk_attention_inputs(config, self.device_ctx)
+        o = o.to(dtype=torch.float32)
+        attention_exec(q, k, v, o)
+        torch.save(o, f"results/outputs/wave/{config.get_name()}.pt")
+
+        return template
 
     @override
     def extra_compile_options(self):

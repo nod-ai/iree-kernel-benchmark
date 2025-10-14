@@ -343,35 +343,24 @@ def batch_compile_iree_benches(
         (bench, tag_name(bench.config.get_name())) for bench in iree_benches
     ]
 
-    # Compile sequentially for small batches
-    if len(iree_benches) < 5:
+    num_cpus = max(1, cpu_count() - 20)
+    num_cpus = min(num_cpus, len(iree_benches))
+    if verbose:
+        logger.info(f"Using {num_cpus} CPUs for parallel compilation.")
+
+    with Pool(num_cpus) as pool:
+        compilation_iterator = pool.istarmap(compile_iree_bench, compile_args)
         compilation_results = []
-        for args in compile_args:
-            result = compile_iree_bench(*args)
+
+        for result in tqdm(
+            compilation_iterator,
+            total=len(iree_benches),
+            desc=f"Compiling {iree_benches[0].kernel_type.capitalize()} Kernels",
+            disable=callback is not None,
+        ):
             compilation_results.append(result)
             if callback:
                 callback(result)
-
-    # Parallelize compilation for larger batches
-    else:
-        num_cpus = max(1, cpu_count() - 20)
-        num_cpus = min(num_cpus, len(iree_benches))
-        if verbose:
-            logger.info(f"Using {num_cpus} CPUs for parallel compilation.")
-
-        with Pool(num_cpus) as pool:
-            compilation_iterator = pool.istarmap(compile_iree_bench, compile_args)
-            compilation_results = []
-
-            for result in tqdm(
-                compilation_iterator,
-                total=len(iree_benches),
-                desc=f"Compiling {iree_benches[0].kernel_type.capitalize()} Kernels",
-                disable=callback is not None,
-            ):
-                compilation_results.append(result)
-                if callback:
-                    callback(result)
 
     assert len(iree_benches) == len(compilation_results)
 

@@ -53,6 +53,13 @@ if __name__ == "__main__":
         help="Backend to run kernels (eg: wave, iree, torch, etc.)",
     )
     parser.add_argument(
+        "--tags",
+        type=str,
+        required=False,
+        default="all",
+        help="Specific tags to benchmark (comma-separated)",
+    )
+    parser.add_argument(
         "--dump_dir",
         type=str,
         default=None,
@@ -114,15 +121,17 @@ if __name__ == "__main__":
             backend_names.update(kernel_benches.keys())
         backend_names = list(set(backend_names))
 
+    tags = str(args.tags).split(",")
+
     for kernel_type in kernel_types:
         if kernel_type not in BENCHMARKS:
             logger.error(
                 f"Kernel type {kernel_type} is currently unsupported. Skipping..."
             )
 
-        if kernel_type == "extend_attention":
-            configs = LOAD_PROBLEMS[kernel_type](kernel_type, "wave")
-            configs[0][1].get_inputs()
+        # if kernel_type == "extend_attention":
+        #     configs = LOAD_PROBLEMS[kernel_type](kernel_type, "wave")
+        #     configs[0][1].get_inputs()
 
         for backend_name in backend_names:
             if backend_name not in BENCHMARKS[kernel_type]:
@@ -138,6 +147,9 @@ if __name__ == "__main__":
 
             if len(configs) == 0:
                 configs = LOAD_PROBLEMS[kernel_type](kernel_type, backend_name)
+
+            if "all" not in tags:
+                configs = [(tag, config) for tag, config in configs if tag in tags]
 
             if args.dump_dir:
                 path_config = PathConfig.from_workspace(

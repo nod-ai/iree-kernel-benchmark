@@ -15,7 +15,7 @@ class TritonExtendAttentionBenchmark(KernelBenchmark):
             mean_time_us = benchmark_function_torch(
                 extend_attention_fwd,
                 iterations=num_iterations,
-                compile=True,
+                compile=False,
                 # Extend attention inputs
                 q_extend=inputs.q_extend,
                 k_extend=inputs.k_extend,
@@ -32,10 +32,10 @@ class TritonExtendAttentionBenchmark(KernelBenchmark):
                 max_len_extend=inputs.max_len_extend,
                 logit_cap=inputs.logit_cap,
                 config={
-                    "BLOCK_M": 16,
-                    "BLOCK_N": 16,
-                    "waves_per_eu": 0,
-                    "num_warps": 4,
+                    "BLOCK_M": 32,
+                    "BLOCK_N": 32,
+                    "waves_per_eu": 2,
+                    "num_warps": 16,
                     "matrix_instr_nonkdim": 16,
                     "kpack": 2,
                 },

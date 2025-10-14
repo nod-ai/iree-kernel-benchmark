@@ -174,8 +174,8 @@ class BenchmarkRunner:
         self._load_benches()
 
         tuning_result_basename = f"{self.kernel_type}_{self.backend}_tuned_results.json"
-        tuning_result_path = self.path_config.tuning_for(
-            self.kernel_type, tuning_result_basename
+        tuning_result_path = (
+            self.path_config.tuning_for(self.kernel_type) / tuning_result_basename
         )
 
         tuning_paradigm = MultiPassTreeTuner()

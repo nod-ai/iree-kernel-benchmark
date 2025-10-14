@@ -12,6 +12,7 @@ from kernel_bench.utils.dtypes import DeviceContext, dtype_to_bytes
 
 from .base_attention_config import AttentionAttributes
 from wave_lang.kernel.wave.utils.torch_utils import (
+    device_ones,
     device_randn,
     device_zeros,
     device_empty,
@@ -119,9 +120,16 @@ class ExtendAttentionInputs:
     v_extend: torch.Tensor
     k_buffer: torch.Tensor
     v_buffer: torch.Tensor
+    b_req_idx: torch.Tensor
+    b_seq_len: torch.Tensor
     qo_indptr: torch.Tensor
     kv_indptr: torch.Tensor
     kv_indices: torch.Tensor
+    custom_mask: torch.Tensor
+    mask_offsets: torch.Tensor
+    b_start_loc: torch.Tensor
+    b_seq_len_prefix: torch.Tensor
+    extend_token_num: int
     output: torch.Tensor
     max_len_extend: int
     logit_cap: float
@@ -133,14 +141,10 @@ def create_extend_attention_inputs(shape: AttentionAttributes, dtype=torch.float
     H_KV = shape.num_kv_heads
     H_Q = shape.num_query_heads
     D = shape.head_size
-    b_seq_len_prefix = to_default_device(
-        torch.ones((B,), dtype=torch.int32) * (N_CTX // 4)
-    )
+    b_seq_len_prefix = device_ones((B,), dtype=torch.int32) * (N_CTX // 4)
     if shape.fixed_seq_len_prefix:
         b_seq_len_prefix.fill_(shape.fixed_seq_len_prefix)
-    b_seq_len_extend = to_default_device(
-        torch.ones((B,), dtype=torch.int32) * (3 * N_CTX // 4)
-    )
+    b_seq_len_extend = device_ones((B,), dtype=torch.int32) * (3 * N_CTX // 4)
     if shape.fixed_seq_len_extend:
         b_seq_len_extend.fill_(shape.fixed_seq_len_extend)
     b_seq_len = b_seq_len_prefix + b_seq_len_extend
@@ -225,9 +229,7 @@ def create_extend_attention_inputs(shape: AttentionAttributes, dtype=torch.float
     rpe_bias.copy_(device_randn(max_rpe_context_length + 1, dtype=torch.float32))
     rpe_bias[max_rpe_context_length] = 0
 
-    output = device_zeros(
-        extend_token_num, shape.num_query_heads, shape.head_size, dtype=torch.float32
-    )
+    output = device_zeros(extend_token_num, H_Q, D, dtype=torch.float32)
 
     # Create the inputs object
     inputs = ExtendAttentionInputs(
@@ -236,9 +238,16 @@ def create_extend_attention_inputs(shape: AttentionAttributes, dtype=torch.float
         v_extend,
         k_buffer,
         v_buffer,
+        b_req_idx,
+        b_seq_len,
         qo_indptr,
         kv_indptr,
         kv_indices,
+        custom_mask,
+        mask_offsets,
+        b_start_loc,
+        b_seq_len_prefix,
+        extend_token_num,
         output,
         max_len_extend,
         logit_cap,

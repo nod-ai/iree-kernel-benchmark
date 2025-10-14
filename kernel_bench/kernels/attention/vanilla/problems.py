@@ -59,6 +59,25 @@ def llama3_405b_attn_sweep(dtype: str) -> list[AttentionConfigBMNK]:
 type ConfigList = list[tuple[str, AttentionConfigBMNK]]
 
 
+def paper_attn() -> ConfigList:
+    def to_bmnk(shape: tuple[int, ...], dtype: str):
+        B, H, S_Q, S_K, D = shape
+        return AttentionConfigBMNK(B=H, M=S_Q, N=D, K1=D, K2=S_K, dtype=dtype)
+
+    shapes = [
+        ("Llama-3.1-8B", (1, 32, 642, 642, 128)),
+        ("Llama-2-13b-hf", (1, 40, 706, 706, 128)),
+        ("Llama-3.3-70B-Instruct", (1, 64, 642, 642, 128)),
+        ("Mistral-7B-Instruct", (1, 32, 706, 706, 128)),
+        ("sdxl-base-1", (2, 20, 1024, 1024, 64)),
+        ("sdxl-base-2", (2, 20, 1024, 77, 64)),
+    ]
+
+    configs = []
+    configs += [(tag, to_bmnk(shape, "f16")) for tag, shape in shapes]
+    return configs
+
+
 def get_vanilla_attention_configs(use_fp8=True) -> ConfigList:
     configs: ConfigList = []
     llm_configs = llm_sweep("f16")
@@ -76,5 +95,7 @@ def get_vanilla_attention_configs(use_fp8=True) -> ConfigList:
     configs += [("sdxl_unet", x) for x in sdxl_configs]
     configs += [("bert", x) for x in bert_configs]
     configs += [("llama3_405b", x) for x in llama3_configs]
+
+    configs += paper_attn()
 
     return configs

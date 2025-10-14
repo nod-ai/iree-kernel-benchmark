@@ -17,5 +17,6 @@ ATTENTION_BENCH = {
     "extend_attention": {
         "wave": WaveExtendAttentionBenchmark,
         "triton": TritonExtendAttentionBenchmark,
+        "torch": TorchExtendAttentionBenchmark,
     },
 }
