@@ -18,6 +18,8 @@ import torch.nn.functional as F
 from einops import einsum, rearrange
 from torch import Tensor, nn
 
+from kernel_bench.utils.triton_utils import get_triton_bshd_inputs
+
 
 def scaled_dot_product_gqa_torch(
     query: Tensor,
@@ -156,21 +158,28 @@ class TorchBSHDAttentionBenchmark(KernelBenchmark):
     @override
     def run_bench(self, device, num_iterations, timeout):
         config = self.config
+        in_dtype = self.device_ctx.dtype_to_torch(config.dtype)
 
-        q_shape = (config.B, config.N_Q, config.H, config.D_Q)
-        k_shape = (config.B, config.N_KV, config.H_KV, config.D_Q)
-        v_shape = (config.B, config.N_KV, config.H_KV, config.D_KV)
+        q, k, v, metadata = get_triton_bshd_inputs(
+            Z=config.B,
+            HQ=config.H,
+            HK=config.H_KV,
+            N_CTX_Q=config.N_Q,
+            N_CTX_K=config.N_KV,
+            D_HEAD=config.D_Q,
+            dtype=in_dtype,
+            layout="bshd",
+            requires_grad=False,
+        )
 
-        dtype = self.device_ctx.dtype_to_torch(config.dtype)
-
-        q = torch.randn(q_shape, dtype=dtype, device="cuda")
-        k = torch.randn(k_shape, dtype=dtype, device="cuda")
-        v = torch.randn(v_shape, dtype=dtype, device="cuda")
+        # o, _ = scaled_dot_product_gqa_torch(q, k, v)
+        # torch.save(o, f"results/outputs/bshd_attention/torch/{config.get_name()}.pt")
 
         try:
             mean_time_us = benchmark_function_torch(
                 scaled_dot_product_gqa_torch,
-                iterations=50,
+                warmup=20,
+                iterations=100,
                 compile=True,
                 # GQA inputs
                 query=q,
