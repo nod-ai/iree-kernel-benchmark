@@ -48,15 +48,29 @@ class WaveVanillaAttentionBenchmark(WaveKernelBenchmark):
                 ]
             )
 
+        mma_val = 2
+        BLOCK_B_val = 1
+        BLOCK_M_val = 128
+        BLOCK_N_val = min(128, config.N)
+        BLOCK_K2_val = 64
+
         self.mfma_variant = self.add_param(
-            "mfma_variant", mfma_bounds, initial_value=0, include_hyperparam=False
+            "mfma_variant", mfma_bounds, initial_value=mma_val, include_hyperparam=False
         )
-        self.BLOCK_B = self.add_param("BLOCK_B", IntegerBounds(min=1, max=config.B))
+        self.BLOCK_B = self.add_param(
+            "BLOCK_B", IntegerBounds(min=1, max=config.B), initial_value=BLOCK_B_val
+        )
         self.BLOCK_M = self.add_param(
-            "BLOCK_M", IntegerBounds(min=32, max=config.M, step=4)
+            "BLOCK_M",
+            IntegerBounds(min=32, max=config.M, step=4),
+            initial_value=BLOCK_M_val,
         )
-        self.BLOCK_N = self.add_param("BLOCK_N", IntegerBounds(min=32, max=config.N))
-        self.BLOCK_K2 = self.add_param("BLOCK_K2", IntegerBounds(min=32, max=config.K2))
+        self.BLOCK_N = self.add_param(
+            "BLOCK_N", IntegerBounds(min=32, max=config.N), initial_value=BLOCK_N_val
+        )
+        self.BLOCK_K2 = self.add_param(
+            "BLOCK_K2", IntegerBounds(min=32, max=config.K2), initial_value=BLOCK_K2_val
+        )
 
         bytes_per_el = self.device_ctx.resolve_dtype(config.dtype).num_bytes()
         memory_constraint = (

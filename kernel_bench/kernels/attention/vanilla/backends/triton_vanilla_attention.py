@@ -37,10 +37,10 @@ class TritonVanillaAttentionBenchmark(KernelBenchmark):
         )
         print(f"q={q.shape} k={k.shape} v={v.shape} o={o.shape}")
 
-        triton_prefill_attention(q, k, v, o, b_start_loc, b_seq_len, self.config.M)
-        torch.save(
-            o.transpose(0, 1), f"results/outputs/triton/{self.config.get_name()}.pt"
-        )
+        # triton_prefill_attention(q, k, v, o, b_start_loc, b_seq_len, self.config.M)
+        # torch.save(
+        #     o.transpose(0, 1), f"results/outputs/triton/{self.config.get_name()}.pt"
+        # )
 
         try:
             mean_time_us = benchmark_function_torch(

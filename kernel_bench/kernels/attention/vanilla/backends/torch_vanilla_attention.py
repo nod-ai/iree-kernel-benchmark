@@ -24,8 +24,8 @@ class TorchVanillaAttentionBenchmark(KernelBenchmark):
         config = self.config
 
         q, k, v, o = create_bmnk_attention_inputs(config, self.device_ctx)
-        o = torch.nn.functional.scaled_dot_product_attention(q, k, v)
-        torch.save(o, f"results/outputs/torch/{config.get_name()}.pt")
+        # o = torch.nn.functional.scaled_dot_product_attention(q, k, v)
+        # torch.save(o, f"results/outputs/torch/{config.get_name()}.pt")
 
         try:
             mean_time_us = benchmark_function_torch(
