@@ -72,11 +72,11 @@ class BenchmarkRunner:
             f"Loading tuned config with average speedup of +{avg_speedup_percent:.2f}%"
         )
 
-        self.configs = [
-            (tag, config)
-            for tag, config in self.configs
-            if config.get_name() in improved_configs.keys()
-        ]
+        # self.configs = [
+        #     (tag, config)
+        #     for tag, config in self.configs
+        #     if config.get_name() in improved_configs.keys()
+        # ]
 
         self.specs = {
             kernel_name: tune_result.get("hyperparams", {})

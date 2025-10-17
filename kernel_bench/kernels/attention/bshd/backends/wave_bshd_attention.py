@@ -24,6 +24,7 @@ class WaveBSHDAttentionBenchmark(WaveKernelBenchmark):
     config: AttentionConfigBSHD
 
     def setup_parameters(self):
+        config = self.config
         self.mfma_variant = self.add_param(
             "MFMA_VARIANT",
             CategoricalBounds(
@@ -37,17 +38,28 @@ class WaveBSHDAttentionBenchmark(WaveKernelBenchmark):
             initial_value=0,
             include_hyperparam=False,
         )
-        self.BLOCK_B = self.add_param("BLOCK_B", IntegerBounds(min=1, max=1, step=1))
-        self.BLOCK_H = self.add_param("BLOCK_H", IntegerBounds(min=1, max=2, step=1))
+        self.BLOCK_B = self.add_param(
+            "BLOCK_B", IntegerBounds(min=1, max=config.B, step=1)
+        )
+        self.BLOCK_H = self.add_param(
+            "BLOCK_H", IntegerBounds(min=1, max=config.H, step=2)
+        )
         self.BLOCK_N_Q = self.add_param(
-            "BLOCK_N_Q", IntegerBounds(min=16, max=128, step=16)
+            "BLOCK_N_Q", IntegerBounds(min=16, max=self.config.N_Q, step=4)
         )
         self.BLOCK_D_KV = self.add_param(
-            "BLOCK_D_KV", IntegerBounds(min=16, max=128, step=16)
+            "BLOCK_D_KV", IntegerBounds(min=16, max=self.config.D_KV, step=4)
         )
         self.BLOCK_N_KV = self.add_param(
-            "BLOCK_N_KV", IntegerBounds(min=16, max=64, step=16)
+            "BLOCK_N_KV", IntegerBounds(min=16, max=self.config.N_KV, step=4)
         )
+
+        bytes_per_el = self.device_ctx.resolve_dtype(config.dtype).num_bytes()
+        memory_constraint = (
+            self.BLOCK_B * self.BLOCK_H * (self.BLOCK_N_Q + 4) * bytes_per_el
+            + self.BLOCK_B * self.BLOCK_H * (self.BLOCK_N_KV + 4) * bytes_per_el
+        ) - 65536
+        self.add_constraint(memory_constraint, "memory_limit")
 
     @override
     def load_wave_kernel(self):

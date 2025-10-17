@@ -95,12 +95,12 @@ class WaveVanillaAttentionBenchmark(WaveKernelBenchmark):
             dynamic_symbols=dynamic_symbols,
         )
 
-        compile_options = self.get_compile_options(template)
-        attention_exec = wave_compile(compile_options, base_attention)
-        q, k, v, o = create_bmnk_attention_inputs(config, self.device_ctx)
-        o = o.to(dtype=torch.float32)
-        attention_exec(q, k, v, o)
-        torch.save(o, f"results/outputs/wave/{config.get_name()}.pt")
+        # compile_options = self.get_compile_options(template)
+        # attention_exec = wave_compile(compile_options, base_attention)
+        # q, k, v, o = create_bmnk_attention_inputs(config, self.device_ctx)
+        # o = o.to(dtype=torch.float32)
+        # attention_exec(q, k, v, o)
+        # torch.save(o, f"results/outputs/wave/{config.get_name()}.pt")
 
         return template
 

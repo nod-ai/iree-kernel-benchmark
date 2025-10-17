@@ -202,14 +202,14 @@ class MultiPassTreeTuner(TuningParadigm):
             if self.tuning_spec.validate_constraints(config)[0]
         ]
 
-        # num_trials = self.context.num_trials
-        # max_configs = num_trials // self.num_passes + num_trials // 10
-        # if len(pruned_configurations) <= max_configs:
-        #     return pruned_configurations
+        num_trials = self.context.num_trials
+        max_configs = num_trials // self.num_passes + num_trials // 10
+        if len(pruned_configurations) <= max_configs:
+            return pruned_configurations
 
-        # pruned_configurations = list(
-        #     np.random.choice(pruned_configurations, size=max_configs)
-        # )
+        pruned_configurations = list(
+            np.random.choice(pruned_configurations, size=max_configs)
+        )
         return pruned_configurations
 
     def _evaluate_configurations(
@@ -262,6 +262,9 @@ class MultiPassTreeTuner(TuningParadigm):
 
             self.bench_results.append(
                 {
+                    "improvement": bench_res < best_score,
+                    "runtime": bench_res.mean_microseconds,
+                    "tflops": bench_res.tflops,
                     "config": bench_res.tuning_config,
                     "success": bench_res.ok,
                 }

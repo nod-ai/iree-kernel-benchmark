@@ -272,7 +272,8 @@ class WaveKernelBenchmark(IREEKernelBenchmark):
             kernel = self.load_wave_kernel()
             compile_options = self.get_compile_options(kernel, vmfb_path)
 
-            dump_file = self.path_config.dump_for("wave", self.config.get_name())
+            # dump_file = self.path_config.dump_for("wave", self.config.get_name())
+            dump_file = None
             if dump_file:
                 with redirect_stderr_to_file(dump_file):
                     compile_options.mlir_print_ir_after_all = True
@@ -287,7 +288,7 @@ class WaveKernelBenchmark(IREEKernelBenchmark):
 
         except Exception as e:
             self.logger.error(f"Failed to compile {self.config.get_name()}: {e}")
-            self.logger.error("".join(traceback.format_exception(e)))
+            # self.logger.error("".join(traceback.format_exception(e)))
             return False
 
 
