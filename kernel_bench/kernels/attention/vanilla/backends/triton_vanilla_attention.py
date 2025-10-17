@@ -8,6 +8,10 @@ from kernel_bench.core.template import KernelBenchmark
 from kernel_bench.kernels.attention.vanilla.data import create_bmnk_attention_inputs
 from kernel_bench.utils.dtypes.device_context import DeviceContext
 from kernel_bench.utils.torch_utils import benchmark_function_torch
+from kernel_bench.utils.triton_utils import (
+    get_triton_bshd_inputs,
+    triton_bshd_attention_forward,
+)
 from wave_lang.kernel.wave.utils.torch_utils import (
     device_ones,
     device_randn,
@@ -15,26 +19,26 @@ from wave_lang.kernel.wave.utils.torch_utils import (
 )
 
 
-def get_triton_bmnk_inputs(config: AttentionConfigBMNK, device_ctx: DeviceContext):
-    q, k, v, o = create_bmnk_attention_inputs(config, device_ctx)
-    q = q.transpose(0, 1)
-    k = k.transpose(0, 1)
-    v = v.transpose(0, 1)
-    o = o.transpose(0, 1)
-
-    b_start_loc = device_zeros((1,), dtype=torch.int32)
-    b_seq_len = device_ones((1,), dtype=torch.int32) * config.M // 2
-
-    return q, k, v, o, b_start_loc, b_seq_len
-
-
 class TritonVanillaAttentionBenchmark(KernelBenchmark):
     config: AttentionConfigBMNK
 
     def run_bench(self, device, num_iterations, timeout=None):
-        q, k, v, o, b_start_loc, b_seq_len = get_triton_bmnk_inputs(
-            self.config, self.device_ctx
+        config = self.config
+        in_dtype = self.device_ctx.dtype_to_torch(config.dtype)
+
+        q, k, v, metadata = get_triton_bshd_inputs(
+            Z=1,
+            HQ=config.B,
+            HK=config.B,
+            N_CTX_Q=config.M,
+            N_CTX_K=config.K2,
+            D_HEAD=config.N,
+            dtype=in_dtype,
+            layout="bhsd",
+            requires_grad=False,
         )
+        o = torch.empty_like(q)
+
         print(f"q={q.shape} k={k.shape} v={v.shape} o={o.shape}")
 
         # triton_prefill_attention(q, k, v, o, b_start_loc, b_seq_len, self.config.M)
@@ -44,18 +48,15 @@ class TritonVanillaAttentionBenchmark(KernelBenchmark):
 
         try:
             mean_time_us = benchmark_function_torch(
-                triton_prefill_attention,
-                iterations=50,
+                triton_bshd_attention_forward,
+                iterations=100,
                 compile=False,
                 # Extend attention inputs
                 q=q,
                 k=k,
                 v=v,
                 o=o,
-                b_start_loc=b_start_loc,
-                b_seq_len=b_seq_len,
-                max_input_len=self.config.M,
-                is_causal=False,
+                metadata=metadata,
             )
 
         except Exception as e:
