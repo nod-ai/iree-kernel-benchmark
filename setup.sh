@@ -7,9 +7,9 @@ set -e
 
 # Default values
 VENV_PATH=".venv"
-WAVE_REPO=""
-WAVE_BRANCH=""
-INSTALL_FROM_SOURCE=false
+WAVE_REPO="iree-org/wave"
+WAVE_BRANCH="main"
+INSTALL_FROM_SOURCE=true
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -71,7 +71,7 @@ fi
 
 # Create and activate virtual environment
 echo "Creating Python virtual environment..."
-python3 -m venv "$VENV_PATH"
+python3.12 -m venv "$VENV_PATH"
 source "$VENV_PATH/bin/activate"
 
 # Upgrade pip
@@ -103,21 +103,20 @@ if [[ "$INSTALL_FROM_SOURCE" == "true" ]]; then
     
     echo "Installing wave dependencies..."
     pip install -r requirements-iree-pinned.txt
-    pip install -r pytorch-rocm-requirements.txt
     pip install -r requirements.txt
-    pip install -e .
+    pip install .
     cd ..
 else
     # Install wave from PyPI
     echo "Installing torch & IREE dependencies"
     pip install --pre --no-cache-dir --find-links https://iree.dev/pip-release-links.html iree-base-compiler iree-base-runtime --upgrade
-    pip install -r pytorch-rocm-requirements.txt
     echo "Installing wave-lang from PyPI..."
     pip install wave-lang
 fi
 
 # Install project requirements
 echo "Installing project requirements..."
+pip install -r pytorch-rocm-requirements.txt
 pip install -r requirements.txt
 
 # Install Triton
