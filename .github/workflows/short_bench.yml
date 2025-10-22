@@ -52,8 +52,18 @@ jobs:
   short_benchmark:
     name: Short Benchmark
     needs: identifier
-    container: rocm/pytorch:rocm7.0.2_ubuntu24.04_py3.12_pytorch_release_2.8.0
     runs-on: "linux-${{ inputs.machine }}-1gpu-ossci-nod-ai"
+
+    container:
+      image: rocm/pytorch:rocm7.0.2_ubuntu24.04_py3.12_pytorch_release_2.8.0
+      options: >-
+        --network=host
+        --ipc=host
+        --device=/dev/kfd
+        --device=/dev/dri
+        --group-add video
+        --cap-add=SYS_PTRACE
+        --security-opt seccomp=unconfined
 
     concurrency:
       group: kernel-benchmarking-${{ inputs.machine }}

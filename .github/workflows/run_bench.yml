@@ -16,8 +16,18 @@ concurrency:
 jobs:
   benchmark:
     name: "E2E Benchmarks :: ${{ matrix.machine }}"
-    container: rocm/pytorch:rocm7.0.2_ubuntu24.04_py3.12_pytorch_release_2.8.0
     runs-on: "linux-${{ matrix.machine }}-1gpu-ossci-nod-ai"
+
+    container:
+      image: rocm/pytorch:rocm7.0.2_ubuntu24.04_py3.12_pytorch_release_2.8.0
+      options: >-
+        --network=host
+        --ipc=host
+        --device=/dev/kfd
+        --device=/dev/dri
+        --group-add video
+        --cap-add=SYS_PTRACE
+        --security-opt seccomp=unconfined
 
     strategy:
       matrix:
