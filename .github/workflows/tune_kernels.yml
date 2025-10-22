@@ -34,6 +34,7 @@ jobs:
   tuning:
     name: Tune Kernels
     needs: identifier
+    container: rocm/pytorch:rocm7.0.2_ubuntu24.04_py3.12_pytorch_release_2.8.0
     runs-on: linux-mi325-8gpu-ossci-nod-ai
 
     env:
@@ -47,11 +48,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: "Setup Python"
-        uses: actions/setup-python@8d9ed9ac5c53483de85588cdf95a591a75ab9f55
-        with:
-          python-version: "3.12"
-
       - name: "Setting up Rust"
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
@@ -60,17 +56,15 @@ jobs:
       - name: Setup venv
         run: |
           chmod +x ./setup.sh
-          ./setup.sh --venv-path tune_venv
+          ./setup.sh --no-install-torch
 
       - name: Load Tuning Problems from URL
         run: |
-          source tune_venv/bin/activate
           curl -o problems.json ${{ inputs.problems_url }}
           python -m json.tool problems.json > /dev/null || { echo "Error: Invalid JSON format"; exit 1; }
 
       - name: Tune
         run: |
-          source tune_venv/bin/activate
           python -m kernel_bench.cli.bench --tune --load_problems=problems.json --backend=${{ inputs.backend }} --num_trials=${{ inputs.num_trials }} --machine=mi325x
 
       - name: Upload tuning results
