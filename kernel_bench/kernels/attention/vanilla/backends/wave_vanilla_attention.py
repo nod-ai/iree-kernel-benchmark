@@ -5,10 +5,8 @@ from kernel_bench.config.types.attention.vanilla_attention_config import (
 from kernel_bench.kernels.attention.vanilla.attention_utils import (
     get_iree_attention_shapes,
 )
-from kernel_bench.kernels.attention.vanilla.data import create_bmnk_attention_inputs
 from kernel_bench.tuning.hyperparam import CategoricalBounds, IntegerBounds
 from kernel_bench.core.template import WaveTemplate, WaveKernelBenchmark
-from kernel_bench.utils.iree_utils import shape_to_iree
 from wave_lang.kernel.wave.templates.quantized_attention import (
     get_brevitas_pertensor_fp8_attention_kernel,
 )
@@ -17,7 +15,7 @@ from typing import override
 
 from wave_lang.kernel.lang.global_symbols import *
 from wave_lang.kernel.wave.constraints import MMAType
-from wave_lang.kernel.wave.compile import WaveCompileOptions, wave_compile
+from wave_lang.kernel.wave.compile import WaveCompileOptions
 from wave_lang.kernel.wave.utils.general_utils import get_default_scheduling_params
 from wave_lang.kernel.wave.templates.vanilla_attention import (
     get_vanilla_attention_kernel,
@@ -31,24 +29,24 @@ class WaveVanillaAttentionBenchmark(WaveKernelBenchmark):
     def setup_parameters(self):
         config = self.config
 
-        if "f8" in config.dtype:
+        if config.dtype == "f8":
             mfma_bounds = CategoricalBounds(
                 [
-                    (MMAType.F32_32x32x16_F8, MMAType.F32_32x32x16_K4_F8),
                     (MMAType.F32_16x16x32_F8, MMAType.F32_16x16x32_K4_F8),
+                    (MMAType.F32_32x32x16_F8, MMAType.F32_32x32x16_K4_F8),
                 ]
             )
         else:
             mfma_bounds = CategoricalBounds(
                 [
-                    (MMAType.F32_32x32x16_K8_F16, MMAType.F32_32x32x8_F16),
-                    (MMAType.F32_16x16x32_K8_F16, MMAType.F32_16x16x16_F16),
                     (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
+                    (MMAType.F32_16x16x32_K8_F16, MMAType.F32_16x16x16_F16),
+                    (MMAType.F32_32x32x16_K8_F16, MMAType.F32_32x32x8_F16),
                     (MMAType.F32_32x32x8_F16, MMAType.F32_32x32x8_F16),
                 ]
             )
 
-        mma_val = 2
+        mma_val = 0
         BLOCK_B_val = 1
         BLOCK_M_val = 128
         BLOCK_N_val = min(128, config.N)
@@ -58,18 +56,28 @@ class WaveVanillaAttentionBenchmark(WaveKernelBenchmark):
             "mfma_variant", mfma_bounds, initial_value=mma_val, include_hyperparam=False
         )
         self.BLOCK_B = self.add_param(
-            "BLOCK_B", IntegerBounds(min=1, max=config.B), initial_value=BLOCK_B_val
+            "BLOCK_B",
+            IntegerBounds(min=1, max=config.B),
+            initial_value=BLOCK_B_val,
+            clamp_value=True,
         )
         self.BLOCK_M = self.add_param(
             "BLOCK_M",
             IntegerBounds(min=32, max=config.M, step=4),
             initial_value=BLOCK_M_val,
+            clamp_value=True,
         )
         self.BLOCK_N = self.add_param(
-            "BLOCK_N", IntegerBounds(min=32, max=config.N), initial_value=BLOCK_N_val
+            "BLOCK_N",
+            IntegerBounds(min=32, max=config.N),
+            initial_value=BLOCK_N_val,
+            clamp_value=True,
         )
         self.BLOCK_K2 = self.add_param(
-            "BLOCK_K2", IntegerBounds(min=32, max=config.K2), initial_value=BLOCK_K2_val
+            "BLOCK_K2",
+            IntegerBounds(min=32, max=config.K2),
+            initial_value=BLOCK_K2_val,
+            clamp_value=True,
         )
 
         bytes_per_el = self.device_ctx.resolve_dtype(config.dtype).num_bytes()
@@ -108,13 +116,6 @@ class WaveVanillaAttentionBenchmark(WaveKernelBenchmark):
             hyperparams=hyperparams,
             dynamic_symbols=dynamic_symbols,
         )
-
-        # compile_options = self.get_compile_options(template)
-        # attention_exec = wave_compile(compile_options, base_attention)
-        # q, k, v, o = create_bmnk_attention_inputs(config, self.device_ctx)
-        # o = o.to(dtype=torch.float32)
-        # attention_exec(q, k, v, o)
-        # torch.save(o, f"results/outputs/wave/{config.get_name()}.pt")
 
         return template
 

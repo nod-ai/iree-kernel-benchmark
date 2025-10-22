@@ -212,11 +212,17 @@ class TuningParameter:
         name: str,
         bounds: TuningBounds,
         initial_value: Optional[int] = None,
+        clamp_value: bool = False,
         include_hyperparam: bool = True,
     ):
         self.name = name
         self.bounds = bounds
         self.include_hyperparam = include_hyperparam
+
+        if initial_value and clamp_value:
+            range = bounds.get_range()
+            initial_value = max(range[0], min(range[-1], initial_value))
+
         self._default_value = initial_value
         self._value = initial_value
         self.validate_value(self._value)

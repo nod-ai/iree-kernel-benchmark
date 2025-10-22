@@ -3,13 +3,13 @@ import torch
 from kernel_bench.config.types.attention.bshd_attention_config import (
     bshd_to_attention_attributes,
 )
+from kernel_bench.kernels.attention.bshd.bshd_utils import get_bshd_inputs
 from kernel_bench.tuning.hyperparam import CategoricalBounds, IntegerBounds
 from kernel_bench.core.template import WaveTemplate, WaveKernelBenchmark
 from kernel_bench.config.types.attention import AttentionConfigBSHD
 from typing import override
 
 from kernel_bench.utils.iree_utils import shape_to_iree
-from kernel_bench.utils.triton_utils import get_triton_bshd_inputs
 from wave_lang.kernel.lang.global_symbols import *
 from wave_lang.kernel.wave.constraints import MMAType
 from wave_lang.kernel.wave.compile import WaveCompileOptions, wave_compile
@@ -107,32 +107,32 @@ class WaveBSHDAttentionBenchmark(WaveKernelBenchmark):
             dynamic_symbols=dynamic_symbols,
         )
 
-    def validate_numerics(self, device):
-        config = self.config
-        in_dtype = self.device_ctx.dtype_to_torch(config.dtype)
-        template = self.load_wave_kernel()
-        options = self.get_compile_options(template)
-        attention_exec = wave_compile(options, template.launchable)
-        q, k, v, metadata = get_triton_bshd_inputs(
-            Z=config.B,
-            HQ=config.H,
-            HK=config.H_KV,
-            N_CTX_Q=config.N_Q,
-            N_CTX_K=config.N_KV,
-            D_HEAD=config.D_Q,
-            dtype=in_dtype,
-            layout="bshd",
-            requires_grad=False,
-        )
-        o = torch.empty_like(q).to(dtype=torch.float32)
-        attention_exec(q, k, v, o)
-        os.makedirs("results/inputs/bshd_attention/wave", exist_ok=True)
-        os.makedirs("results/outputs/bshd_attention/wave", exist_ok=True)
-        torch.save(q, f"results/inputs/bshd_attention/wave/{config.get_name()}_q.pt")
-        torch.save(k, f"results/inputs/bshd_attention/wave/{config.get_name()}_k.pt")
-        torch.save(v, f"results/inputs/bshd_attention/wave/{config.get_name()}_v.pt")
-        torch.save(o, f"results/outputs/bshd_attention/wave/{config.get_name()}.pt")
-        return True
+    # def validate_numerics(self, device):
+    #     config = self.config
+    #     in_dtype = self.device_ctx.dtype_to_torch(config.dtype)
+    #     template = self.load_wave_kernel()
+    #     options = self.get_compile_options(template)
+    #     attention_exec = wave_compile(options, template.launchable)
+    #     q, k, v, metadata = get_bshd_inputs(
+    #         Z=config.B,
+    #         HQ=config.H,
+    #         HK=config.H_KV,
+    #         N_CTX_Q=config.N_Q,
+    #         N_CTX_K=config.N_KV,
+    #         D_HEAD=config.D_Q,
+    #         dtype=in_dtype,
+    #         layout="bshd",
+    #         requires_grad=False,
+    #     )
+    #     o = torch.empty_like(q).to(dtype=torch.float32)
+    #     attention_exec(q, k, v, o)
+    #     os.makedirs("results/inputs/bshd_attention/wave", exist_ok=True)
+    #     os.makedirs("results/outputs/bshd_attention/wave", exist_ok=True)
+    #     torch.save(q, f"results/inputs/bshd_attention/wave/{config.get_name()}_q.pt")
+    #     torch.save(k, f"results/inputs/bshd_attention/wave/{config.get_name()}_k.pt")
+    #     torch.save(v, f"results/inputs/bshd_attention/wave/{config.get_name()}_v.pt")
+    #     torch.save(o, f"results/outputs/bshd_attention/wave/{config.get_name()}.pt")
+    #     return True
 
     @override
     def extra_compile_options(self):

@@ -59,28 +59,20 @@ class BenchmarkRunner:
         with open(result_path, "r") as file:
             tuned_data = json.load(file)
 
-        improved_configs = {
-            name: data
-            for name, data in tuned_data.items()
-            if data.get("improvement", False) and data.get("speedup", 0) > 1
-        }
-
-        speedups = [tune_result["speedup"] for tune_result in improved_configs.values()]
+        speedups = [
+            tune_result["speedup"] if tune_result["improvement"] else 1
+            for tune_result in tuned_data.values()
+        ]
         avg_speedup = sum(speedups) / len(speedups)
         avg_speedup_percent = (avg_speedup - 1) * 100
         self.logger.info(
             f"Loading tuned config with average speedup of +{avg_speedup_percent:.2f}%"
         )
 
-        # self.configs = [
-        #     (tag, config)
-        #     for tag, config in self.configs
-        #     if config.get_name() in improved_configs.keys()
-        # ]
-
         self.specs = {
             kernel_name: tune_result.get("hyperparams", {})
-            for kernel_name, tune_result in improved_configs.items()
+            for kernel_name, tune_result in tuned_data.items()
+            if tune_result.get("improvement")
         }
 
     def save_results(self, results: List[BenchmarkResult]):
@@ -149,9 +141,7 @@ class BenchmarkRunner:
             )
 
     def benchmark_kernels(self, validate_numerics=True) -> List[BenchmarkResult]:
-        """
-        Run benchmarks sequentially. Compiles all IREE-based kernels beforehand.
-        """
+        """Run benchmarks sequentially. Compiles all IREE-based kernels beforehand."""
         self._load_benches()
 
         results = batch_benchmark(

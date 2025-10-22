@@ -1,33 +1,23 @@
-from typing import override
+from typing import override, Optional
 import torch
+import torch.nn.functional as F
+from einops import einsum, rearrange
 
 from kernel_bench.config.types.attention.bshd_attention_config import (
     AttentionConfigBSHD,
 )
-from kernel_bench.config.types.attention.vanilla_attention_config import (
-    bmnk1k2_to_attention_attributes,
-)
 from kernel_bench.core.template import KernelBenchmark
+from kernel_bench.kernels.attention.bshd.bshd_utils import get_bshd_inputs
 from kernel_bench.utils.torch_utils import benchmark_function_torch
-from kernel_bench.config.types.attention import AttentionConfigBMNK
-
-from typing import Optional, Tuple, Union
-
-import torch
-import torch.nn.functional as F
-from einops import einsum, rearrange
-from torch import Tensor, nn
-
-from kernel_bench.utils.triton_utils import get_triton_bshd_inputs
 
 
 def scaled_dot_product_gqa_torch(
-    query: Tensor,
-    key: Tensor,
-    value: Tensor,
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
     dropout: float = 0.0,
     scale: Optional[float] = None,
-    mask: Optional[Tensor] = None,
+    mask: Optional[torch.Tensor] = None,
     is_causal: Optional[bool] = None,
     need_weights: bool = False,
     average_attn_weights: bool = False,
@@ -129,12 +119,12 @@ def scaled_dot_product_gqa_torch(
     if dropout > 0.0:
         attention = F.dropout(attention, p=dropout)
 
-    # Apply attention matrix to the value Tensor.
+    # Apply attention matrix to the value torch.Tensor.
     out = einsum(attention, value, "b g h n s, b h s d -> b g h n d")
     # Move head dimension back to axis 2
     out = rearrange(out, "b g h n d -> b n (h g) d")
 
-    attn_weights: Optional[Tensor] = None
+    attn_weights: Optional[torch.Tensor] = None
     if need_weights:
         # Move the sequence dimensions back to positions 1, 2.  Move the head dimension
         # to position 3.  This more closely matches the return shape of the attention
@@ -160,7 +150,7 @@ class TorchBSHDAttentionBenchmark(KernelBenchmark):
         config = self.config
         in_dtype = self.device_ctx.dtype_to_torch(config.dtype)
 
-        q, k, v, metadata = get_triton_bshd_inputs(
+        q, k, v, metadata = get_bshd_inputs(
             Z=config.B,
             HQ=config.H,
             HK=config.H_KV,
@@ -171,9 +161,6 @@ class TorchBSHDAttentionBenchmark(KernelBenchmark):
             layout="bshd",
             requires_grad=False,
         )
-
-        # o, _ = scaled_dot_product_gqa_torch(q, k, v)
-        # torch.save(o, f"results/outputs/bshd_attention/torch/{config.get_name()}.pt")
 
         try:
             mean_time_us = benchmark_function_torch(

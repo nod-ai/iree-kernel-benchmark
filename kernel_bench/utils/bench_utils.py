@@ -40,7 +40,11 @@ class BenchmarkResult:
         raise ValueError("Expected type BenchmarkResult")
 
     def __lt__(self, other):
+        if not self.ok:
+            return False
         if isinstance(other, BenchmarkResult):
+            if not other.ok:
+                return True
             return self.mean_microseconds < other.mean_microseconds
         if isinstance(other, float):
             return self.mean_microseconds < other

@@ -12,11 +12,10 @@ from os import PathLike
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from tqdm import tqdm, trange
+from tqdm import tqdm
 from kernel_bench.utils.dtypes.device_context import DeviceContext
-from wave_lang.kernel.wave.compile import wave_compile, WaveKernel
+from wave_lang.kernel.wave.compile import wave_compile
 from wave_lang.kernel.wave.compile_options import WaveCompileOptions
-from wave_lang.kernel.wave.utils.general_utils import get_default_scheduling_params
 from wave_lang.kernel.wave.wave import LaunchableWave
 
 from kernel_bench.utils.parallel_utils.isolated_runtime import (
@@ -37,10 +36,6 @@ from kernel_bench.tuning.hyperparam.parameters import (
     TuningSpec,
     ParameterSymbol,
 )
-from ..utils.parallel_utils import (
-    istarmap,
-)  # Import to enable monkey-patched istarmap method
-import sympy as sp
 
 
 class CompilationTimeoutError(Exception):
@@ -264,6 +259,7 @@ class WaveKernelBenchmark(IREEKernelBenchmark):
         compile_options.run_bench = False
         compile_options.device = "hip"
         compile_options.target = self.device_ctx.hip_target
+        compile_options.dump_intermediates = "dump_wave"
 
         return compile_options
 
@@ -288,7 +284,7 @@ class WaveKernelBenchmark(IREEKernelBenchmark):
 
         except Exception as e:
             self.logger.error(f"Failed to compile {self.config.get_name()}: {e}")
-            # self.logger.error("".join(traceback.format_exception(e)))
+            self.logger.error(traceback.format_exc())
             return False
 
 

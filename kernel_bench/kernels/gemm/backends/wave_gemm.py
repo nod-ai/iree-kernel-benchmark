@@ -33,15 +33,7 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
     def validate_config(self):
         config = self.config
 
-        input_dtype = config.dtype
-        if input_dtype != "f16":
-            return False
-
-        variant = config.tA + config.tB
-        if variant != "NT":
-            return False
-
-        if config.M < 4 or config.N < 2 or config.K < 2:
+        if config.M < 4 or config.N < 4 or config.K < 4:
             return False
 
         return True
@@ -79,28 +71,31 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
         )
         self.BLOCK_M = self.add_param(
             "BLOCK_M",
-            IntegerBounds(min=4, max=self.config.M, step=4),
-            initial_value=min(128, self.config.M),
+            IntegerBounds(min=4, max=min(256, self.config.M), step=4),
+            initial_value=128,
+            clamp_value=True,
         )
         self.BLOCK_N = self.add_param(
             "BLOCK_N",
-            IntegerBounds(min=2, max=self.config.N, step=2),
-            initial_value=min(256, self.config.N),
+            IntegerBounds(min=4, max=min(256, self.config.N), step=4),
+            initial_value=256,
+            clamp_value=True,
         )
         self.BLOCK_K = self.add_param(
             "BLOCK_K",
-            IntegerBounds(min=2, max=self.config.K, step=1),
-            initial_value=min(64, self.config.K),
+            IntegerBounds(min=4, max=min(256, self.config.K), step=4),
+            initial_value=64,
+            clamp_value=True,
         )
 
         max_wg_m = ceil(self.config.M / 16) - 1
         self.GROUP_SIZE_M = self.add_param(
             "GROUP_SIZE_M",
             IntegerBounds(min=1, max=max_wg_m, step=1),
-            initial_value=min(8, max_wg_m),
+            initial_value=8,
+            clamp_value=True,
         )
 
-        # Use dtype_spec for memory calculations
         bytes_per_el = dtype_spec.num_bytes()
         shared_memory_constraint = (
             (self.BLOCK_M + 4) * self.BLOCK_K + (self.BLOCK_N + 4) * self.BLOCK_K
@@ -113,6 +108,17 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
 
     @override
     def load_wave_kernel(self):
+        config = self.config
+        if config.dtype == "f8":
+            input_dtype = self.device_ctx.dtype_to_torch("f16")
+            quantized_dtype = self.device_ctx.dtype_to_torch(config.dtype)
+        else:
+            input_dtype = self.device_ctx.dtype_to_torch(config.dtype)
+            quantized_dtype = None
+
+        tA = "N" if config.tA == "T" else "T"
+        tB = "N" if config.tB == "T" else "T"
+
         base_gemm, hyperparams = get_reordered_matmul(
             self.config.M,
             self.config.N,
@@ -122,6 +128,10 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
             self.BLOCK_K.value,
             self.GROUP_SIZE_M.value,
             mfma_variant=self.mfma_variant.value,
+            input_dtype=input_dtype,
+            quantized_dtype=quantized_dtype,
+            tA=tA,
+            tB=tB,
         )
         hyperparams.update(get_default_scheduling_params())
         return WaveTemplate(launchable=base_gemm, hyperparams=hyperparams)
@@ -129,11 +139,14 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
     @override
     def extra_compile_options(self):
         use_scheduling = SchedulingType.PREFETCH
+        supports_g2s = self.device_ctx.hip_target.startswith("gfx95")
 
         return WaveCompileOptions(
+            dump_intermediates="./dump_wave",
             canonicalize=True,
             schedule=use_scheduling,
             use_buffer_ops=True,
+            use_global_to_shared=False,
         )
 
     @override
@@ -176,12 +189,17 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
     @override
     def get_runtime_args(self):
         config = self.config
-        shape_A = (config.K, config.M) if config.tA == "T" else (config.M, config.K)
-        shape_B = (config.N, config.K) if config.tB == "T" else (config.K, config.N)
+        tA = "N" if config.tA == "T" else "T"
+        tB = "N" if config.tB == "T" else "T"
+
+        shape_A = (config.K, config.M) if tA == "T" else (config.M, config.K)
+        shape_B = (config.N, config.K) if tB == "T" else (config.K, config.N)
         shape_C = (config.M, config.N)
 
-        inp1 = shape_to_iree(shape_A, config.dtype, self.device_ctx)
-        inp2 = shape_to_iree(shape_B, config.dtype, self.device_ctx)
+        input_dtype = "f16" if config.dtype == "f8" else config.dtype
+
+        inp1 = shape_to_iree(shape_A, input_dtype, self.device_ctx)
+        inp2 = shape_to_iree(shape_B, input_dtype, self.device_ctx)
         out = shape_to_iree(shape_C, "f32", self.device_ctx)
 
         runtime_args = [
