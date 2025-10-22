@@ -38,7 +38,7 @@ on:
         required: false
 
 concurrency:
-  group: ${{ github.workflow }}-${{ inputs.pr_headsha }}
+  group: ${{ github.workflow }}-${{ inputs.pr_headsha }}-${{ inputs.machine }}
   cancel-in-progress: true
 
 jobs:
