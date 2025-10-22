@@ -56,7 +56,7 @@ jobs:
     runs-on: "linux-${{ inputs.machine }}-1gpu-ossci-nod-ai"
 
     concurrency:
-      group: kernel-benchmarking
+      group: kernel-benchmarking-${{ inputs.machine }}
       cancel-in-progress: false
 
     env:

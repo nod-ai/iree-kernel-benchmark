@@ -24,7 +24,7 @@ jobs:
         machine: [mi325, mi355]
 
     concurrency:
-      group: kernel-benchmarking
+      group: kernel-benchmarking-${{ matrix.machine }}
       cancel-in-progress: true
 
     env:
