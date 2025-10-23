@@ -15,7 +15,9 @@ from kernel_bench.config.base import OpConfig
 from kernel_bench.config.registry import get_global_registry
 
 
-def load_configs_from_json(json_path: Path) -> List[Tuple[str, OpConfig]]:
+def load_configs_from_json(
+    json_path: Path, selected_kernel_type: Optional[str] = None
+) -> List[Tuple[str, OpConfig]]:
     """
     Load configurations from a JSON file.
 
@@ -35,22 +37,29 @@ def load_configs_from_json(json_path: Path) -> List[Tuple[str, OpConfig]]:
     for item in data:
         if not isinstance(item, dict):
             raise ValueError(f"Invalid config format in JSON: {item}")
+
         tag = item.get("tag", "default")
         problem = item.get("problem", {})
-        config_class = registry.get_config_class(item.get("kernelType"))
+        kernel_type = item.get("kernelType")
+        if selected_kernel_type and kernel_type != selected_kernel_type:
+            continue
+
+        config_class = registry.get_config_class(kernel_type)
         config = config_class.from_dict(problem)
         configs.append((tag, config))
 
     return configs
 
 
-def load_configs(file_path: Path) -> List[Tuple[str, OpConfig]]:
+def load_configs(
+    file_path: Path, kernel_type: Optional[str] = None
+) -> List[Tuple[str, OpConfig]]:
     """
     Load configurations from a file (auto-detects format).
 
     Args:
         file_path: Path to configuration file
-        config_class: Configuration class to deserialize into
+        kernel_type: Kernel type to filter problems
 
     Returns:
         List of (tag, config) tuples
@@ -61,7 +70,7 @@ def load_configs(file_path: Path) -> List[Tuple[str, OpConfig]]:
         raise FileNotFoundError(f"Config file not found: {file_path}")
 
     if file_path.suffix == ".json":
-        return load_configs_from_json(file_path)
+        return load_configs_from_json(file_path, kernel_type)
     else:
         raise ValueError(f"Unsupported file format: {file_path.suffix}")
 
