@@ -5,7 +5,7 @@ from backend.github_utils.gist import load_gist_by_id
 from backend.runs import RunType, get_artifact_parser
 from backend.runs.run_utils import find_incomplete_runs, get_run_by_blob_name
 from backend.runs.tracker import get_run_tracker
-from backend.runs.workflows import trigger_bench_workflow
+from backend.runs.workflows import trigger_bench_workflow, trigger_short_bench_run
 from backend.storage.rebase import rebase_all, rebase_pull_requests
 from backend.storage.types import *
 from backend.storage.utils import test_logger
@@ -146,46 +146,27 @@ def trigger_workflow():
 
     pr_data = response_data["pr"]
     config_data = response_data["config"]
-
-    wave_client = WaveUpdateListener()
-    trigger_success = wave_client.trigger_workflow(
-        pr_data["repoName"], pr_data["branchName"], pr_data["mappingId"]
-    )
-
     kernel_selection = config_data["kernelSelection"]
+    machine = config_data.get("machine", None)
+
+    bench_kernels = None
     if kernel_selection["type"] == "specific-tags":
         tags = kernel_selection["tags"]
         bench_kernels = KernelConfigDb.query(
             " or ".join([f"tag eq '{tag}'" for tag in tags])
         )
+        if len(bench_kernels) == 0:
+            return "No kernels found", 500
         logger.info(
             f"Loaded {len(bench_kernels)} kernels for benchmark with {len(tags)} tags"
         )
-    else:
-        bench_kernels = KernelConfigDb.find_all({"workflow": "all"})
-        logger.info(f"Loaded {len(bench_kernels)} quick kernels for benchmark")
 
-    if len(bench_kernels) == 0:
-        return "No kernels found", 500
-
-    bench_kernels_json = [asdict(k) for k in bench_kernels]
-    problems_gist = create_gist(bench_kernels_json)
-
-    tuned_configs = TuningConfigDb.find_all()
-    tuned_configs_json = {c.kernel_name: c.result for c in tuned_configs}
-    tuned_gist = create_gist(tuned_configs_json)
-
-    trigger_success = trigger_bench_workflow(
-        RunType.BENCHMARK,
-        {
-            "selected_backend": "all",
-            "selected_kernel": "all",
-            "problems_url": problems_gist.raw_url,
-            "tuned_config_url": tuned_gist.raw_url,
-            "pr_repository": pr_data["repoName"],
-            "pr_branch": pr_data["branchName"],
-            "pr_headsha": pr_data["mappingId"],
-        },
+    trigger_success = trigger_short_bench_run(
+        machine=machine,
+        problems=bench_kernels,
+        pr_repository=pr_data.get("repoName", None),
+        pr_branch=pr_data.get("branchName", None),
+        pr_headsha=pr_data.get("mappingId", None),
     )
 
     if trigger_success:

@@ -1,18 +1,6 @@
-from typing import Any, Dict, Tuple
+from typing import Any, Dict
 from .types import *
 from datetime import datetime
-import random
-from dataclass_wizard import asdict
-from tqdm import tqdm
-
-
-def random_stats() -> dict[str, float]:
-    KERNEL_TYPES = ["gemm", "attention", "convolution"]
-    stats = {}
-    for k in KERNEL_TYPES:
-        # Random float between -50 and +100, rounded to 2 decimal places
-        stats[k] = round(random.uniform(-50, 100), 2)
-    return stats
 
 
 def parse_pr_obj(pr_dict: Dict[str, Any]) -> RepoPullRequest:
@@ -40,13 +28,3 @@ def parse_pr_obj(pr_dict: Dict[str, Any]) -> RepoPullRequest:
     )
 
     return pr
-
-
-def convert_prs_from_github(pr_json: list[dict]) -> list[dict]:
-    modifications = []
-
-    for pr_dict in tqdm(pr_json, desc="Parsing PRs from JSON"):
-        pr = parse_pr_obj(pr_dict)
-        modifications.append(asdict(pr))
-
-    return modifications

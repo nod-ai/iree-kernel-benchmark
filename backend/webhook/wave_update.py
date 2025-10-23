@@ -1,12 +1,8 @@
 import logging
 from backend.github_utils import get_repo
-from backend.globals import (
-    MAX_BENCH_KERNELS,
-    RUN_ALL_BACKENDS,
-    WAVE_REPO_NAME,
-)
+from backend.globals import WAVE_REPO_NAME
 from backend.runs import RunType
-from backend.runs.workflows import trigger_bench_workflow
+from backend.runs.workflows import trigger_short_bench_run
 from backend.storage.auth import get_blob_client
 from backend.storage.conversion import parse_pr_obj
 from backend.storage.types import *
@@ -21,51 +17,10 @@ def jsonify(model) -> str:
 
 
 class WaveUpdateListener:
-    """
-    Wave Update Events:
-    - assigned
-    - auto_merge_disabled
-    - auto_merge_enabled
-    - closed
-    - converted_to_draft
-    - demilestoned
-    - dequeued
-    - edited
-    - enqueued
-    - labeled
-    - locked
-    - milestoned
-    - opened
-    - ready_for_review
-    - reopened
-    - review_request_removed
-    - review_requested
-    - synchronize
-    - unassigned
-    - unlabeled
-    - unlocked
-    """
-
     def __init__(self):
         self._wave_repo = get_repo("wave")
         self._bench_repo = get_repo("bench")
         self._storage_client = get_blob_client()
-
-    def trigger_workflow(
-        self, repo_name: str, branch_name: str, head_sha: str, metadata: dict = None
-    ) -> bool:
-        inputs = {
-            "max_kernels": MAX_BENCH_KERNELS,
-            "selected_backend": "all" if RUN_ALL_BACKENDS else "wave",
-            "selected_kernel": "all",
-            "pr_repository": repo_name,
-            "pr_branch": branch_name,
-            "pr_headsha": head_sha,
-        }
-        if metadata:
-            inputs["metadata"] = json.dumps(metadata)
-
-        return trigger_bench_workflow(RunType.BENCHMARK, inputs)
 
     def handle_pr_payload(self, pr_payload: dict):
         action = pr_payload["action"]
@@ -95,13 +50,23 @@ class WaveUpdateListener:
         pr = parse_pr_obj(pr_obj)
         RepoPullRequestDb.upsert(pr)
 
-        if has_changed and not is_merge:
+        if not has_changed or is_merge:
+            return
+
+        logger.info(
+            f'Pull Request {pr_obj["html_url"]} triggering workflow on {action}'
+        )
+        head_repo_name = pr_obj["head"]["repo"]["full_name"]
+        head_branch = pr_obj["head"]["ref"]
+        head_sha = pr_obj["head"]["sha"]
+        trigger_success = trigger_short_bench_run(
+            pr_repository=head_repo_name, pr_branch=head_branch, pr_headsha=head_sha
+        )
+        if trigger_success:
             logger.info(
-                f'Pull Request {pr_obj["html_url"]} triggering workflow on {action}'
+                f'Successfully triggered workflow for Pull Request {pr_obj["html_url"]}'
             )
-            head_repo_name = pr_obj["head"]["repo"]["full_name"]
-            head_branch = pr_obj["head"]["ref"]
-            head_sha = pr_obj["head"]["sha"]
-            self.trigger_workflow(
-                head_repo_name, head_branch, head_sha
-            )  # { 'trigger': pr_entry }
+        else:
+            logger.error(
+                f'Failed to trigger workflow for Pull Request {pr_obj["html_url"]}'
+            )
