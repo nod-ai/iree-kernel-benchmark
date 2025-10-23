@@ -45,7 +45,6 @@ class RunArtifactParser(ABC):
     ) -> Tuple[bool, Any]:
         artifact_data, local_path = self.parse_artifact(gh_artifact)
         if not artifact_data:
-            shutil.rmtree(local_path)
             return False, None
 
         try:

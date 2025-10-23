@@ -1,3 +1,4 @@
+from logging import getLogger
 from .types import *
 from backend.github_utils import get_github_token
 from github import Artifact
@@ -7,6 +8,8 @@ import os
 import requests
 import zipfile
 from typing import List, Dict
+
+logger = getLogger(__name__)
 
 
 def download_artifact(
@@ -23,8 +26,10 @@ def download_artifact(
     response = requests.get(download_url, headers=headers)
 
     if response.status_code != 200:
-        print("failed to download", artifact.id, download_url, response.json())
-        None
+        logger.error(
+            f"Failed to download artifact {artifact.id} at {download_url}:\n{response.json()}"
+        )
+        return None
 
     zip_path = local_path / "results.zip"
     extract_path = local_path / extract_name
@@ -35,8 +40,12 @@ def download_artifact(
     with open(zip_path, "wb") as f:
         f.write(response.content)
 
-    with zipfile.ZipFile(zip_path, "r") as zip_ref:
-        zip_ref.extractall(extract_path)
+    try:
+        with zipfile.ZipFile(zip_path, "r") as zip_ref:
+            zip_ref.extractall(extract_path)
+    except:
+        logger.error(f"Failed to parse artifact data for artifact {artifact.id}")
+        return None
 
     return local_path
 
