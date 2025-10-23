@@ -142,11 +142,12 @@ if __name__ == "__main__":
             configs: list[tuple[str, OpConfig]] = []
             if args.load_problems:
                 configs = load_configs(args.load_problems, kernel_type)
-                if args.tune and len(configs) == 0:
-                    exit(0)
+            else:
+                configs = LOAD_PROBLEMS[kernel_type](kernel_type, backend_name)
 
             if len(configs) == 0:
-                configs = LOAD_PROBLEMS[kernel_type](kernel_type, backend_name)
+                logger.info(f"No problems found for {kernel_type=} {backend_name=}")
+                continue
 
             if "all" not in tags:
                 configs = [(tag, config) for tag, config in configs if tag in tags]
