@@ -58,6 +58,10 @@ class BenchmarkRunner:
     def load_tuned_results(self, result_path: PathLike):
         with open(result_path, "r") as file:
             tuned_data = json.load(file)
+        if isinstance(tuned_data, list):
+            tuned_data = {obj["kernelName"]: obj["result"] for obj in tuned_data}
+        if len(tuned_data) == 0:
+            return
 
         speedups = [
             tune_result["speedup"] if tune_result["improvement"] else 1
