@@ -29,3 +29,6 @@ test_venv*/
 # Bench Artifacts
 results/
 dump/
+
+# Profiling
+.rocprofv3

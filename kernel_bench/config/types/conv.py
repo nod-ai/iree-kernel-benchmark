@@ -117,6 +117,23 @@ class ConvConfig(OpConfig):
             "dtype": self.input_dtype,
         }
 
+    @override
+    @classmethod
+    def from_dict(cls, obj):
+        return ConvConfig(
+            N=obj["N"],
+            H=obj["H"],
+            W=obj["W"],
+            C=obj["C"],
+            P=obj["P"],
+            Q=obj["Q"],
+            F=obj["F"],
+            S=obj["S"],
+            OP=obj["OP"],
+            input_dtype=obj["dtype"],
+            output_dtype="f32",
+        )
+
     def decode_op(self) -> tuple[str, str]:
         """Decode operation string into base op and variant."""
         if self.OP.startswith("conv_2d_"):

@@ -6,7 +6,7 @@ This module defines the abstract base class for all kernel configurations.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from dataclass_wizard import asdict
+from dataclass_wizard import asdict, fromdict
 from typing import Any, Dict, List
 
 
@@ -58,6 +58,13 @@ class OpConfig(ABC):
             Dictionary representation of the configuration.
         """
         return asdict(self)
+
+    @classmethod
+    def from_dict(cls, obj: Dict[str, Any]) -> "OpConfig":
+        """
+        Convert dictionary to config instance.
+        """
+        return fromdict(cls, obj)
 
     def get_dim_names(self) -> List[str]:
         """

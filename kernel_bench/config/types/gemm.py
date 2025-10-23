@@ -59,3 +59,18 @@ class GemmConfig(OpConfig):
             "transpose": self.tA + self.tB,
             "dtype": self.dtype,
         }
+
+    @override
+    @classmethod
+    def from_dict(cls, obj) -> "GemmConfig":
+        """
+        Convert dictionary to config instance.
+        """
+        return GemmConfig(
+            M=obj["M"],
+            N=obj["N"],
+            K=obj["K"],
+            tA=obj["transpose"][0],
+            tB=obj["transpose"][1],
+            dtype=obj["dtype"],
+        )

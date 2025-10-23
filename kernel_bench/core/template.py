@@ -259,7 +259,6 @@ class WaveKernelBenchmark(IREEKernelBenchmark):
         compile_options.run_bench = False
         compile_options.device = "hip"
         compile_options.target = self.device_ctx.hip_target
-        compile_options.dump_intermediates = "dump_wave"
 
         return compile_options
 
