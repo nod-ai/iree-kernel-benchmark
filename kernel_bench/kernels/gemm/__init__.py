@@ -23,10 +23,10 @@ from .problems import (
 def get_default_gemm_configs(kernel_type: str, backend_name: str):
     configs = []
     configs += get_meta_gemms()
-    # configs += get_gemm_configs("f16")
-    # configs += get_gemm_configs("bf16")
-    # configs += get_gemm_configs("f8")
-    # configs += get_paper_gemms()
+    configs += get_gemm_configs("f16")
+    configs += get_gemm_configs("bf16")
+    configs += get_gemm_configs("f8")
+    configs += get_paper_gemms()
     return configs
 
 
