@@ -18,6 +18,7 @@ from wave_lang.kernel.wave.templates.gqa_vanilla_attention import (
     get_gqa_bshd_attention_kernel,
 )
 from wave_lang.kernel.wave.scheduling.schedule_enums import SchedulingType
+from wave_lang.kernel.wave.utils.torch_utils import device_randn
 
 
 class WaveBSHDAttentionBenchmark(WaveKernelBenchmark):
@@ -143,31 +144,24 @@ class WaveBSHDAttentionBenchmark(WaveKernelBenchmark):
         )
 
     @override
-    def get_runtime_args(self):
+    def get_inputs(self):
         config = self.config
-        in_dtype = "f16" if config.dtype == "f8" else config.dtype
-        out_dtype = "f32"
+        in_dtype = self.device_ctx.dtype_to_torch(
+            "f16" if config.dtype == "f8" else config.dtype
+        )
+        out_dtype = self.device_ctx.dtype_to_torch("f32")
 
-        query_shape = shape_to_iree(
-            (config.B, config.N_Q, config.H, config.D_Q), in_dtype, self.device_ctx
+        query = device_randn(
+            (config.B, config.N_Q, config.H, config.D_Q), dtype=in_dtype
         )
-        key_shape = shape_to_iree(
-            (config.B, config.N_KV, config.H_KV, config.D_Q),
-            in_dtype,
-            self.device_ctx,
+        key = device_randn(
+            (config.B, config.N_KV, config.H_KV, config.D_Q), dtype=in_dtype
         )
-        value_shape = shape_to_iree(
-            (config.B, config.N_KV, config.H_KV, config.D_KV),
-            in_dtype,
-            self.device_ctx,
+        value = device_randn(
+            (config.B, config.N_KV, config.H_KV, config.D_KV), dtype=in_dtype
         )
-        output_shape = shape_to_iree(
-            (config.B, config.N_Q, config.H, config.D_KV), out_dtype, self.device_ctx
+        output = device_randn(
+            (config.B, config.N_Q, config.H, config.D_KV), dtype=out_dtype
         )
 
-        runtime_args = [
-            f"--input={shape}"
-            for shape in [query_shape, key_shape, value_shape, output_shape]
-        ]
-        runtime_args += ["--function=isolated_benchmark"]
-        return runtime_args
+        return [query, key, value, output]

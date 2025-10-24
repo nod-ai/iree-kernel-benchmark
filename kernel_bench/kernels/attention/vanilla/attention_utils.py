@@ -8,6 +8,7 @@ from kernel_bench.config.types.attention.vanilla_attention_config import (
 )
 from kernel_bench.utils.dtypes.device_context import DeviceContext
 from kernel_bench.utils.iree_utils import shape_to_iree
+from wave_lang.kernel.wave.utils.torch_utils import device_randn
 
 
 class IntrinsicType(Enum):
@@ -135,6 +136,28 @@ class IREEAttentionTuningSpec:
             + f", promote_operands = [1]"
             + f"}}>"
         )
+
+
+def get_vanilla_attention_inputs(
+    config: AttentionConfigBMNK,
+    device_ctx: DeviceContext,
+    in_dtype: Optional[str] = None,
+    out_dtype: Optional[str] = None,
+):
+    in_dtype = device_ctx.dtype_to_torch(in_dtype or config.dtype)
+    out_dtype = device_ctx.dtype_to_torch(out_dtype or config.dtype)
+
+    query_shape = (config.B, config.M, config.K1)
+    key_shape = (config.B, config.K2, config.K1)
+    value_shape = (config.B, config.K2, config.N)
+    output_shape = (config.B, config.M, config.N)
+
+    query = device_randn(query_shape, dtype=in_dtype)
+    key = device_randn(key_shape, dtype=in_dtype)
+    value = device_randn(value_shape, dtype=in_dtype)
+    output = device_randn(output_shape, dtype=out_dtype)
+
+    return query, key, value, output
 
 
 def get_iree_attention_shapes(

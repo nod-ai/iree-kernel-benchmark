@@ -128,10 +128,10 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
             self.BLOCK_K.value,
             self.GROUP_SIZE_M.value,
             mfma_variant=self.mfma_variant.value,
-            input_dtype=input_dtype,
-            quantized_dtype=quantized_dtype,
-            tA=tA,
-            tB=tB,
+            # input_dtype=input_dtype,
+            # quantized_dtype=quantized_dtype,
+            # tA=tA,
+            # tB=tB,
         )
         hyperparams.update(get_default_scheduling_params())
         return WaveTemplate(launchable=base_gemm, hyperparams=hyperparams)
@@ -187,7 +187,7 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
             return True
 
     @override
-    def get_runtime_args(self):
+    def get_inputs(self):
         config = self.config
         tA = "N" if config.tA == "T" else "T"
         tB = "N" if config.tB == "T" else "T"
@@ -196,16 +196,13 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
         shape_B = (config.N, config.K) if tB == "T" else (config.K, config.N)
         shape_C = (config.M, config.N)
 
-        input_dtype = "f16" if config.dtype == "f8" else config.dtype
+        input_dtype = self.device_ctx.dtype_to_torch(
+            "f16" if config.dtype == "f8" else config.dtype
+        )
+        output_dtype = self.device_ctx.dtype_to_torch("f32")
 
-        inp1 = shape_to_iree(shape_A, input_dtype, self.device_ctx)
-        inp2 = shape_to_iree(shape_B, input_dtype, self.device_ctx)
-        out = shape_to_iree(shape_C, "f32", self.device_ctx)
+        A = device_randn(shape_A, dtype=input_dtype)
+        B = device_randn(shape_B, dtype=input_dtype)
+        C = device_randn(shape_C, dtype=output_dtype)
 
-        runtime_args = [
-            f"--input={inp1}",
-            f"--input={inp2}",
-            f"--input={out}",
-            "--function=isolated_benchmark",
-        ]
-        return runtime_args
+        return [A, B, C]

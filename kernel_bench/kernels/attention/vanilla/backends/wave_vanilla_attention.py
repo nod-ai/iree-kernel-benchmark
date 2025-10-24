@@ -4,6 +4,7 @@ from kernel_bench.config.types.attention.vanilla_attention_config import (
 )
 from kernel_bench.kernels.attention.vanilla.attention_utils import (
     get_iree_attention_shapes,
+    get_vanilla_attention_inputs,
 )
 from kernel_bench.tuning.hyperparam import CategoricalBounds, IntegerBounds
 from kernel_bench.core.template import WaveTemplate, WaveKernelBenchmark
@@ -128,17 +129,11 @@ class WaveVanillaAttentionBenchmark(WaveKernelBenchmark):
         )
 
     @override
-    def get_runtime_args(self):
+    def get_inputs(self):
         config = self.config
         in_dtype = "f16" if config.dtype == "f8" else config.dtype
         out_dtype = "f32"
-        query_shape, key_shape, value_shape, output_shape = get_iree_attention_shapes(
+
+        return get_vanilla_attention_inputs(
             config, self.device_ctx, in_dtype, out_dtype
         )
-
-        runtime_args = [
-            f"--input={shape}"
-            for shape in [query_shape, key_shape, value_shape, output_shape]
-        ]
-        runtime_args += ["--function=isolated_benchmark"]
-        return runtime_args

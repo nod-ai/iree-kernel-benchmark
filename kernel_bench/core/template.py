@@ -12,8 +12,10 @@ from os import PathLike
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+import torch
 from tqdm import tqdm
 from kernel_bench.utils.dtypes.device_context import DeviceContext
+from kernel_bench.utils.torch_utils import benchmark_function_torch
 from wave_lang.kernel.wave.compile import wave_compile
 from wave_lang.kernel.wave.compile_options import WaveCompileOptions
 from wave_lang.kernel.wave.wave import LaunchableWave
@@ -237,13 +239,17 @@ class WaveTemplate:
 
 
 @dataclass
-class WaveKernelBenchmark(IREEKernelBenchmark):
+class WaveKernelBenchmark(KernelBenchmark):
     @abstractmethod
     def load_wave_kernel(self) -> WaveTemplate:
         pass
 
     @abstractmethod
     def extra_compile_options(self) -> WaveCompileOptions:
+        pass
+
+    @abstractmethod
+    def get_inputs(self) -> List[torch.Tensor]:
         pass
 
     def get_compile_options(
@@ -285,6 +291,36 @@ class WaveKernelBenchmark(IREEKernelBenchmark):
             self.logger.error(f"Failed to compile {self.config.get_name()}: {e}")
             self.logger.error(traceback.format_exc())
             return False
+
+    def run_bench(self, device, num_iterations=1, timeout=None):
+        template = self.load_wave_kernel()
+        options = self.get_compile_options(template)
+        inputs = self.get_inputs()
+
+        try:
+            compiled_kernel = wave_compile(options, template.launchable)
+        except Exception as e:
+            self.logger.error(
+                (
+                    f"Failed to compile {self.config.get_name()}: {e}"
+                    f"{traceback.format_exc()}"
+                )
+            )
+            return self.get_bench_result(0, False)
+
+        try:
+            mean_runtime_us = benchmark_function_torch(
+                compiled_kernel, *inputs, warmup=20, iterations=100, compile=False
+            )
+            return self.get_bench_result(mean_runtime_us, True)
+        except Exception as e:
+            self.logger.error(
+                (
+                    f"Failed to benchmark {self.config.get_name()}: {e}"
+                    f"{traceback.format_exc()}"
+                )
+            )
+            return self.get_bench_result(0, False)
 
 
 type CompileResult = Tuple[OpConfig, Optional[Path], bool]
