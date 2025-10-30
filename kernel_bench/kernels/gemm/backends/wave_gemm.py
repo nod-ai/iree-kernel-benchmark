@@ -39,7 +39,6 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
         return True
 
     def setup_parameters(self):
-        # Get machine-specific dtype spec
         dtype_spec = self.device_ctx.resolve_dtype(self.config.dtype)
         bitwidth = dtype_spec.bitwidth()
         target = self.device_ctx.hip_target
@@ -48,8 +47,8 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
             mfma_options = [(MMAType.F32_32x32x16_F8, MMAType.F32_32x32x16_K8_F16)]
         elif dtype_spec.to_torch() == torch.bfloat16 and target == "gfx950":
             mfma_options = [
-                MMAType.F32_32x32x16_BF16,
                 MMAType.F32_16x16x32_BF16,
+                MMAType.F32_32x32x16_BF16,
             ]
         else:
             mfma_options = [
@@ -92,7 +91,7 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
         self.GROUP_SIZE_M = self.add_param(
             "GROUP_SIZE_M",
             IntegerBounds(min=1, max=max_wg_m, step=1),
-            initial_value=8,
+            initial_value=16,
             clamp_value=True,
         )
 
@@ -116,9 +115,6 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
             input_dtype = self.device_ctx.dtype_to_torch(config.dtype)
             quantized_dtype = None
 
-        tA = "N" if config.tA == "T" else "T"
-        tB = "N" if config.tB == "T" else "T"
-
         base_gemm, hyperparams = get_reordered_matmul(
             self.config.M,
             self.config.N,
@@ -130,8 +126,8 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
             mfma_variant=self.mfma_variant.value,
             input_dtype=input_dtype,
             quantized_dtype=quantized_dtype,
-            tA=tA,
-            tB=tB,
+            tA=config.tA,
+            tB=config.tB,
         )
         hyperparams.update(get_default_scheduling_params())
         return WaveTemplate(launchable=base_gemm, hyperparams=hyperparams)
@@ -147,6 +143,7 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
             schedule=use_scheduling,
             use_buffer_ops=True,
             use_global_to_shared=False,
+            postprocess=get_unroll_pipeline(1),
         )
 
     @override
@@ -189,11 +186,9 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
     @override
     def get_runtime_args(self):
         config = self.config
-        tA = "N" if config.tA == "T" else "T"
-        tB = "N" if config.tB == "T" else "T"
 
-        shape_A = (config.K, config.M) if tA == "T" else (config.M, config.K)
-        shape_B = (config.N, config.K) if tB == "T" else (config.K, config.N)
+        shape_A = (config.K, config.M) if config.tA == "T" else (config.M, config.K)
+        shape_B = (config.N, config.K) if config.tB == "T" else (config.K, config.N)
         shape_C = (config.M, config.N)
 
         input_dtype = "f16" if config.dtype == "f8" else config.dtype
@@ -209,3 +204,15 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
             "--function=isolated_benchmark",
         ]
         return runtime_args
+
+
+def get_unroll_pipeline(unroll_factor: int):
+    return f"""
+    module attributes {{transform.with_named_sequence}} {{
+        transform.named_sequence @__transform_main(%arg0: !transform.any_op {{transform.readonly}}) {{
+            %0 = transform.structured.match ops{{["scf.for"]}} in %arg0 : (!transform.any_op) -> !transform.any_op
+            transform.loop.unroll %0 {{ factor = {unroll_factor} }} : !transform.any_op
+            transform.yield
+        }}
+    }}
+    """
