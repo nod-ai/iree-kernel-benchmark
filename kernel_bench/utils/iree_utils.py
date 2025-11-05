@@ -4,8 +4,9 @@ from typing import Any, Optional, Sequence
 from typing import List, Tuple
 import iree.runtime as ireert
 import torch
-from kernel_bench.utils.bench_utils import unit_to_microseconds
+from kernel_bench.utils.bench_utils import get_rocprofv3_cmd, unit_to_microseconds
 from kernel_bench.utils.dtypes.device_context import DeviceContext
+from kernel_bench.utils.paths import clear_dir
 from kernel_bench.utils.print_utils import get_logger
 
 
@@ -73,6 +74,87 @@ def bench_kernel_ireert(
 
     benchmark_mean_time_us = sum(times) / float(len(times))
     return benchmark_mean_time_us, True
+
+
+def bench_kernel_ireert(
+    vmfb_filename: os.PathLike,
+    iree_args: List[str],
+    num_iterations: int = 3,
+    device: Optional[str] = None,
+    timeout: Optional[float] = None,
+    profiler_dump_path: Optional[os.PathLike] = None,
+) -> Tuple[float, bool]:
+    logger = get_logger()
+
+    if not device:
+        device = "hip"
+
+    iree_bench_cmd = [
+        "iree-benchmark-module",
+        f"--module={vmfb_filename}",
+        f"--device={device}",
+        "--device_allocator=caching",
+        f"--benchmark_repetitions={2}",
+        *iree_args,
+    ]
+    if profiler_dump_path:
+        clear_dir(profiler_dump_path)
+        profile_prefix = get_rocprofv3_cmd(profiler_dump_path)
+        iree_bench_cmd = profile_prefix + iree_bench_cmd
+
+    try:
+        proc = subprocess.run(
+            iree_bench_cmd,
+            timeout=timeout,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            text=True,
+        )
+    except subprocess.TimeoutExpired:
+        logger.error(f"Benchmark timed out after {timeout} seconds")
+        return 0, False
+
+    stdout, stderr = proc.stdout, proc.stderr
+    if proc.returncode != 0:
+        logger.error(f"Failed to benchmark {vmfb_filename}:\n{stderr}\n{stdout}")
+        return 0, False
+    # logger.info(f"Rocprofv3 for {vmfb_filename}: \n{proc.stderr}")
+
+    return decode_iree_benchmark_output(stdout)
+
+
+def decode_iree_benchmark_output(output: str):
+    logger = get_logger()
+
+    bench_lines = output.splitlines()[3:]
+    benchmark_results = {}
+
+    for line in bench_lines:
+        split = line.split()
+        if len(split) < 5:
+            continue
+
+        benchmark_name = split[0]
+        measurement = benchmark_name.split("/")[-1]
+
+        time_split = split[1:3]
+        time_number = float(time_split[0])
+        time_unit = time_split[1]
+        try:
+            time_us = unit_to_microseconds(time_number, time_unit)
+        except AssertionError:
+            continue
+
+        benchmark_results[measurement] = time_us
+
+    if "real_time_mean" in benchmark_results:
+        return benchmark_results["real_time_mean"], True
+    if "real_time" in benchmark_results:
+        return benchmark_results["real_time"], True
+
+    logger.error(f"Failed to parse iree-benchmark-module output:\n{output}")
+    return 0, False
 
 
 def run_iree_command(args: Sequence[str] = ()):

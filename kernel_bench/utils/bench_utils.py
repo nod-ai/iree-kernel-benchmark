@@ -69,7 +69,11 @@ def change_shape_dtype(shape: str, new_dtype: str):
     return "x".join(shape.split("x")[:-1] + [new_dtype])
 
 
-def write_results_to_csv(results: list[BenchmarkResult], output_filename: os.PathLike):
+def write_results_to_csv(
+    results: list[BenchmarkResult],
+    output_filename: os.PathLike,
+    title: Optional[str] = None,
+):
     output_dir = os.path.dirname(Path(output_filename))
     if output_dir and not os.path.exists(output_dir):
         os.makedirs(output_dir, exist_ok=True)
@@ -103,7 +107,7 @@ def write_results_to_csv(results: list[BenchmarkResult], output_filename: os.Pat
                     "name": result.name,
                     "machine": result.machine,
                     "kernel_type": result.kernel_type,
-                    "backend": result.backend,
+                    "backend": title or result.backend,
                     **result.shape,
                     "mean_microseconds": result.mean_microseconds,
                     "arithmetic_intensity": result.arithmetic_intensity,
@@ -122,12 +126,18 @@ def write_to_json_file(data: Any, output_filename: os.PathLike, indent=4):
         json.dump(data, file, indent=indent)
 
 
-def write_results_to_json(results: list[BenchmarkResult], output_filename: os.PathLike):
+def write_results_to_json(
+    results: list[BenchmarkResult],
+    output_filename: os.PathLike,
+    title: Optional[str] = None,
+):
     if len(results) == 0:
         get_logger().warn("No valid results")
         return
 
     results_json = [asdict(result) for result in results]
+    if title:
+        results_json = [{**result, "backend": title} for result in results_json]
 
     write_to_json_file(results_json, output_filename)
 
@@ -188,3 +198,17 @@ def redirect_stderr_to_file(filepath):
             yield
         finally:
             sys.stderr = original_stderr
+
+
+def get_rocprofv3_cmd(dump_path: os.PathLike):
+    return [
+        "rocprofv3",
+        "--att",
+        "--att-library-path",
+        "/root/rocprof-trace-decoder-ubuntu-22.04-0.1.4-Linux/opt/rocm/lib/",
+        "-d",
+        f"{dump_path}",
+        "--output-format",
+        "csv",
+        "--",
+    ]

@@ -6,7 +6,7 @@ import signal
 import traceback
 from uuid import uuid4
 from sympy import Symbol
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from dataclass_wizard import asdict
 from os import PathLike
 from pathlib import Path
@@ -83,6 +83,7 @@ class KernelBenchmark(ABC):
     machine: str
     config: OpConfig
     path_config: PathConfig
+    title: Optional[str] = None
 
     def __post_init__(self):
         if not self.validate_config():
@@ -206,12 +207,17 @@ class IREEKernelBenchmark(KernelBenchmark):
         num_iterations: int = 3,
         timeout: Optional[float] = None,
     ) -> BenchmarkResult:
+        base_name = self.title or self.config.get_name()
+        tt_dump_dir = (
+            self.path_config.dump_dir_for(self.backend) / "thread_trace" / base_name
+        )
         runtime_us, ok = bench_kernel_ireert(
             vmfb_filename,
             self.get_runtime_args(),
             num_iterations=1,
             device=device,
             timeout=timeout,
+            profiler_dump_path=tt_dump_dir,
         )
         return self.get_bench_result(runtime_us, ok)
 
@@ -246,6 +252,9 @@ class WaveKernelBenchmark(IREEKernelBenchmark):
     def extra_compile_options(self) -> WaveCompileOptions:
         pass
 
+    def replace_compile_options(self, **kwargs):
+        self._partial_compile_options = kwargs
+
     def get_compile_options(
         self, kernel: WaveTemplate, vmfb_path: Optional[Path] = None
     ) -> WaveCompileOptions:
@@ -259,9 +268,13 @@ class WaveKernelBenchmark(IREEKernelBenchmark):
         compile_options.run_bench = False
         compile_options.device = "hip"
         compile_options.target = self.device_ctx.hip_target
-        compile_options.dump_intermediates = (
-            self.path_config.dump_dir_for("wave") / self.config.get_name()
-        )
+
+        base_name = self.title or self.config.get_name()
+        asm_dump_dir = self.path_config.dump_dir_for(self.backend) / "asm" / base_name
+        compile_options.dump_intermediates = asm_dump_dir
+
+        if hasattr(self, "_partial_compile_options"):
+            compile_options = replace(compile_options, **self._partial_compile_options)
 
         return compile_options
 

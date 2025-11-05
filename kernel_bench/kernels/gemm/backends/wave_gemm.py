@@ -138,12 +138,12 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
         supports_g2s = self.device_ctx.hip_target.startswith("gfx95")
 
         return WaveCompileOptions(
-            dump_intermediates="./dump_wave",
             canonicalize=True,
             schedule=use_scheduling,
             use_buffer_ops=True,
             use_global_to_shared=False,
-            postprocess=get_unroll_pipeline(1),
+            # multi_buffer_count=1,
+            # postprocess=get_unroll_pipeline(1),
         )
 
     @override

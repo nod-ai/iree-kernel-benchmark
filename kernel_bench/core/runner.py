@@ -79,7 +79,7 @@ class BenchmarkRunner:
         if len(results) == 0:
             return None
 
-        output_base = self.title or f"{self.kernel_type}_{self.backend}"
+        output_base = f"{self.kernel_type}_" + (self.title or self.backend)
 
         output_csv_dir = self.path_config.csv_for(self.kernel_type)
         output_json_dir = self.path_config.json_for(self.kernel_type)
@@ -87,10 +87,10 @@ class BenchmarkRunner:
         output_csv_path = output_csv_dir / f"{output_base}.csv"
         output_json_path = output_json_dir / f"{output_base}.json"
 
-        write_results_to_csv(results, output_csv_path)
+        write_results_to_csv(results, output_csv_path, self.title)
         self.logger.info(f"Results written to {output_csv_path}")
 
-        write_results_to_json(results, output_json_path)
+        write_results_to_json(results, output_json_path, self.title)
         self.logger.info(f"Results written to {output_json_path}")
 
         return pd.read_csv(output_csv_path)

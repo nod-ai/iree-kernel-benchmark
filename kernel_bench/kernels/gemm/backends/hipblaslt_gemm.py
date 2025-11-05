@@ -5,7 +5,7 @@ import csv
 from io import StringIO
 
 from kernel_bench.core.template import KernelBenchmark
-from kernel_bench.utils.paths import PathConfig
+from kernel_bench.utils.paths import PathConfig, clear_dir
 from ..gemm_utils import GemmConfig
 
 
@@ -120,8 +120,13 @@ def parse_hipblaslt_block_sizes(
     }
 
 
-def profile_hipblaslt_cmd(cmd: list[str], config: GemmConfig, path_config: PathConfig):
-    dump_dir = path_config.dump_dir_for("hipblaslt") / config.get_name()
+def thread_trace_hipblaslt_cmd(
+    cmd: list[str], config: GemmConfig, path_config: PathConfig
+):
+    dump_dir = (
+        path_config.dump_dir_for("hipblaslt") / "thread_trace" / config.get_name()
+    )
+    clear_dir(dump_dir)
     rocprofv3_prefix = [
         "rocprofv3",
         "--att",
@@ -134,13 +139,34 @@ def profile_hipblaslt_cmd(cmd: list[str], config: GemmConfig, path_config: PathC
         "--kernel-iteration-range",
         "200",
         "-d",
-        dump_dir,
+        f"{dump_dir}",
         "--output-format",
         "csv",
         "--",
     ]
     profile_cmd = rocprofv3_prefix + cmd
     return profile_cmd
+
+
+def perf_counter_hipblaslt_cmd(
+    cmd: list[str], config: GemmConfig, path_config: PathConfig
+):
+    dump_dir = (
+        path_config.dump_dir_for("hipblaslt") / "perf_counter" / config.get_name()
+    )
+    rocprofv3_prefix = [
+        "rocprofv3",
+        "-T",
+        "-d",
+        f"{dump_dir}",
+        "-o",
+        "run",
+        "-i",
+        "cnt.txt",
+        "--",
+    ]
+    thread_trace_cmd = rocprofv3_prefix + cmd
+    return thread_trace_cmd
 
 
 class HipBLASLtGemmBenchmark(KernelBenchmark):
@@ -212,8 +238,18 @@ class HipBLASLtGemmBenchmark(KernelBenchmark):
             # "--solution_index",
             # "5309",
         ]
-        cmd = profile_hipblaslt_cmd(cmd, self.config, self.path_config)
+        cmds = [
+            thread_trace_hipblaslt_cmd(cmd, self.config, self.path_config),
+        ]
 
+        bench_result = None
+        for cmd in cmds:
+            bench_result = self._run_cmd(cmd)
+
+        return bench_result
+
+    def _run_cmd(self, cmd: list[str]):
+        self.logger.info(" ".join(cmd))
         try:
             # Run the executable
             result = subprocess.run(

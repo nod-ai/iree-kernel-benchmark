@@ -7,6 +7,7 @@ replacing scattered hard-coded paths throughout the codebase.
 
 from dataclasses import dataclass
 from pathlib import Path
+import shutil
 from typing import Optional
 import os
 
@@ -335,3 +336,9 @@ class PathConfig:
             f"  dumps={self.dumps}\n"
             f")"
         )
+
+
+def clear_dir(dir_path: os.PathLike):
+    if os.path.exists(dir_path):
+        shutil.rmtree(dir_path)
+    os.makedirs(dir_path, exist_ok=True)
