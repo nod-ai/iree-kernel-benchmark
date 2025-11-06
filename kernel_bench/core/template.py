@@ -415,6 +415,29 @@ def batch_validate(
     return results
 
 
+def _run_single_benchmark_helper(
+    original_idx, bench, device_id, vmfb_path, num_iterations, timeout, verbose
+):
+    """Helper function to run a single benchmark on a specific GPU."""
+    gpu_device = f"hip://{device_id}"
+
+    try:
+        if isinstance(bench, IREEKernelBenchmark):
+            result = bench.bench_vmfb(vmfb_path, gpu_device, num_iterations, timeout)
+        else:
+            result = bench.run_bench(gpu_device, num_iterations, timeout)
+
+        return (original_idx, result)
+
+    except Exception as e:
+        if verbose:
+            get_logger().error(
+                f"Benchmarking failed for {bench.config.get_name()} on backend {bench.backend}: {e}"
+            )
+        result = bench.get_bench_result(0, False)
+        return (original_idx, result)
+
+
 def batch_benchmark(
     benches: List[KernelBenchmark],
     device: str,
@@ -430,7 +453,7 @@ def batch_benchmark(
     Benchmark a list of kernel benchmarks.
 
     First compiles all IREE-based benches in batch, then benchmarks all benches
-    in order while preserving the original input order.
+    in parallel across 8 GPUs while preserving the original input order.
     """
 
     # Compile all IREE-based benches
@@ -463,41 +486,63 @@ def batch_benchmark(
     else:
         validation_results = {id(bench): True for bench in benches}
 
-    # Run benchmarks
+    # Run benchmarks in parallel across 8 GPUs
+    num_gpus = 8
     results = [None] * len(benches)
-    all_bench_items = [(i, bench) for i, bench in enumerate(benches)]
-    for i, bench in tqdm(
-        all_bench_items, desc="Benchmarking kernels", disable=bench_callback is not None
-    ):
-        try:
-            if isinstance(bench, IREEKernelBenchmark):
-                vmfb_path, compile_success = compilation_results[id(bench)]
-                numerical_success = validation_results[id(bench)]
-                if compile_success and vmfb_path and numerical_success:
-                    result = bench.bench_vmfb(
-                        vmfb_path, device, num_iterations, timeout
-                    )
-                else:
-                    result = bench.get_bench_result(0, False)
-            else:
-                if validation_results[id(bench)]:
-                    result = bench.run_bench(device, num_iterations, timeout)
-                else:
-                    result = bench.get_bench_result(0, False)
 
-            results[i] = result
+    # Separate benches into those that can run and those that failed
+    benches_to_run = []
+    for i, bench in enumerate(benches):
+        should_run = False
+        vmfb_path = None
 
-        except Exception as e:
-            if verbose:
-                get_logger().error(
-                    f"Benchmarking failed for {bench.config.get_name()} on backend {bench.backend}: {e}"
-                )
-            result = bench.get_bench_result(0, False)
-            results[i] = result
+        if isinstance(bench, IREEKernelBenchmark):
+            vmfb_path, compile_success = compilation_results[id(bench)]
+            numerical_success = validation_results[id(bench)]
+            should_run = compile_success and vmfb_path and numerical_success
+        else:
+            should_run = validation_results[id(bench)]
 
-        finally:
-            if bench_callback:
-                bench_callback(results[i])
+        if should_run:
+            benches_to_run.append((i, bench, vmfb_path))
+        else:
+            # Mark failed benches immediately
+            results[i] = bench.get_bench_result(0, False)
+
+    # Prepare benchmark arguments with round-robin GPU assignment
+    bench_args = [
+        (
+            original_idx,
+            bench,
+            idx % num_gpus,
+            vmfb_path,
+            num_iterations,
+            timeout,
+            verbose,
+        )
+        for idx, (original_idx, bench, vmfb_path) in enumerate(benches_to_run)
+    ]
+
+    # Run benchmarks in parallel
+    if bench_args:
+        with Pool(num_gpus) as pool:
+            benchmark_iterator = pool.istarmap(_run_single_benchmark_helper, bench_args)
+
+            for original_idx, result in tqdm(
+                benchmark_iterator,
+                total=len(bench_args),
+                desc="Benchmarking kernels",
+                disable=bench_callback is not None,
+            ):
+                results[original_idx] = result
+                if bench_callback:
+                    bench_callback(result)
+
+    # Call callback for any failed benches if needed
+    if bench_callback:
+        for i, result in enumerate(results):
+            if result is not None and i not in [idx for idx, _, _ in benches_to_run]:
+                bench_callback(result)
 
     # Return results
     return results

@@ -1,3 +1,4 @@
+import random
 import traceback
 from dataclasses import dataclass, field
 import pandas as pd
@@ -5,8 +6,12 @@ import json
 from os import PathLike
 from typing import List, Optional
 from kernel_bench.config.base import OpConfig
+from kernel_bench.tuning.hyperparam.paradigm.constrained_random import (
+    ConstrainedRandomTuner,
+)
 from kernel_bench.tuning.hyperparam.paradigm.tree import MultiPassTreeTuner
 from kernel_bench.tuning.hyperparam.parallel_tuning import ParallelTuner
+from kernel_bench.tuning.loaders import load_tuning_configs_from_json
 from kernel_bench.utils.print_utils import get_logger
 from kernel_bench.utils.paths import PathConfig
 from ..utils.bench_utils import (
@@ -56,24 +61,7 @@ class BenchmarkRunner:
         ]
 
     def load_tuned_results(self, result_path: PathLike):
-        with open(result_path, "r") as file:
-            tuned_data = json.load(file)
-
-        speedups = [
-            tune_result["speedup"] if tune_result["improvement"] else 1
-            for tune_result in tuned_data.values()
-        ]
-        avg_speedup = sum(speedups) / len(speedups)
-        avg_speedup_percent = (avg_speedup - 1) * 100
-        self.logger.info(
-            f"Loading tuned config with average speedup of +{avg_speedup_percent:.2f}%"
-        )
-
-        self.specs = {
-            kernel_name: tune_result.get("hyperparams", {})
-            for kernel_name, tune_result in tuned_data.items()
-            if tune_result.get("improvement")
-        }
+        self.specs = load_tuning_configs_from_json(result_path)
 
     def save_results(self, results: List[BenchmarkResult]):
         if len(results) == 0:
@@ -144,15 +132,23 @@ class BenchmarkRunner:
         """Run benchmarks sequentially. Compiles all IREE-based kernels beforehand."""
         self._load_benches()
 
-        results = batch_benchmark(
-            self._benches,
-            self.device,
-            self.num_iterations,
-            validate_numerics=validate_numerics,
-            verbose=True,
-        )
+        random.shuffle(self._benches)
+        results = []
 
-        self.save_results(results)
+        batch_size = 1000
+
+        while len(results) < len(self._benches):
+            batch_benches = self._benches[len(results) : len(results) + batch_size]
+            batch_results = batch_benchmark(
+                batch_benches,
+                self.device,
+                self.num_iterations,
+                validate_numerics=validate_numerics,
+                verbose=True,
+            )
+            results.extend(batch_results)
+
+            self.save_results(results)
 
         return results
 
@@ -168,7 +164,7 @@ class BenchmarkRunner:
             self.path_config.tuning_for(self.kernel_type) / tuning_result_basename
         )
 
-        tuning_paradigm = MultiPassTreeTuner()
+        tuning_paradigm = ConstrainedRandomTuner()
         tuner = ParallelTuner(tuning_paradigm)
         tuner.tune_kernels(
             benches=self._benches,

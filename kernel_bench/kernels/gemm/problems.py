@@ -4,7 +4,9 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+import json
 import os
+import random
 import pandas as pd
 from .gemm_utils import GemmConfig
 from kernel_bench.utils.dtypes import dtype_to_bytes
@@ -924,12 +926,144 @@ def get_gemm_configs(dtype: str) -> list[tuple[str, GemmConfig]]:
     all_configs += [("llama70bskinny", x) for x in llama70bskinny(dtype)]
     all_configs += [("gpt4compute", x) for x in gpt4compute(dtype)]
     all_configs += [("llama70bmemory", x) for x in llama70bmemory(dtype)]
-    all_configs += [("compute", x) for x in tk_default(dtype)]
-    all_configs += [("unet", x) for x in compute(dtype)]
-    all_configs += [("square", x) for x in unet(dtype)]
-    all_configs += [("tk", x) for x in square(dtype)]
+    all_configs += [("compute", x) for x in compute(dtype)]
+    all_configs += [("unet", x) for x in unet(dtype)]
+    all_configs += [("square", x) for x in square(dtype)]
+    all_configs += [("tk", x) for x in tk_default(dtype)]
     all_configs += [("cai", x) for x in cai(dtype)]
     return all_configs
+
+
+def get_80k_gemm_configs(max_kernels: int = 80_000) -> list[tuple[str, GemmConfig]]:
+    SMALL_MAX = 1024
+    MEDIUM_MAX = 4096
+    LARGE_MAX = 16384
+
+    SMALL_STEP = 32
+    MEDIUM_STEP = 64
+    LARGE_STEP = 256
+
+    def get_small():
+        small = []
+        small += list(range(4, SMALL_STEP, 4))
+        small += list(range(SMALL_STEP, SMALL_MAX + 1, SMALL_STEP))
+        return small
+
+    def get_medium():
+        return list(range(SMALL_MAX + MEDIUM_STEP, MEDIUM_MAX, MEDIUM_STEP))
+
+    def get_large():
+        return list(range(MEDIUM_MAX + LARGE_STEP, LARGE_MAX, LARGE_STEP))
+
+    def category_1_gemms():
+        """small MK, large N OR small NK, large M"""
+        shapes = []
+
+        # small MK, large N
+        for M in get_small():
+            for K in get_small():
+                for N in get_large():
+                    shapes.append((M, N, K))
+
+        # small NK, large M
+        for N in get_small():
+            for K in get_small():
+                for M in get_large():
+                    shapes.append((M, N, K))
+
+        configs = []
+        for M, N, K in shapes:
+            tag = "cat-1.1" if K % 64 == 0 else "cat-1.2"
+            for tA in ["N", "T"]:
+                for tB in ["N", "T"]:
+                    configs.append((tag, GemmConfig(M, N, K, tA, tB, "bf16")))
+
+        return configs
+
+    def category_2_gemms():
+        """Large K, but small M,N (splitK)"""
+        configs = []
+
+        for K in get_large():
+            for M in get_small():
+                for N in get_small():
+                    for tA in ["N", "T"]:
+                        for tB in ["N", "T"]:
+                            configs.append(GemmConfig(M, N, K, tA, tB, "bf16"))
+
+        return [("cat-2", config) for config in configs]
+
+    def category_3_gemms():
+        """Latency bound (small MNK)"""
+        configs = []
+
+        for M in get_small():
+            for N in get_small():
+                for K in get_small():
+                    for tA in ["N", "T"]:
+                        for tB in ["N", "T"]:
+                            config = GemmConfig(M, N, K, tA, tB, "bf16")
+                            if K >= 512:
+                                configs.append(("cat-3", config))
+                            else:
+                                configs.append(("cat-3.2", config))
+
+        return configs
+
+    def category_4_gemms():
+        """medium M,N,K (1024 to 4*1024)"""
+        configs = []
+
+        for M in get_medium():
+            for N in get_medium():
+                for K in get_medium():
+                    for tA in ["N", "T"]:
+                        for tB in ["N", "T"]:
+                            configs.append(GemmConfig(M, N, K, tA, tB, "bf16"))
+
+        return [("cat-4", config) for config in configs]
+
+    def category_5_gemms():
+        """large sizes (MT128+x128+)"""
+        configs = []
+
+        for M in get_large():
+            for N in get_large():
+                for K in get_large():
+                    for tA in ["N", "T"]:
+                        for tB in ["N", "T"]:
+                            configs.append(GemmConfig(M, N, K, tA, tB, "bf16"))
+
+        return [("cat-5", config) for config in configs]
+
+    random.seed(42)
+    configs = []
+    configs += random.sample(category_1_gemms(), max_kernels // 5)
+    configs += random.sample(category_2_gemms(), max_kernels // 5)
+    configs += random.sample(category_3_gemms(), max_kernels // 5)
+    configs += random.sample(category_4_gemms(), max_kernels // 5)
+    configs += random.sample(category_5_gemms(), max_kernels // 5)
+
+    tag_balance = {}
+    for tag, config in configs:
+        if tag not in tag_balance:
+            tag_balance[tag] = 1
+        else:
+            tag_balance[tag] += 1
+    print(json.dumps(tag_balance, indent=4))
+
+    return configs
+
+
+def get_trial_configs():
+    shapes = [
+        (512, 512, 512),
+        (1024, 1024, 1024),
+        (2048, 2048, 2048),
+        (4096, 4096, 4096),
+        (8192, 8192, 8192),
+    ]
+    return [("test", GemmConfig(M, N, K, "N", "T", "bf16")) for M, N, K in shapes]
 
 
 def get_gemm_comparison() -> list[tuple[str, GemmConfig]]:

@@ -4,6 +4,7 @@ import traceback
 from typing import override
 import torch
 from torch.testing import assert_close
+from kernel_bench.utils.dtypes.device_context import get_shared_memory_limit
 from kernel_bench.utils.iree_utils import shape_to_iree
 from wave_lang.kernel.wave.constraints import MMAType
 from wave_lang.kernel.lang.global_symbols import *
@@ -47,8 +48,8 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
             mfma_options = [(MMAType.F32_32x32x16_F8, MMAType.F32_32x32x16_K8_F16)]
         elif dtype_spec.to_torch() == torch.bfloat16 and target == "gfx950":
             mfma_options = [
-                MMAType.F32_16x16x32_BF16,
                 MMAType.F32_32x32x16_BF16,
+                MMAType.F32_16x16x32_BF16,
             ]
         else:
             mfma_options = [
@@ -70,40 +71,52 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
         )
         self.BLOCK_M = self.add_param(
             "BLOCK_M",
-            IntegerBounds(min=4, max=min(256, self.config.M), step=4),
-            initial_value=128,
+            IntegerBounds(min=1, max=min(512, self.config.M), step=8),
+            initial_value=256,
             clamp_value=True,
         )
         self.BLOCK_N = self.add_param(
             "BLOCK_N",
-            IntegerBounds(min=4, max=min(256, self.config.N), step=4),
+            IntegerBounds(min=1, max=min(512, self.config.N), step=8),
             initial_value=256,
             clamp_value=True,
         )
         self.BLOCK_K = self.add_param(
             "BLOCK_K",
-            IntegerBounds(min=4, max=min(256, self.config.K), step=4),
-            initial_value=64,
+            IntegerBounds(min=1, max=min(256, self.config.K), step=8),
+            initial_value=128,
             clamp_value=True,
         )
-
-        max_wg_m = ceil(self.config.M / 16) - 1
-        self.GROUP_SIZE_M = self.add_param(
-            "GROUP_SIZE_M",
-            IntegerBounds(min=1, max=max_wg_m, step=1),
-            initial_value=16,
+        self.NUM_WAVES = self.add_param(
+            "NUM_WAVES",
+            IntegerBounds(min=4, max=8, step=4),
+            initial_value=4,
             clamp_value=True,
         )
+        self.USE_GATHER_TO_LDS = self.add_param(
+            "USE_GATHER_TO_LDS",
+            CategoricalBounds([False, True]),
+            initial_value=0,
+        )
 
+        # max_wg_m = ceil(self.config.M / 16) - 1
+        # self.GROUP_SIZE_M = self.add_param(
+        #     "GROUP_SIZE_M",
+        #     IntegerBounds(min=1, max=max_wg_m, step=1),
+        #     initial_value=16,
+        #     clamp_value=True,
+        # )
+
+        shared_mem_limit_bytes = get_shared_memory_limit(self.device_ctx.hip_target)
         bytes_per_el = dtype_spec.num_bytes()
         shared_memory_constraint = (
             (self.BLOCK_M + 4) * self.BLOCK_K + (self.BLOCK_N + 4) * self.BLOCK_K
-        ) * bytes_per_el - 65536
+        ) * bytes_per_el - shared_mem_limit_bytes
         self.add_constraint(shared_memory_constraint, "shared_memory_limit")
 
-        num_wg_m = sympy.ceiling(self.config.M / self.BLOCK_M)
-        group_size_constraint = self.GROUP_SIZE_M - num_wg_m
-        self.add_constraint(group_size_constraint, "group_size_limit")
+        # num_wg_m = sympy.ceiling(self.config.M / self.BLOCK_M)
+        # group_size_constraint = self.GROUP_SIZE_M - num_wg_m
+        # self.add_constraint(group_size_constraint, "group_size_limit")
 
     @override
     def load_wave_kernel(self):
@@ -122,26 +135,30 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
             self.BLOCK_M.value,
             self.BLOCK_N.value,
             self.BLOCK_K.value,
-            self.GROUP_SIZE_M.value,
+            16,  # self.GROUP_SIZE_M.value,
             mfma_variant=self.mfma_variant.value,
             input_dtype=input_dtype,
             quantized_dtype=quantized_dtype,
             tA=config.tA,
             tB=config.tB,
+            num_waves=self.NUM_WAVES.value,
         )
         hyperparams.update(get_default_scheduling_params())
         return WaveTemplate(launchable=base_gemm, hyperparams=hyperparams)
 
     @override
     def extra_compile_options(self):
-        use_scheduling = SchedulingType.PREFETCH
+        use_scheduling = SchedulingType.NONE
         supports_g2s = self.device_ctx.hip_target.startswith("gfx95")
+        use_g2s = supports_g2s and self.USE_GATHER_TO_LDS.value
 
         return WaveCompileOptions(
             canonicalize=True,
             schedule=use_scheduling,
             use_buffer_ops=True,
-            use_global_to_shared=False,
+            use_global_to_shared=use_g2s,
+            waves_per_eu=1,
+            # use_fast_math=True,
             # multi_buffer_count=1,
             # postprocess=get_unroll_pipeline(1),
         )

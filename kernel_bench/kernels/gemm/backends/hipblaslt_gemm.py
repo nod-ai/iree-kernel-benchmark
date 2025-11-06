@@ -9,6 +9,73 @@ from kernel_bench.utils.paths import PathConfig, clear_dir
 from ..gemm_utils import GemmConfig
 
 
+class HipBLASLtGemmBenchmark(KernelBenchmark):
+    config: GemmConfig
+
+    @override
+    def run_bench(self, device, num_iterations, timeout):
+        if device.startswith("hip://"):
+            device = int(device.split("hip://")[1])
+        else:
+            device = 0
+
+        cmd = get_hipblaslt_cmd(self.config, device)
+        cmds = [
+            cmd
+            # thread_trace_hipblaslt_cmd(cmd, self.config, self.path_config),
+        ]
+
+        bench_result = None
+        for cmd in cmds:
+            # self.logger.info(" ".join(cmd))
+            bench_result = self._run_cmd(cmd)
+
+        return bench_result
+
+    def _run_cmd(self, cmd: list[str]):
+        try:
+            # Run the executable
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=300  # 5 minute timeout
+            )
+
+            if result.returncode != 0:
+                self.logger.error(
+                    (
+                        f"Executable failed with return code {result.returncode}"
+                        f"- stderr: \n{result.stderr}"
+                        f"- stdout: \n{result.stdout}"
+                    )
+                )
+                return self.get_bench_result(0.0, False)
+
+            # self.logger.info(result.stdout)
+
+            # Parse the output
+            mean_time_us = parse_hipblaslt_us(result.stdout)
+            hyperparams = parse_hipblaslt_block_sizes(result.stdout)
+
+            if mean_time_us is None:
+                self.logger.error(
+                    (
+                        "Failed to parse average time from output"
+                        f"- stdout: \n{result.stdout}"
+                    )
+                )
+                return self.get_bench_result(0.0, False)
+
+            result = self.get_bench_result(mean_time_us, True)
+            result.tuning_config = hyperparams
+            return result
+
+        except subprocess.TimeoutExpired:
+            self.logger.error("Benchmark timed out")
+            return self.get_bench_result(0.0, False)
+        except Exception as e:
+            self.logger.error(f"Error running benchmark: {e}")
+            return self.get_bench_result(0.0, False)
+
+
 def parse_hipblaslt_us(output: str, row_index: Optional[int] = None) -> float:
     lines = output.splitlines()
 
@@ -169,124 +236,78 @@ def perf_counter_hipblaslt_cmd(
     return thread_trace_cmd
 
 
-class HipBLASLtGemmBenchmark(KernelBenchmark):
-    config: GemmConfig
+def get_hipblaslt_cmd(
+    config: GemmConfig, device_id=None, tune=False, solution_index=None
+):
+    tA = "N" if config.tA == "T" else "T"
+    tB = "N" if config.tB == "T" else "T"
 
-    @override
-    def run_bench(self, device, num_iterations, timeout):
-        config = self.config
+    cmd = [
+        "hipblaslt-bench",
+        "--function",
+        "matmul",
+        "--transA",
+        tA,
+        "--transB",
+        tB,
+        "--a_type",
+        f"{config.dtype}_r",
+        "--b_type",
+        f"{config.dtype}_r",
+        "--c_type",
+        f"{config.dtype}_r",
+        "--d_type",
+        f"{config.dtype}_r",
+        "--scale_type",
+        "f32_r",
+        "--bias_type",
+        "f32_r",
+        "--compute_type",
+        "f32_r",
+        "--sizem",
+        str(config.M),
+        "--sizen",
+        str(config.N),
+        "--sizek",
+        str(config.K),
+        "--lda",
+        str(config.M),
+        "--ldb",
+        str(config.K),
+        "--ldc",
+        str(config.M),
+        "--ldd",
+        str(config.M),
+        "--initialization",
+        "zero",
+        "--alpha",
+        "1",
+        "--beta",
+        "0",
+        "--iters",
+        "200",
+        "--cold_iters",
+        "200",
+        "--use_gpu_timer",
+        "--print_kernel_info",
+        "--rotating",
+        "0",
+        "--device",
+        str(device_id or 0),
+    ]
 
-        tA = "N" if config.tA == "T" else "T"
-        tB = "N" if config.tB == "T" else "T"
-
-        cmd = [
-            "hipblaslt-bench",
-            "--function",
-            "matmul",
-            "--transA",
-            tA,
-            "--transB",
-            tB,
-            "--a_type",
-            f"{config.dtype}_r",
-            "--b_type",
-            f"{config.dtype}_r",
-            "--c_type",
-            f"{config.dtype}_r",
-            "--d_type",
-            f"{config.dtype}_r",
-            "--scale_type",
-            "f32_r",
-            "--bias_type",
-            "f32_r",
-            "--compute_type",
-            "f32_r",
-            "--sizem",
-            str(config.M),
-            "--sizen",
-            str(config.N),
-            "--sizek",
-            str(config.K),
-            "--lda",
-            str(config.M),
-            "--ldb",
-            str(config.K),
-            "--ldc",
-            str(config.M),
-            "--ldd",
-            str(config.M),
-            "--initialization",
-            "zero",
-            "--alpha",
-            "1",
-            "--beta",
-            "0",
-            "--iters",
-            "200",
-            "--cold_iters",
-            "200",
-            "--use_gpu_timer",
-            "--print_kernel_info",
-            "--rotating",
-            "0",
-            "--device",
-            "1",
-            # "--algo_method",
-            # "index",
-            # "--api_method",
-            # "cpp",
-            # "--solution_index",
-            # "5309",
-        ]
-        cmds = [
-            thread_trace_hipblaslt_cmd(cmd, self.config, self.path_config),
+    if tune or solution_index:
+        cmd += [
+            "--algo_method",
+            "index",
+            "--api_method",
+            "cpp",
         ]
 
-        bench_result = None
-        for cmd in cmds:
-            bench_result = self._run_cmd(cmd)
+    if solution_index:
+        cmd += [
+            "--solution_index",
+            str(solution_index),
+        ]
 
-        return bench_result
-
-    def _run_cmd(self, cmd: list[str]):
-        self.logger.info(" ".join(cmd))
-        try:
-            # Run the executable
-            result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=300  # 5 minute timeout
-            )
-
-            if result.returncode != 0:
-                self.logger.error(
-                    (
-                        f"Executable failed with return code {result.returncode}"
-                        f"- stderr: \n{result.stderr}"
-                        f"- stdout: \n{result.stdout}"
-                    )
-                )
-                return self.get_bench_result(0.0, False)
-
-            # Parse the output
-            # self.logger.info(result.stdout)
-            mean_time_us = parse_hipblaslt_us(result.stdout)
-            hyperparams = parse_hipblaslt_block_sizes(result.stdout)
-
-            if mean_time_us is None:
-                self.logger.error(
-                    (
-                        "Failed to parse average time from output"
-                        f"- stdout: \n{result.stdout}"
-                    )
-                )
-                return self.get_bench_result(0.0, False)
-
-            result = self.get_bench_result(mean_time_us, True)
-            result.tuning_config = hyperparams
-            return result
-
-        except subprocess.TimeoutExpired:
-            self.logger.error("Benchmark timed out")
-            return self.get_bench_result(0.0, False)
-        except Exception as e:
-            self.logger.error(f"Error running benchmark: {e}")
-            return self.get_bench_result(0.0, False)
+    return cmd

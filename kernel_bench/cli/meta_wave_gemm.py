@@ -1,7 +1,15 @@
 import argparse
-from kernel_bench.core.template import batch_benchmark, batch_compile_iree_benches
+from kernel_bench.core.template import (
+    KernelValidationError,
+    batch_benchmark,
+    batch_compile_iree_benches,
+)
 from kernel_bench.kernels.gemm.backends.wave_gemm import WaveGemmBenchmark
-from kernel_bench.kernels.gemm.problems import get_meta_gemms
+from kernel_bench.kernels.gemm.problems import (
+    get_gemm_configs,
+    get_meta_gemms,
+    get_trial_configs,
+)
 from kernel_bench.utils.bench_utils import write_results_to_csv, write_results_to_json
 from kernel_bench.utils.paths import PathConfig
 from kernel_bench.utils.plot_utils import (
@@ -62,21 +70,31 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     meta_gemms = [
-        (tag, config) for tag, config in get_meta_gemms() if tag == "meta-4-shapes"
+        # (tag, config) for tag, config in get_meta_gemms() if tag == "meta-4-shapes"
+        (tag, config)
+        for tag, config in get_trial_configs()
     ]
     path_config = PathConfig.default()
 
     bench_mappings = []
-
+    failed_validation = 0
     for title, compile_options in options.items():
         benches = []
         for tag, problem in meta_gemms:
-            wave_bench = WaveGemmBenchmark(
-                tag, "wave", "gemm", "mi350x", problem, path_config, title
-            )
-            wave_bench.replace_compile_options(**compile_options)
-            benches.append(wave_bench)
+            try:
+                wave_bench = WaveGemmBenchmark(
+                    tag, "wave", "gemm", "mi350x", problem, path_config, title
+                )
+                wave_bench.replace_compile_options(**compile_options)
+                benches.append(wave_bench)
+            except KernelValidationError:
+                failed_validation += 1
         bench_mappings.append((title, benches))
+
+    if failed_validation > 0:
+        print(
+            f"Failed to validate {failed_validation} kernels. Proceeding with {len(benches)}"
+        )
 
     all_benches = []
     for title, benches in bench_mappings:

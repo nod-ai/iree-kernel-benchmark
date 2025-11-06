@@ -74,6 +74,7 @@ class TuningParadigm(ABC):
             )
 
             base_result = self._benchmark(context)
+            self.base_result = base_result
             if not base_result.ok:
                 progress.finish("Failed")
                 return TuningResult(

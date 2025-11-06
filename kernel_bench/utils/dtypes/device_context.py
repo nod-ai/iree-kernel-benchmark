@@ -73,6 +73,16 @@ def get_hip_target_from_device() -> str:
     return target
 
 
+def get_shared_memory_limit(hip_target: Optional[str] = None) -> float:
+    if not hip_target:
+        hip_target = get_hip_target_from_device()
+
+    if hip_target.startswith("gfx95"):
+        return 163840
+    else:
+        return 65536
+
+
 @dataclass
 class DeviceContext:
     """
