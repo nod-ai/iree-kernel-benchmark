@@ -8,7 +8,6 @@ import pandas as pd
 
 
 def create_sizes_lookup(sizes_path: str):
-    sizes_path = os.path.dirname(sizes_path)
     size_cat_files = glob.glob(f"{sizes_path}/sizes_cat*.txt")
 
     size_to_cat = {}
@@ -37,9 +36,9 @@ def parse_csv(csv_path: str, sizes_path: str, title: Optional[str] = None):
     for i, result in enumerate(df.iloc):
         m, n, k = int(result["m"]), int(result["n"]), int(result["k"])
         shape = (m, n, k)
-        tA = "T"
-        tB = "N"
-        dtype = "bf16"
+        tA = result["transA"]
+        tB = result["transB"]
+        dtype = result["a_type"].split("_r")[0]
 
         if shape not in size_to_cat:
             continue
