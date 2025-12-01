@@ -42,17 +42,17 @@ jobs:
     steps:
       - name: Checkout PR branch
         if: ${{ inputs.pr_branch && inputs.pr_repository }}
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ inputs.pr_branch }}
           repository: ${{ inputs.pr_repository }}
 
       - name: Checkout default branch
         if: ${{ !(inputs.pr_branch && inputs.pr_repository) }}
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: "Setup Python"
-        uses: actions/setup-python@8d9ed9ac5c53483de85588cdf95a591a75ab9f55
+        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548
         with:
           python-version: '3.12'
 
@@ -117,7 +117,7 @@ jobs:
           "${{ inputs.metadata }}"
 
       - name: Upload benchmark results
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4
         with:
           name: benchmark-results
           path: ./results/
